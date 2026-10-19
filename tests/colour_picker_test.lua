@@ -154,6 +154,13 @@ package.loaded["src/window"] = {
                 button.action = action
                 return button
             end,
+            AddText = function() end,
+            AddTextField = function(_, fieldOptions)
+                return {
+                    onChange = fieldOptions.onChange,
+                    SetText = function(self, text) self.text = text end,
+                }
+            end,
             Show = function() end,
             Close = function() end,
             Destroy = function() end,
@@ -169,6 +176,7 @@ local parent = component(nil, "parent")
 local standard = ColourPicker.new(parent, { value = 0x33669980 })
 expect(standard:Open(), true, "a standard picker opens")
 expect(standard.alphaCanvas, nil, "the alpha slider is opt-in")
+expect(standard.hexField.text, "#336699", "standard pickers display RGB hex")
 
 mousePosition = { x = 1000, y = 1000 }
 standard.fieldHit.subscriptions[ui.Hook.ONCLICK](standard.fieldHit, 63, 63)
@@ -183,6 +191,23 @@ expect(
     "the field marker uses the hook's component-local y coordinate"
 )
 standard.fieldHit.subscriptions[ui.Hook.ONRELEASE](standard.fieldHit, 63, 63)
+
+standard.hexField:SetText("00ffff")
+standard.hexField.onChange(standard.hexField, nil, "00ffff")
+expect(standard.pendingColour, 0x00FFFF80, "hex input preserves alpha")
+expect(standard.preview.rgba, 0x00FFFF80, "hex input updates the preview")
+expect(standard.hexField.text, "00ffff", "hex input is not reformatted while editing")
+expect(standard:GetValue(), 0x33669980, "hex input remains pending until accepted")
+
+for _, content in ipairs({ "", "#123", "#GG0000" }) do
+    standard.hexField.onChange(standard.hexField, nil, content)
+    expect(standard.acceptButton.disabled, true, "invalid hex disables acceptance")
+    expect(standard.pendingColour, 0x00FFFF80, "invalid hex preserves the pending colour")
+end
+standard.hexField.onChange(standard.hexField, nil, "#00ffff")
+expect(standard.acceptButton.disabled, false, "valid hex enables accepting again")
+standard.acceptButton.action()
+expect(standard:GetValue(), 0x00FFFF80, "accepting commits the entered hex colour")
 
 local accepted
 local picker = ColourPicker.new(parent, {
@@ -207,6 +232,11 @@ expect(
     "the alpha gradient ends opaque"
 )
 expect(picker.alphaMarker.x, 79, "the alpha marker reflects the initial alpha")
+expect(picker.hexField.text, "#33669980", "the alpha picker displays RGBA hex")
+
+picker.hexField.onChange(picker.hexField, nil, "#33669920")
+expect(picker.pendingColour, 0x33669920, "RGBA hex input updates the alpha")
+expect(picker.preview.rgba, 0x33669920, "RGBA hex input updates the preview")
 
 local contentX = picker.pickerWindow.root.x + picker.pickerWindow.content.x
 mousePosition = { x = contentX, y = 0 }
@@ -222,6 +252,7 @@ expect(picker.dragTarget, nil, "releasing the alpha bar ends the drag")
 expect(picker.alphaHit.x, 16, "the alpha hit area returns to the bar")
 expect(picker.alphaHit.width, 128, "the alpha hit area restores its width")
 expect(picker.pendingColour, 0x33669900, "the left edge selects full transparency")
+expect(picker.hexField.text, "#33669900", "the alpha being changed updates the hex field")
 
 picker.acceptButton.action()
 expect(accepted, 0x33669900, "accepting reports the selected alpha")

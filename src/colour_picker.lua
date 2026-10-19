@@ -27,10 +27,12 @@ local ALPHA_X = FIELD_X
 local ALPHA_Y = FIELD_Y + FIELD_SIZE + 12
 local ALPHA_LAYOUT_OFFSET = ALPHA_HEIGHT + 12
 local ALPHA_CHECKER_SIZE = 8
-local PREVIEW_BUTTON_SIZE = 64
+local PREVIEW_BUTTON_SIZE = 56
 local PREVIEW_SWATCH_SIZE = math.floor(PREVIEW_BUTTON_SIZE * SWATCH_PROPORTION)
-local PREVIEW_X = 70
+local PREVIEW_X = 16
 local PREVIEW_Y = 152
+local HEX_X = PREVIEW_X + PREVIEW_BUTTON_SIZE + 8
+local HEX_Y = PREVIEW_Y + 24
 local ACCEPT_Y = 224
 local MARKER_SIZE = 9
 local WHITE = 0xFFFFFFFF
@@ -275,7 +277,7 @@ function ColourPicker:_DrawAlphaSpectrum()
     )
 end
 
-function ColourPicker:_UpdatePickerVisuals(redrawField)
+function ColourPicker:_UpdatePickerVisuals(redrawField, syncHexField)
     self.pendingColour = hsvColour(
         self.pendingHue, self.pendingSaturation, self.pendingValue, self.pendingAlpha
     )
@@ -306,14 +308,20 @@ function ColourPicker:_UpdatePickerVisuals(redrawField)
         self.alphaMarker:SetX(ALPHA_X + alphaX - 1)
     end
     self.preview.rgba = self.pendingColour
+    if syncHexField ~= false then
+        self.hexField:SetText(self.alphaSlider
+            and string.format("#%08X", self.pendingColour)
+            or string.format("#%06X", math.floor(self.pendingColour / 0x100)))
+        self.acceptButton:SetDisabled(false)
+    end
 end
 
-function ColourPicker:_SetPendingColour(colour)
+function ColourPicker:_SetPendingColour(colour, syncHexField)
     local red, green, blue, alpha = unpackColour(colour)
     self.pendingHue, self.pendingSaturation, self.pendingValue =
         rgbToHsv(red, green, blue)
     self.pendingAlpha = alpha
-    self:_UpdatePickerVisuals(true)
+    self:_UpdatePickerVisuals(true, syncHexField)
 end
 
 function ColourPicker:_PickerContentPosition()
@@ -453,6 +461,7 @@ function ColourPicker:_ClearPickerReferences()
     self.alphaMarker = nil
     self.previewButton = nil
     self.preview = nil
+    self.hexField = nil
     self.acceptButton = nil
 end
 
@@ -573,6 +582,41 @@ function ColourPicker:Open()
     self.previewButton.root:Unsubscribe(ui.Hook.ONCLICK)
     self.previewButton.root:Unsubscribe(ui.Hook.ONRELEASE)
     self.previewButton.root.clickthrough = true
+
+    picker:AddText({
+        text = "Hex code",
+        absolute = true,
+        x = HEX_X,
+        y = PREVIEW_Y + pickerYOffset,
+        width = 100,
+        height = 24,
+    })
+
+    self.hexField = picker:AddTextField({
+        absolute = true,
+        x = HEX_X,
+        y = HEX_Y + pickerYOffset,
+        width = 100,
+        height = 30,
+        maxLength = self.alphaSlider and 9 or 7,
+        placeholder = self.alphaSlider and "#RRGGBBAA" or "#RRGGBB",
+        onChange = function(_, _, content)
+            local hex = content:match("^#?(%x+)$")
+            local colour = hex and tonumber(hex, 16)
+            if colour then
+                if #hex == 6 then
+                    colour = colour * 0x100 + self.pendingAlpha
+                elseif #hex ~= 8 or not self.alphaSlider then
+                    colour = nil
+                end
+            end
+            self.acceptButton:SetDisabled(colour == nil)
+            if colour then self:_SetPendingColour(colour, false) end
+        end,
+        onSubmit = function()
+            if not self.acceptButton.disabled then self:_UpdatePickerVisuals(false) end
+        end,
+    })
 
     self.fieldHit = ui.Layer.new(picker.content)
     self.fieldHit:SetPos(FIELD_X, FIELD_Y)
