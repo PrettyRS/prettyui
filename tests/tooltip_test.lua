@@ -93,15 +93,16 @@ target.clickthrough = true
 
 local tooltip = Tooltip.attach(target, parent, "Hi")
 expect(tooltip.width, 26, "initial text is measured")
-expect(tooltip.root.hidden, true, "tooltip starts hidden")
+expect(tooltip.root, nil, "tooltip builds nothing until shown")
 
 expect(tooltip:SetText("A longer tooltip"), true, "tooltip text can be updated")
-expect(tooltip.label.content, "A longer tooltip", "the label content is updated")
 expect(tooltip.width, 96, "updated text is remeasured")
-expect(tooltip.root.width, 96, "the tooltip root is resized")
-expect(tooltip.root.hidden, true, "updating a hidden tooltip keeps it hidden")
+expect(tooltip.root, nil, "updating a hidden tooltip keeps it unbuilt")
 
 tooltip:Show()
+expect(tooltip.label.content, "A longer tooltip", "the label is built with the latest text")
+expect(tooltip.root.width, 96, "the tooltip root is built at the latest size")
+expect(tooltip.root.hidden, false, "showing builds a visible tooltip")
 expect(tooltip.root.x, 66, "tooltip uses the target placement")
 local frontCount = tooltip.root.frontCount
 expect(tooltip:SetText("Small"), true, "a visible tooltip can be updated")
@@ -109,8 +110,28 @@ expect(tooltip.width, 41, "a visible tooltip is remeasured")
 expect(tooltip.root.x, 66, "a visible tooltip is repositioned")
 expect(tooltip.root.frontCount, frontCount + 1, "a visible tooltip remains in front")
 
+local shownRoot = tooltip.root
+tooltip:Hide()
+expect(shownRoot.destroyed, true, "hiding releases the tooltip components")
+expect(tooltip.root, nil, "hiding drops the released root")
+expect(tooltip:SetText("Rebuilt"), true, "a released tooltip can still be updated")
+tooltip:Show()
+expect(tooltip.label.content, "Rebuilt", "showing again rebuilds with the latest text")
+
 tooltip:Destroy()
 expect(tooltip:SetText("Ignored"), false, "destroyed tooltips reject updates")
+tooltip:Show()
+expect(tooltip.root, nil, "destroyed tooltips cannot be rebuilt")
+
+local eagerTooltip = Tooltip.attach(component(), parent, "Eager", { eager = true, onMouseLeave = function() end })
+expect(eagerTooltip.root.hidden, true, "eager tooltips are built up front and hidden")
+local eagerRoot = eagerTooltip.root
+eagerTooltip:Show()
+eagerTooltip:Hide()
+expect(eagerTooltip.root, eagerRoot, "tooltips with their own leave handling stay built")
+expect(eagerRoot.hidden, true, "tooltips that stay built still hide")
+eagerTooltip:Destroy()
+expect(eagerRoot.destroyed, true, "destroying releases a tooltip that stayed built")
 
 local owner = {}
 local boundTarget = component()
@@ -121,10 +142,10 @@ Tooltip.bind(owner, boundTarget, parent, nil)
 expect(owner.tooltip, nil, "bindings can start without a tooltip")
 expect(Tooltip.set(owner, "Added later"), true, "bindings add tooltips dynamically")
 local firstAttachment = owner.tooltip
-expect(firstAttachment.label.content, "Added later", "a dynamically added tooltip has the requested text")
+expect(firstAttachment.options.text, "Added later", "a dynamically added tooltip has the requested text")
 expect(Tooltip.set(owner, "Updated in place"), true, "plain text updates an existing attachment")
 expect(owner.tooltip, firstAttachment, "plain text preserves the attachment")
-expect(firstAttachment.label.content, "Updated in place", "plain text updates its label")
+expect(firstAttachment.options.text, "Updated in place", "plain text updates its text")
 expect(Tooltip.set(owner, { text = "Replacement", width = 140 }), true, "options replace an attachment")
 expect(owner.tooltip == firstAttachment, false, "options create a fresh attachment")
 expect(firstAttachment.root, nil, "the replaced attachment is destroyed")
@@ -156,10 +177,11 @@ local textOriginY, scrollY = 100, 20
 Tooltip.registerContext(textContent, parent, function(label)
     return label.x + 180, label.y + textOriginY - scrollY
 end)
+local childCount = #parent.children
 local label = textOwner:AddText({ text = "Hover me", width = 400, tooltip = "Text details" })
-local textOverlay = parent.children[#parent.children]
-expect(textOverlay.hidden, true, "text tooltip starts hidden")
+expect(#parent.children, childCount, "text tooltip builds nothing until hovered")
 dispatchMouse(label, ui.Hook.ONMOUSEOVER, 12, 4)
+local textOverlay = parent.children[#parent.children]
 expect(textOverlay.hidden, false, "hovering flow text shows its tooltip")
 local cursorX = label.x + 180 + 12
 local cursorY = label.y + textOriginY - scrollY + 4
@@ -184,11 +206,14 @@ expect(textOverlay.x >= 0 and textOverlay.x + textOverlay.width <= parent.width
     and textOverlay.y >= 0 and textOverlay.y + textOverlay.height <= parent.height, true,
     "cursor-aligned tooltip stays inside the overlay parent")
 Tooltip.hideContextTooltips(textContent)
+expect(textOverlay.destroyed, true, "hiding the context releases its tooltip")
+childCount = #parent.children
 dispatchMouse(label, ui.Hook.ONMOUSEREPEAT, 12, 8)
-expect(textOverlay.hidden, true, "mouse repeat does not reopen a hidden context tooltip")
+expect(#parent.children, childCount, "mouse repeat does not reopen a hidden context tooltip")
 dispatchMouse(label, ui.Hook.ONMOUSEOVER, 12, 8)
+textOverlay = parent.children[#parent.children]
 dispatchMouse(label, ui.Hook.ONMOUSELEAVE)
-expect(textOverlay.hidden, true, "leaving flow text hides its tooltip")
+expect(textOverlay.destroyed, true, "leaving flow text releases its tooltip")
 
 local plainLabel = Text.new(textContent, { text = "Plain text" })
 local plainHover = false
@@ -199,12 +224,13 @@ local fixedLabel = Text.new(textContent, {
     text = "Fixed tooltip",
     tooltip = { text = "Explicit placement", x = 42, y = 48 },
 })
-local fixedOverlay = parent.children[#parent.children]
 dispatchMouse(fixedLabel, ui.Hook.ONMOUSEOVER, 100, 10)
+local fixedOverlay = parent.children[#parent.children]
 dispatchMouse(fixedLabel, ui.Hook.ONMOUSEREPEAT, 150, 15)
 expect(fixedOverlay.x, 42, "explicit tooltip x overrides cursor placement")
 expect(fixedOverlay.y, 48, "explicit tooltip y overrides cursor placement")
 dispatchMouse(label, ui.Hook.ONMOUSEOVER, 12, 8)
+textOverlay = parent.children[#parent.children]
 Tooltip.unregisterContext(textContent)
 expect(textOverlay.destroyed, true, "destroying the text context removes its visible tooltip")
 
@@ -232,8 +258,8 @@ local childTooltip = Tooltip.attach(childTarget, childCollection, "Child")
 childTooltip:Show()
 
 Tooltip.hideContextTooltips(contextCollection)
-expect(contextTooltip.root.hidden, true, "context tooltip hides with its window")
-expect(childTooltip.root.hidden, true, "nested panel tooltip hides with its window")
+expect(contextTooltip.root, nil, "context tooltip hides with its window")
+expect(childTooltip.root, nil, "nested panel tooltip hides with its window")
 local deadOwner = {}
 local deadTarget = component()
 Tooltip.bind(deadOwner, deadTarget, parent, "Logout")
@@ -254,6 +280,7 @@ Tooltip.unbind(deadOwner)
 local overlayParent = component()
 local separateTarget = component({ interfaceID = 2, children = {} })
 local separateTooltip = Tooltip.attach(separateTarget, overlayParent, "Separate interface")
+separateTooltip:Show()
 local survivingRoot = separateTooltip.root
 Interfaces.unload(2)
 separateTooltip:Show()

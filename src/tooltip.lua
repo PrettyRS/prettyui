@@ -184,11 +184,74 @@ function Tooltip.unbind(owner, field)
     return true
 end
 
+local function build(self)
+    self.root = ui.Layer.new(self.parent)
+    self.root:SetSize(self.width, self.height)
+    self.root.hidden = true
+    self.root.clickthrough = true
+
+    local frame = Sprites.CONTENT_FRAME
+
+    local centre = sprite(self.root, frame.centre)
+    centre:SetPos(BORDER_SIZE, BORDER_SIZE)
+    centre:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
+    centre.isTiling = true
+
+    local top = sprite(self.root, frame.top)
+    top:SetPos(BORDER_SIZE, 0)
+    top:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
+    top.isTiling = true
+
+    local bottom = sprite(self.root, frame.bottom)
+    bottom:SetPos(BORDER_SIZE, -BORDER_SIZE, 0, 1.0)
+    bottom:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
+    bottom.isTiling = true
+
+    local right = sprite(self.root, frame.right)
+    right:SetPos(-BORDER_SIZE, BORDER_SIZE, 1.0)
+    right:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
+    right.isTiling = true
+
+    local left = sprite(self.root, frame.left)
+    left:SetPos(0, BORDER_SIZE)
+    left:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
+    left.isTiling = true
+
+    local topRight = sprite(self.root, frame.topRight)
+    topRight:SetPos(-BORDER_SIZE, 0, 1.0)
+    topRight:SetSize(BORDER_SIZE, BORDER_SIZE)
+
+    local topLeft = sprite(self.root, frame.topLeft)
+    topLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
+
+    local bottomRight = sprite(self.root, frame.bottomRight)
+    bottomRight:SetPos(-BORDER_SIZE, -BORDER_SIZE, 1.0, 1.0)
+    bottomRight:SetSize(BORDER_SIZE, BORDER_SIZE)
+
+    local bottomLeft = sprite(self.root, frame.bottomLeft)
+    bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
+    bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
+
+    self.label = ui.Text.new(self.root)
+    self.label:SetPos(PADDING_X, PADDING_Y)
+    self.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
+    self.label.content = tostring(self.options.text or "")
+    self.label.font = id.Font.MUSEO_SANS_15PT_REGULAR
+    self.label.rgba = TEXT_COLOUR
+    self.label.maxLines = 0
+    self.label.clickthrough = true
+end
+
+local function release(self)
+    if self.root == nil then return end
+    if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
+    self.root, self.label = nil, nil
+end
+
 function Tooltip.attach(target, parent, value, hoverHandlers)
     if value == nil then return nil end
     local options = normalize(value)
-    local text = tostring(options.text or "")
-    local width, height = measure(text, options)
+    local width, height = measure(tostring(options.text or ""), options)
 
     local self = setmetatable({}, Tooltip)
     self.target = target
@@ -202,61 +265,9 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
     self.parent = options.parent or (self.context and self.context.parent) or parent
     self.interfaceID = self.parent.interfaceID
 
-    self.root = ui.Layer.new(self.parent)
-    self.root:SetSize(width, height)
-    self.root.hidden = true
-    self.root.clickthrough = true
-
-    local frame = Sprites.CONTENT_FRAME
-
-    self.centre = sprite(self.root, frame.centre)
-    self.centre:SetPos(BORDER_SIZE, BORDER_SIZE)
-    self.centre:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
-    self.centre.isTiling = true
-
-    self.top = sprite(self.root, frame.top)
-    self.top:SetPos(BORDER_SIZE, 0)
-    self.top:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
-    self.top.isTiling = true
-
-    self.bottom = sprite(self.root, frame.bottom)
-    self.bottom:SetPos(BORDER_SIZE, -BORDER_SIZE, 0, 1.0)
-    self.bottom:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
-    self.bottom.isTiling = true
-
-    self.right = sprite(self.root, frame.right)
-    self.right:SetPos(-BORDER_SIZE, BORDER_SIZE, 1.0)
-    self.right:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
-    self.right.isTiling = true
-
-    self.left = sprite(self.root, frame.left)
-    self.left:SetPos(0, BORDER_SIZE)
-    self.left:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
-    self.left.isTiling = true
-
-    self.topRight = sprite(self.root, frame.topRight)
-    self.topRight:SetPos(-BORDER_SIZE, 0, 1.0)
-    self.topRight:SetSize(BORDER_SIZE, BORDER_SIZE)
-
-    self.topLeft = sprite(self.root, frame.topLeft)
-    self.topLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
-
-    self.bottomRight = sprite(self.root, frame.bottomRight)
-    self.bottomRight:SetPos(-BORDER_SIZE, -BORDER_SIZE, 1.0, 1.0)
-    self.bottomRight:SetSize(BORDER_SIZE, BORDER_SIZE)
-
-    self.bottomLeft = sprite(self.root, frame.bottomLeft)
-    self.bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
-    self.bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
-
-    self.label = ui.Text.new(self.root)
-    self.label:SetPos(PADDING_X, PADDING_Y)
-    self.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
-    self.label.content = text
-    self.label.font = id.Font.MUSEO_SANS_15PT_REGULAR
-    self.label.rgba = TEXT_COLOUR
-    self.label.maxLines = 0
-    self.label.clickthrough = true
+    -- callers with their own leave handling reuse one tooltip across hovers so only the rest release on hide
+    self.keepBuilt = hoverHandlers ~= nil and hoverHandlers.onMouseLeave ~= nil
+    if hoverHandlers and hoverHandlers.eager then build(self) end
 
     target.clickthrough = false
 
@@ -295,9 +306,10 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
 end
 
 function Tooltip:Show()
-    if self.root == nil or self.target == nil
+    if self.target == nil
         or ui.Interfaces:GetInterface(self.interfaceID) == nil
         or ui.Interfaces:GetInterface(self.targetInterfaceID) == nil then return end
+    if self.root == nil then build(self) end
     local targetX = self.target.x or 0
     local targetY = self.target.y or 0
     if self.context and self.context.active then
@@ -340,12 +352,13 @@ function Tooltip:Show()
 end
 
 function Tooltip:SetText(text)
-    if self.root == nil or self.label == nil
+    if self.target == nil
         or ui.Interfaces:GetInterface(self.interfaceID) == nil then return false end
 
     text = tostring(text or "")
     self.options.text = text
     self.width, self.height = measure(text, self.options)
+    if self.root == nil then return true end
     self.root:SetSize(self.width, self.height)
     self.label.content = text
 
@@ -355,7 +368,9 @@ end
 
 function Tooltip:Hide()
     self.cursorX, self.cursorY = nil, nil
-    if self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
+    if not self.keepBuilt then
+        release(self)
+    elseif self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
         self.root.hidden = true
     end
 end
@@ -368,10 +383,7 @@ function Tooltip:Destroy()
         self.target.clickthrough = self.targetClickthrough
     end
     self.target = nil
-    if self.root then
-        if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
-        self.root = nil
-    end
+    release(self)
     self.parent = nil
     if self.context then
         local attachments = self.context.tooltips

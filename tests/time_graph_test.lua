@@ -126,7 +126,7 @@ assert(not graph.tooltip.root.hidden, 'icon exposes its label and totals on hove
 assert(not graph.tooltip.label.content:find("[%z\1-\31]"), 'header tooltip has no unsupported control characters')
 assert(graph.tooltip.root.x >= graph.root.x + graph.header.x, 'header tooltip includes graph position')
 graph:SetVisible(false)
-expect(graph.tooltip.root.hidden, true, 'hiding graph also hides its tooltip')
+expect(graph.tooltip.root, nil, 'hiding graph also releases its tooltip')
 expect(graph.bucketTooltip.root.hidden, true, 'hiding graph also hides bucket tooltip')
 graph:SetVisible(true)
 graph.root:Emit(ui.Hook.ONSCROLLWHEEL, 1)
