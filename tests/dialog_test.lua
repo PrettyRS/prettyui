@@ -65,7 +65,11 @@ local function fakeWindow(parent, options)
         self.texts[#self.texts + 1] = text
     end
     function window:AddFancyButton(label, action, opts)
-        local button = { label = label, action = action, opts = opts or {} }
+        opts = opts or {}
+        local button = { label = label, action = action, opts = opts, disabled = opts.disabled == true }
+        function button:SetDisabled(disabled)
+            self.disabled = disabled == true
+        end
         self.buttons[#self.buttons + 1] = button
         return button
     end
@@ -234,6 +238,42 @@ expect(Dialog.depth(parent), 1, "parent stack isolated")
 expect(Dialog.depth(other), 1, "other stack isolated")
 Dialog.dismissAll(other)
 expect(Dialog.depth(parent), 1, "dismissAll other leaves parent")
+Dialog.dismissAll(parent)
+
+resetHost()
+Dialog.dismissAll(parent)
+local save = { label = "Save", disabled = true, onClick = function() return true end }
+dialog = Dialog.new(parent, { actions = { save } })
+expect(save.button, nil, "action has no button field")
+expect(save.setDisabled, nil, "action has no setDisabled field")
+local saveButton = button(dialog.window, "Save")
+expectTrue(saveButton.disabled, "starts disabled")
+saveButton.action()
+expect(Dialog.depth(parent), 1, "disabled click stays")
+dialog:SetActionDisabled(save, false)
+expectFalse(saveButton.disabled, "SetActionDisabled(false) enables the button")
+expectTrue(save.disabled, "SetActionDisabled does not write action.disabled")
+saveButton.action()
+expect(Dialog.depth(parent), 0, "enabled click pops")
+
+resetHost()
+Dialog.dismissAll(parent)
+local go = { label = "Go", onClick = function() return true end }
+dialog = Dialog.new(parent, { actions = { go } })
+local goButton = button(dialog.window, "Go")
+dialog:SetActionDisabled(go, true)
+expectTrue(goButton.disabled, "SetActionDisabled(true) disables the button")
+goButton.action()
+expect(Dialog.depth(parent), 1, "disabled after enable does not pop")
+Dialog.dismissAll(parent)
+
+resetHost()
+Dialog.dismissAll(parent)
+dialog = Dialog.new(parent, { actions = { { label = "Close" } } })
+local unknownFailed = pcall(function()
+    dialog:SetActionDisabled({ label = "Nope" }, true)
+end)
+expectFalse(unknownFailed, "unknown action raises")
 Dialog.dismissAll(parent)
 
 print("dialog_test: ok")
