@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Data = require("src/core/chart_data")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
@@ -18,7 +19,7 @@ local function dimension(value, fallback)
 end
 
 local function rectangle(parent, rgba)
-    local component = ui.Rectangle.new(parent)
+    local component = Components.new(ui.Rectangle, parent)
     component.fill = true
     component.rgba = rgba
     component.clickthrough = true
@@ -26,7 +27,7 @@ local function rectangle(parent, rgba)
 end
 
 local function label(parent, alignment)
-    local component = ui.Text.new(parent)
+    local component = Components.new(ui.Text, parent)
     component.font = id.Font.MUSEO_SANS_15PT_REGULAR
     component.rgba = TEXT_RGBA
     component.isShadowed = true
@@ -88,7 +89,7 @@ function Renderer.init(self, parent, options)
     self.widthAnchor, self.heightAnchor = options.widthAnchor or 0, options.heightAnchor or 0
     self.bars, self.edges = {}, {}
     self.dirty = true
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.interfaceID = self.root.interfaceID
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height, self.widthAnchor, self.heightAnchor)
@@ -103,10 +104,10 @@ function Renderer.init(self, parent, options)
     self.title.font = id.Font.CINZEL_13PT_BOLD
     self.title.rgba = GOLD_RGBA
     self.title.content = nativeText(self.label)
-    self.body = ui.Layer.new(self.root)
+    self.body = Components.new(ui.Layer, self.root)
     self.body.clickthrough = false
     Wheel.bind(self.body, options)
-    self.plot = ui.Layer.new(self.body)
+    self.plot = Components.new(ui.Layer, self.body)
     self.plot.clickthrough = false
     Wheel.bind(self.plot, options)
     self.plotBackground = rectangle(self.plot, 0x24211EFF)

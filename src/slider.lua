@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local clamp = require("src/core/math").clamp
 local Cursor = require("src/core/cursor")
 local Sprites = require("src/core/sprites")
@@ -20,14 +21,14 @@ local DEFAULT_WIDTH = 220
 local HEIGHT = 23
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
 end
 
 local function interactiveSprite(parent)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.clickthrough = false
     return component
 end
@@ -64,7 +65,7 @@ function Slider.new(parent, options)
     self.dragStart = nil
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(options.width or requestedWidth, HEIGHT, options.widthAnchor or 0)
     self.root.clickthrough = false
@@ -78,7 +79,7 @@ function Slider.new(parent, options)
     Wheel.bind(self.decrease, options)
     Wheel.bind(self.increase, options)
 
-    self.track = ui.Layer.new(self.root)
+    self.track = Components.new(ui.Layer, self.root)
     self.track:SetPos(BUTTON_SIZE + self.buttonGap, 0)
     self.track:SetSize(-(BUTTON_SIZE + self.buttonGap) * 2, HEIGHT, 1.0)
     self.track.clickthrough = false
@@ -114,7 +115,7 @@ function Slider.new(parent, options)
     self.thumb:SetPos(0, math.floor((HEIGHT - THUMB_HEIGHT) / 2))
     self.thumb:SetSize(THUMB_WIDTH, THUMB_HEIGHT)
 
-    self.thumbDrag = ui.Layer.new(self.parent)
+    self.thumbDrag = Components.new(ui.Layer, self.parent)
     self.thumbDrag.clickthrough = false
     self.thumbDrag:MoveToFront()
     Wheel.bind(self.thumbDrag, options)

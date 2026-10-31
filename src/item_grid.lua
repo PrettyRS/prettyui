@@ -3,6 +3,7 @@ local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
+local Components = require("src/core/components")
 
 local ItemGrid = {}
 ItemGrid.__index = ItemGrid
@@ -170,7 +171,7 @@ end
 function ItemGrid:_CreateDragCapture()
     if self.dragSourceIndex == nil or self.dragCapture then return false end
 
-    self.dragCapture = ui.Button.new(self.overlayParent)
+    self.dragCapture = Components.new(ui.Button, self.overlayParent)
     self.dragCapture:SetSize(0, 0, 1.0, 1.0)
     self.dragCapture.clickthrough = false
     self.dragCapture.alpha = 0
@@ -201,7 +202,7 @@ function ItemGrid:_BeginDrag(index)
     if slot.tooltip then slot.tooltip:Hide() end
 
     if self.dragSprite == nil then
-        self.dragSprite = ui.Sprite.new(self.overlayParent)
+        self.dragSprite = Components.new(ui.Sprite, self.overlayParent)
         self.dragSprite.clickthrough = true
     end
     local width = slot.item.width or (SLOT_SIZE - slot.itemInset * 2)
@@ -267,7 +268,7 @@ function ItemGrid.new(parent, objects, options)
     self.entries = {}
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

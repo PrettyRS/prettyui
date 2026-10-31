@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Cursor = require("src/core/cursor")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
@@ -84,7 +85,7 @@ function SelectionButton.getSize(choices, options)
     return width, choicesInline and ROW_HEIGHT or #choices * ROW_HEIGHT
 end
 
-function SelectionButton.new(kind, parent, choices, options)
+local function buildSelectionButton(kind, parent, choices, options)
     options = options or {}
     local items = normalizeChoices(choices)
     local choicesInline = options.inline == true
@@ -123,7 +124,7 @@ function SelectionButton.new(kind, parent, choices, options)
     end
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height, options.widthAnchor or 0, 0)
     self.root.clickthrough = false
@@ -140,7 +141,7 @@ function SelectionButton.new(kind, parent, choices, options)
 
     local nextX = 0
     for index, item in ipairs(items) do
-        local row = ui.Layer.new(self.root)
+        local row = Components.new(ui.Layer, self.root)
         if choicesInline then
             local rowWidth = measureChoiceWidth(item)
             row:SetPos(nextX, 0)
@@ -154,12 +155,12 @@ function SelectionButton.new(kind, parent, choices, options)
         item.hovered = false
         Wheel.bind(row, options)
 
-        item.box = ui.Sprite.new(row)
+        item.box = Components.new(ui.Sprite, row)
         item.box:SetPos(0, math.floor((ROW_HEIGHT - BOX_SIZE) / 2))
         item.box:SetSize(BOX_SIZE, BOX_SIZE)
         item.box.clickthrough = true
 
-        item.label = ui.Text.new(row)
+        item.label = Components.new(ui.Text, row)
         item.label:SetPos(LABEL_X, 0)
         item.label:SetSize(-LABEL_X, ROW_HEIGHT, 1.0)
         item.label.content = item.text
@@ -199,6 +200,12 @@ function SelectionButton.new(kind, parent, choices, options)
 
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
+end
+
+function SelectionButton.new(kind, parent, choices, options)
+    return Components.withBatch(parent, function()
+        return buildSelectionButton(kind, parent, choices, options)
+    end)
 end
 
 function SelectionButton:_RebuildSelectedValues()

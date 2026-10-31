@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local RowBackgrounds = {}
 local BACKGROUND_PADDING = 4
 
@@ -113,7 +114,7 @@ function RowBackgrounds.apply(content, viewportHeight, owner, colours, edgeToEdg
                 width = width + BACKGROUND_PADDING * 2
             end
             colourIndex = colourIndex + 1
-            local background = ui.Rectangle.new(content)
+            local background = Components.new(ui.Rectangle, content)
             background:SetPos(left, top)
             background:SetSize(width, math.max(0, bottom - top), 1.0, 0)
             background.fill = true

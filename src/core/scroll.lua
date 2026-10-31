@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local clamp = require("src/core/math").clamp
 local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
@@ -46,7 +47,7 @@ local function inputIsClipped(controller, root)
 end
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = false
     return component
@@ -64,7 +65,7 @@ function Scroll.findOwnerWindow(context)
     return findOwnerWindow(context)
 end
 
-function Scroll.new(parent, options)
+local function buildScroll(parent, options)
     options = options or {}
 
     local self = setmetatable({}, Scroll)
@@ -85,7 +86,7 @@ function Scroll.new(parent, options)
     self.clipTargets = {}
     self.childScrolls = {}
 
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.interfaceID = self.root.interfaceID
     self.root:SetPos(
         options.x or 0,
@@ -101,11 +102,11 @@ function Scroll.new(parent, options)
     )
     self.root.clickthrough = self.clickthrough
 
-    self.viewport = ui.Layer.new(self.root)
+    self.viewport = Components.new(ui.Layer, self.root)
     self.viewport.clickthrough = self.clickthrough
     self.viewport.enabled = not self.clickthrough
 
-    self.content = ui.Layer.new(self.viewport)
+    self.content = Components.new(ui.Layer, self.viewport)
     self.content.clickthrough = self.clickthrough
     self.content.enabled = not self.clickthrough
 
@@ -143,7 +144,7 @@ function Scroll.new(parent, options)
         return false
     end)
 
-    self.track = ui.Layer.new(self.root)
+    self.track = Components.new(ui.Layer, self.root)
     self.track.clickthrough = self.clickthrough
     self.track.enabled = not self.clickthrough
     self.track:SetPos(-BAR_WIDTH, ARROW_SIZE, 1.0)
@@ -157,7 +158,7 @@ function Scroll.new(parent, options)
     self.trackBottom:SetPos(0, -END_SIZE, 0, 1.0)
     self.trackBottom:SetSize(BAR_WIDTH, END_SIZE)
 
-    self.thumb = ui.Layer.new(self.track)
+    self.thumb = Components.new(ui.Layer, self.track)
     self.thumb.clickthrough = true
     self.thumbTop = sprite(self.thumb, Sprites.SCROLL_THUMB_TOP)
     self.thumbTop.clickthrough = true
@@ -171,7 +172,7 @@ function Scroll.new(parent, options)
     self.thumbBottom:SetPos(0, -END_SIZE, 0, 1.0)
     self.thumbBottom:SetSize(BAR_WIDTH, END_SIZE)
 
-    self.thumbDrag = ui.Layer.new(self.overlayParent)
+    self.thumbDrag = Components.new(ui.Layer, self.overlayParent)
     self.thumbDrag.clickthrough = self.clickthrough
     self.thumbDrag.enabled = not self.clickthrough
     self.thumbDrag:MoveToFront()
@@ -225,6 +226,12 @@ function Scroll.new(parent, options)
 
     self:Refresh()
     return self
+end
+
+function Scroll.new(parent, options)
+    return Components.withBatch(parent, function()
+        return buildScroll(parent, options)
+    end)
 end
 
 local function syncOwner(owner, controller)

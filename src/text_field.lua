@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Palette = require("src/core/control_palette")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
@@ -31,7 +32,7 @@ function TextField.new(parent, options)
     self._scrollController = options._scrollController
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.InputField.new(parent)
+    self.root = Components.new(ui.InputField, parent)
     self.root.stylesheetID = options.stylesheetID or id.StyleSheet.INPUT_DEFAULT
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(

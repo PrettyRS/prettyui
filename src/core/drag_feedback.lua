@@ -1,10 +1,11 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 
 local DragFeedback = {}
 DragFeedback.__index = DragFeedback
 
 local function sprite(parent, spriteID, tiled, flipped)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     component.isTiling = tiled == true
@@ -34,7 +35,7 @@ local function layout(frame, parts, width, height, size)
 end
 
 local function createFrame(parent, root, sprites, size)
-    local frame = ui.Layer.new(parent)
+    local frame = Components.new(ui.Layer, parent)
     frame.clickthrough = true
     frame:SetPos(root.x, root.y)
     local parts = {

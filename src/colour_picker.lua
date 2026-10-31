@@ -5,6 +5,7 @@ local InterfaceMouse = require("src/core/mouse")
 local SimpleButton = require("src/simple_button")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
+local Components = require("src/core/components")
 
 local ColourPicker = {}
 ColourPicker.__index = ColourPicker
@@ -103,7 +104,7 @@ local function hsvColour(hue, saturation, value, alpha)
 end
 
 local function rectangle(parent, x, y, width, height, colour, fill)
-    local component = ui.Rectangle.new(parent)
+    local component = Components.new(ui.Rectangle, parent)
     component:SetPos(x, y)
     component:SetSize(width, height)
     component.fill = fill ~= false
@@ -482,25 +483,25 @@ function ColourPicker:Open()
     })
     self.pickerWindow = picker
 
-    self.fieldCanvas = ui.Canvas.new(picker.content)
+    self.fieldCanvas = Components.new(ui.Canvas, picker.content)
     self.fieldCanvas:SetPos(FIELD_X, FIELD_Y)
     self.fieldCanvas:SetSize(FIELD_SIZE, FIELD_SIZE)
     self.fieldCanvas.clickthrough = true
 
-    self.hueCanvas = ui.Canvas.new(picker.content)
+    self.hueCanvas = Components.new(ui.Canvas, picker.content)
     self.hueCanvas:SetPos(HUE_X, HUE_Y)
     self.hueCanvas:SetSize(HUE_WIDTH, FIELD_SIZE)
     self.hueCanvas.clickthrough = true
     self:_DrawHueSpectrum()
 
     if self.alphaSlider then
-        self.alphaCheckerCanvas = ui.Canvas.new(picker.content)
+        self.alphaCheckerCanvas = Components.new(ui.Canvas, picker.content)
         self.alphaCheckerCanvas:SetPos(ALPHA_X, ALPHA_Y)
         self.alphaCheckerCanvas:SetSize(ALPHA_WIDTH, ALPHA_HEIGHT)
         self.alphaCheckerCanvas.clickthrough = true
         self:_DrawAlphaCheckerboard()
 
-        self.alphaCanvas = ui.Canvas.new(picker.content)
+        self.alphaCanvas = Components.new(ui.Canvas, picker.content)
         self.alphaCanvas:SetPos(ALPHA_X, ALPHA_Y)
         self.alphaCanvas:SetSize(ALPHA_WIDTH, ALPHA_HEIGHT)
         self.alphaCanvas.clickthrough = true
@@ -574,16 +575,16 @@ function ColourPicker:Open()
     self.previewButton.root:Unsubscribe(ui.Hook.ONRELEASE)
     self.previewButton.root.clickthrough = true
 
-    self.fieldHit = ui.Layer.new(picker.content)
+    self.fieldHit = Components.new(ui.Layer, picker.content)
     self.fieldHit:SetPos(FIELD_X, FIELD_Y)
     self.fieldHit:SetSize(FIELD_SIZE, FIELD_SIZE)
     self.fieldHit.clickthrough = false
-    self.hueHit = ui.Layer.new(picker.content)
+    self.hueHit = Components.new(ui.Layer, picker.content)
     self.hueHit:SetPos(HUE_X, HUE_Y)
     self.hueHit:SetSize(HUE_WIDTH, FIELD_SIZE)
     self.hueHit.clickthrough = false
     if self.alphaSlider then
-        self.alphaHit = ui.Layer.new(picker.content)
+        self.alphaHit = Components.new(ui.Layer, picker.content)
         self.alphaHit:SetPos(ALPHA_X, ALPHA_Y)
         self.alphaHit:SetSize(ALPHA_WIDTH, ALPHA_HEIGHT)
         self.alphaHit.clickthrough = false

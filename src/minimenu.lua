@@ -1,6 +1,7 @@
 local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
+local Components = require("src/core/components")
 
 local PrettyMiniMenu = {}
 
@@ -33,7 +34,7 @@ local parentsByEntry = {}
 local parentsByText = {}
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -76,7 +77,7 @@ end
 
 local function frame(root, width, height)
     local sprites = Sprites.MINIMENU
-    local background = ui.Rectangle.new(root)
+    local background = Components.new(ui.Rectangle, root)
     background:SetPos(BORDER_SIZE, TITLEBAR_HEIGHT)
     background:SetSize(width - BORDER_SIZE * 2, height - TITLEBAR_HEIGHT - BORDER_SIZE)
     background.fill = true
@@ -304,14 +305,14 @@ local function mountOverlay(menuOverlay, state)
     end
 
     menuOverlay.interfaceID = rootParent.interfaceID
-    local root = ui.Layer.new(rootParent)
+    local root = Components.new(ui.Layer, rootParent)
     menuOverlay.root = root
     root:SetPos(rootX, rootY)
     root:SetSize(width, height)
     root.clickthrough = true
     local frameEdges = frame(root, width, height)
 
-    local title = ui.Text.new(root)
+    local title = Components.new(ui.Text, root)
     title:SetPos(TEXT_INSET, 0)
     title:SetSize(width - TEXT_INSET * 2, TITLEBAR_HEIGHT)
     title.content = tostring(registration.title or "Choose Option")
@@ -324,19 +325,19 @@ local function mountOverlay(menuOverlay, state)
     title.clickthrough = true
 
     for rowIndex = 1, menuOverlay.visibleRows do
-        local rowRoot = ui.Layer.new(root)
+        local rowRoot = Components.new(ui.Layer, root)
         rowRoot:SetPos(0, HEADER_HEIGHT + (rowIndex - 1) * ITEM_HEIGHT)
         rowRoot:SetSize(width, ITEM_HEIGHT)
         rowRoot.clickthrough = false
 
-        local background = ui.Rectangle.new(rowRoot)
+        local background = Components.new(ui.Rectangle, rowRoot)
         background:SetSize(0, 0, 1.0, 1.0)
         background.fill = true
         background.rgba = HOVER_COLOUR
         background.hidden = true
         background.clickthrough = true
 
-        local label = ui.Text.new(rowRoot)
+        local label = Components.new(ui.Text, rowRoot)
         label:SetPos(TEXT_INSET, 0)
         label:SetSize(-TEXT_INSET * 2, ITEM_HEIGHT, 1.0)
         label.font = MENU_FONT

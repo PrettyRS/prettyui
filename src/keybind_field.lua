@@ -1,6 +1,7 @@
 local TextField = require("src/text_field")
 local Palette = require("src/core/control_palette")
 local Wheel = require("src/core/wheel")
+local Components = require("src/core/components")
 
 local KeybindField = {}
 KeybindField.__index = KeybindField
@@ -138,7 +139,7 @@ function KeybindField.new(parent, options)
     self.disabled = options.disabled == true
     self.textColour = options.colour or options.color or Palette.TEXT
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     local width, height = KeybindField.getSize(options)
     self.root:SetSize(width, height, options.widthAnchor or 0, options.heightAnchor or 0)
@@ -159,13 +160,13 @@ function KeybindField.new(parent, options)
     self.input.root.errorCaretRGBA = 0
     Wheel.bind(self.input.root, options)
 
-    self.focusOutline = ui.Rectangle.new(self.root)
+    self.focusOutline = Components.new(ui.Rectangle, self.root)
     self.focusOutline:SetSize(0, 0, 1, 1)
     self.focusOutline.fill = false
     self.focusOutline.outlineThickness = 1
     self.focusOutline.clickthrough = true
 
-    self.label = ui.Text.new(self.root)
+    self.label = Components.new(ui.Text, self.root)
     self.label:SetPos(CLEAR_SIZE + CLEAR_INSET, 0)
     self.label:SetSize(-2 * (CLEAR_SIZE + CLEAR_INSET), 0, 1, 1)
     self.label.font = options.font or id.Font.MUSEO_SANS_15PT_REGULAR
@@ -175,7 +176,7 @@ function KeybindField.new(parent, options)
     self.label.isShadowed = options.shadowed ~= false
     self.label.clickthrough = true
 
-    self.clearSprite = ui.Sprite.new(self.root)
+    self.clearSprite = Components.new(ui.Sprite, self.root)
     self.clearSprite:SetSize(CLEAR_SIZE, CLEAR_SIZE)
     self.clearSprite:SetPos(-CLEAR_INSET, 0, 1, 0.5, -1, -0.5)
     self.clearSprite.spriteID = id.Sprite.RS3_CONTEXTUAL_INPUT_ERROR

@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Tooltip = require("src/tooltip")
 local Layout = require("src/core/layout")
 local Wheel = require("src/core/wheel")
@@ -37,7 +38,7 @@ local function create(parent, options, isTitle)
     local widthAnchor = options.widthAnchor
     if widthAnchor == nil then widthAnchor = width <= 0 and 1.0 or 0 end
 
-    local label = ui.Text.new(parent)
+    local label = Components.new(ui.Text, parent)
     label:SetPos(
         options.x or 0,
         options.y or 0,

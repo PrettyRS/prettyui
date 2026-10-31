@@ -1,5 +1,6 @@
 local Window = require("src/window")
 local FancyButton = require("src/fancy_button")
+local Components = require("src/core/components")
 
 local Dialog = {}
 Dialog.__index = Dialog
@@ -60,24 +61,24 @@ local function ensureChrome(parent)
     local existing = chrome[parent]
     if existing ~= nil then return existing.dim, existing.blocker end
 
-    local dim = ui.Layer.new(parent)
+    local dim = Components.new(ui.Layer, parent)
     dim:SetPos(0, 0)
     dim:SetSize(0, 0, 1.0, 1.0)
     dim.clickthrough = false
 
-    local rect = ui.Rectangle.new(dim)
+    local rect = Components.new(ui.Rectangle, dim)
     rect.fill = true
     rect.clickthrough = false
     rect:SetPos(0, 0)
     rect:SetSize(0, 0, 1.0, 1.0)
     rect.colour = Vector4.new(0, 0, 0, DIM_ALPHA)
 
-    local blocker = ui.Layer.new(parent)
+    local blocker = Components.new(ui.Layer, parent)
     blocker:SetPos(0, 0)
     blocker:SetSize(0, 0, 1.0, 1.0)
     blocker.clickthrough = false
 
-    local hit = ui.Rectangle.new(blocker)
+    local hit = Components.new(ui.Rectangle, blocker)
     hit.fill = true
     hit.clickthrough = false
     hit:SetPos(0, 0)
