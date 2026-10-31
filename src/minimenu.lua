@@ -601,24 +601,32 @@ local function moveEntry(miniMenu, currentIndex, targetIndex)
     end
 end
 
+local function findEntry(entries, key)
+    local count = #entries
+    if textKey(entryText(entries[1])) == key then return entries[1], 1 end
+    if textKey(entryText(entries[count])) == key then return entries[count], count end
+    for index = 2, count - 1 do
+        if textKey(entryText(entries[index])) == key then return entries[index], index end
+    end
+end
+
+-- Read once before and after Add, and find the parent by text
 local function addParentEntry(miniMenu, label, action)
     local key = textKey(label)
     assert(parentsByText[key] == nil,
         "MiniMenu submenu labels must be unique within the current menu")
-    local existing = {}
-    for _, entry in ipairs(miniMenu.entries) do
+    local entries = miniMenu.entries
+    for _, entry in ipairs(entries) do
         assert(textKey(entryText(entry)) ~= key,
             "MiniMenu submenu label conflicts with an existing menu entry")
-        existing[entry] = true
     end
-    local previousCount = #miniMenu.entries
+    local entryCount = #entries + 1
     miniMenu:Add(label, action)
-    assert(#miniMenu.entries == previousCount + 1,
-        "MiniMenu:Add did not add the submenu parent entry")
-    for index, entry in ipairs(miniMenu.entries) do
-        if not existing[entry] then return entry, index end
-    end
-    error("MiniMenu:Add did not expose the submenu parent entry")
+    entries = miniMenu.entries
+    assert(#entries == entryCount, "MiniMenu:Add did not add the submenu parent entry")
+    local entry, index = findEntry(entries, key)
+    if entry == nil then error("MiniMenu:Add did not expose the submenu parent entry") end
+    return entry, index, entryCount
 end
 
 function PrettyMiniMenu.AddSubmenu(miniMenu, label, children, options)
@@ -643,14 +651,14 @@ function PrettyMiniMenu.AddSubmenu(miniMenu, label, children, options)
     validatePosition(options.position)
     local parentLabel = label
     if options.arrow ~= false then parentLabel = parentLabel .. " <col=ffffff><gt></col>" end
-    local entry, entryIndex = addParentEntry(
+    local entry, entryIndex, entryCount = addParentEntry(
         miniMenu,
         parentLabel,
         options.parentAction or NOOP)
     moveEntry(
         miniMenu,
         entryIndex,
-        targetEntryIndex(options.position, #miniMenu.entries))
+        targetEntryIndex(options.position, entryCount))
     local registration = {
         children = children,
         title = options.title,

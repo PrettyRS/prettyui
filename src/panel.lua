@@ -62,7 +62,7 @@ local function pollAltDrag()
     for panel in pairs(dragPanels) do
         if panel.dockBounds then panel.dockBounds:Refresh() end
         if panel.overlayBounds then panel.overlayBounds:Refresh() end
-        panel:_SetAltDragActive(active)
+        panel:_SetAltDragActive(active, true)
     end
 end
 
@@ -226,10 +226,10 @@ local function createDragLayer(parent, surface, panel)
         return panel:_MoveDrag(component, x, y)
     end)
     layer:Subscribe(ui.Hook.ONRELEASE, function()
-        return panel:_StopDrag()
+        return panel:_StopDrag(true)
     end)
     layer:Subscribe(ui.Hook.ONDRAGCOMPLETE, function()
-        return panel:_StopDrag()
+        return panel:_StopDrag(true)
     end)
     return layer
 end
@@ -372,6 +372,7 @@ function Panel.new(parent, options, flowManaged)
     self.popoutClickthrough = options.popoutClickthrough == true
     self.popoutBackgroundAlpha = clampAlpha(options.popoutBackgroundAlpha or options.backgroundAlpha)
     self.onPopoutChange = options.onPopoutChange
+    self.onPositionChange = options.onPositionChange
     self.rowBackgroundColours = options.rowBackgroundColours
         or options.rowBackgroundColors
         or {}
@@ -516,7 +517,7 @@ function Panel:_UpdateResizeEnabled()
     end
 end
 
-function Panel:_SetAltDragActive(active)
+function Panel:_SetAltDragActive(active, notify)
     local activeSurface
     if active == true then
         if self.poppedOut and self._canPopout then
@@ -529,7 +530,6 @@ function Panel:_SetAltDragActive(active)
         self:_UpdateResizeEnabled()
         return
     end
-    if self.dragState and self.dragState.surface ~= activeSurface then self:_StopDrag() end
     self.altDragSurface = activeSurface
 
     local function updateLayer(layer, surface)
@@ -550,7 +550,6 @@ function Panel:_SetAltDragActive(active)
     updateLayer(self.overlayDragLayer, self.overlay)
 
     if not activeSurface then
-        self:_StopDrag()
         if self.popoutButton and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil then
             self.popoutButton:MoveToFront()
         end
@@ -561,6 +560,9 @@ function Panel:_SetAltDragActive(active)
     self:_UpdateResizeEnabled()
     if self.dockResize then self.dockResize:Refresh() end
     if self.overlayResize then self.overlayResize:Refresh() end
+    if self.dragState and self.dragState.surface ~= activeSurface then
+        self:_StopDrag(notify)
+    end
 end
 
 function Panel:_BeginDrag(surface, component, x, y)
@@ -587,7 +589,7 @@ end
 
 function Panel:_MoveDrag(component, x, y)
     if not self.dragState then return false end
-    if not isAltDown() then return self:_StopDrag() end
+    if not isAltDown() then return self:_StopDrag(true) end
     local mouse = InterfaceMouse.GetPosition(component, x, y)
     if mouse then
         local drag = self.dragState
@@ -611,18 +613,20 @@ function Panel:_MoveDrag(component, x, y)
             drag.surface.root:SetPos(nextX, nextY)
             local bounds = drag.surface == self.overlay and self.overlayBounds or self.dockBounds
             bounds:RememberPosition()
+            drag.positionChanged = true
         end
         self.dragFeedback:Update()
     end
     return false
 end
 
-function Panel:_StopDrag()
+function Panel:_StopDrag(notify)
+    local drag = self.dragState
     if self.dragFeedback then
         self.dragFeedback:Destroy()
         self.dragFeedback = nil
     end
-    local surface = self.dragState and self.dragState.surface or nil
+    local surface = drag and drag.surface or nil
     local dragLayer = surface == self.overlay and self.overlayDragLayer or self.dockDragLayer
     InterfaceMouse.EndCapture(dragLayer)
     self.dragState = nil
@@ -632,6 +636,10 @@ function Panel:_StopDrag()
         dragLayer:SetSize(surface.root.width, surface.root.height)
     end
     self:_UpdateResizeEnabled()
+    if notify == true and drag and drag.positionChanged and self.onPositionChange and
+        surface.root and ui.Interfaces:GetInterface(surface.interfaceID) ~= nil then
+        self.onPositionChange(self, surface.root.x, surface.root.y, surface == self.overlay)
+    end
     return false
 end
 

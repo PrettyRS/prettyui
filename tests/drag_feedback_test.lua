@@ -562,8 +562,180 @@ liveWindow:Destroy()
 liveArea.width, liveArea.height = 400, 250
 tickPanels()
 
-local unloadWindow = Window.new(area, { title = "Unload" })
-local unloadPanel = Panel.new(area, { popout = true })
+-- Position callbacks commit a moved drag once, after capture/feedback cleanup.
+local function exercisePositionCallback(create, poppedOut)
+    local events = {}
+    local owner, root, target
+    local destroyOnChange = false
+    local function onPositionChange(component, x, y, overlay)
+        expect(component, owner, "position callback receives the PrettyUI owner")
+        expect(root.x, x, "callback observes the final horizontal position")
+        expect(root.y, y, "callback observes the final vertical position")
+        expect(owner.dragFeedback, nil, "drag feedback is removed before notifying")
+        expect(target.x, x, "drag hit area is restored before notifying")
+        expect(target.y, y, "vertical hit area is restored before notifying")
+        expect(overlay, poppedOut, "callback identifies the moved panel surface")
+        table.insert(events, { x = x, y = y })
+        if destroyOnChange then owner:Destroy() end
+    end
+    local callbackArea = component(nil, "callback-area")
+    callbackArea:SetSize(1000, 700)
+    local cleanup
+    owner, root, target, cleanup = create(callbackArea, onPositionChange)
+    local function begin()
+        setAlt(true)
+        fire(target, ui.Hook.ONCLICK, 12, 9)
+        fire(target, ui.Hook.ONHOLD, 12, 9)
+    end
+    expect(#events, 0, "construction does not emit position changes")
+    simpleClick(owner, root, target)
+    begin()
+    fire(target, ui.Hook.ONRELEASE)
+    fire(target, ui.Hook.ONDRAGCOMPLETE)
+    expect(#events, 0, "clicks and stationary drags do not notify")
+
+    begin()
+    fire(target, ui.Hook.ONHOLD, 49, 32)
+    fire(target, ui.Hook.ONHOLD, 89, 62)
+    fire(target, ui.Hook.ONHOLD, 89, 62)
+    expect(#events, 0, "movement does not notify while dragging")
+    fire(target, ui.Hook.ONRELEASE)
+    expect(#events, 1, "release commits one position change")
+    expect(events[1].x, 427, "callback reports final resolved x, not anchor offset")
+    expect(events[1].y, 303, "callback reports final resolved y, not anchor offset")
+    fire(target, ui.Hook.ONDRAGCOMPLETE)
+    expect(#events, 1, "drag completion after release does not notify twice")
+
+    begin()
+    local moveHook = poppedOut == nil and ui.Hook.ONHOLD or ui.Hook.ONDRAG
+    fire(target, moveHook, -10000, -10000)
+    fire(target, moveHook, -9999, -9999)
+    expect(#events, 1, "clamped movement does not notify while dragging")
+    fire(target, ui.Hook.ONDRAGCOMPLETE)
+    expect(#events, 2, "drag completion alone commits the position")
+    expect(events[2].x, 0, "callback reports clamped x")
+    expect(events[2].y, 0, "callback reports clamped y")
+    fire(target, ui.Hook.ONRELEASE)
+    expect(#events, 2, "release after drag completion does not notify twice")
+    begin()
+    fire(target, moveHook, -10000, -10000)
+    fire(target, ui.Hook.ONRELEASE)
+    expect(#events, 2, "a fully clamped drag does not notify")
+    callbackArea:SetSize(1200, 800)
+    owner:SetSize(320, 220)
+    expect(#events, 2, "automatic layout and size changes do not notify")
+
+    begin()
+    callbackArea:SetSize(1400, 900)
+    fire(target, ui.Hook.ONRELEASE)
+    expect(#events, 2, "parent resizing during an unmoved drag does not notify")
+    begin()
+    fire(target, ui.Hook.ONHOLD, 49, 32)
+    callbackArea:SetSize(1600, 1000)
+    expect(#events, 2, "parent resizing during a moved drag does not notify early")
+    local finalX, finalY = root.x, root.y
+    fire(target, ui.Hook.ONRELEASE)
+    expect(#events, 3, "a moved drag commits after parent resize")
+    expect(events[3].x, finalX, "completion reports resize-adjusted x")
+    expect(events[3].y, finalY, "completion reports resize-adjusted y")
+
+    if poppedOut ~= nil then
+        begin()
+        fire(target, moveHook, 49, 32)
+        setAlt(false)
+        expect(#events, 4, "Alt release commits a panel drag without a pointer event")
+        fire(target, ui.Hook.ONRELEASE)
+        fire(target, ui.Hook.ONDRAGCOMPLETE)
+        setAlt(false)
+        expect(#events, 4, "pointer completion and polling do not duplicate Alt release")
+        begin()
+        fire(target, moveHook, 49, 32)
+        altDown = false
+        fire(target, moveHook, 89, 62)
+        expect(#events, 5, "pointer-observed Alt release commits the drag")
+        setAlt(false)
+        expect(#events, 5, "polling after pointer-observed Alt release does not duplicate")
+    end
+
+    local beforeCancel = #events
+    begin()
+    fire(target, ui.Hook.ONHOLD, 49, 32)
+    if poppedOut == nil then
+        owner:Close()
+        owner:Show()
+    elseif poppedOut then
+        owner:SetPoppedOut(false)
+        owner:SetPoppedOut(true)
+    else
+        owner:_StopDrag()
+    end
+    fire(target, ui.Hook.ONRELEASE)
+    expect(#events, beforeCancel, "programmatic cancellation does not notify")
+
+    destroyOnChange = true
+    begin()
+    fire(target, ui.Hook.ONHOLD, 49, 32)
+    expect(#events, beforeCancel, "destructive callback waits for completion")
+    if poppedOut == nil then
+        fire(target, ui.Hook.ONRELEASE)
+    else
+        setAlt(false)
+    end
+    expect(#events, beforeCancel + 1, "a completion callback may destroy the component")
+    expect(root.destroyed, true, "callback destruction releases the moved surface")
+    expect(owner.dragFeedback, nil, "callback destruction leaves no drag feedback")
+    if cleanup then cleanup() end
+
+    setAlt(true)
+    local cancelled, _, cancelTarget, cancelCleanup = create(callbackArea, function()
+        error("destroying an active drag must not notify")
+    end)
+    fire(cancelTarget, ui.Hook.ONCLICK, 12, 9)
+    fire(cancelTarget, ui.Hook.ONHOLD, 12, 9)
+    fire(cancelTarget, ui.Hook.ONHOLD, 49, 32)
+    cancelled:Destroy()
+    if cancelCleanup then cancelCleanup() end
+end
+
+setAlt(true)
+exercisePositionCallback(function(area, onPositionChange)
+    local owner = Window.new(area, {
+        title = "Position callback", x = -150, y = -100,
+        xAnchor = 0.5, yAnchor = 0.5, width = 300, height = 200,
+        onPositionChange = onPositionChange,
+    })
+    return owner, owner.root, owner.titleDrag
+end, nil)
+exercisePositionCallback(function(area, onPositionChange)
+    local owner = Panel.new(area, {
+        x = -150, y = -100, xAnchor = 0.5, yAnchor = 0.5,
+        width = 300, height = 200, onPositionChange = onPositionChange,
+    })
+    return owner, owner.root, owner.dockDragLayer
+end, false)
+exercisePositionCallback(function(area, onPositionChange)
+    local host = Window.new(area, { title = "Panel host" })
+    local owner = host:AddPanel({
+        popout = true, poppedOut = true, popoutClickthrough = true,
+        popoutX = -150, popoutY = -100, popoutXAnchor = 0.5, popoutYAnchor = 0.5,
+        width = 300, height = 200, onPositionChange = onPositionChange,
+    })
+    return owner, owner.overlay.root, owner.overlayDragLayer, function() host:Destroy() end
+end, true)
+
+local unloadArea = component(nil, "unload-area")
+unloadArea:SetSize(1000, 700)
+local function unexpectedUnloadCallback()
+    error("unloading an active drag must not notify")
+end
+local unloadWindow = Window.new(unloadArea, {
+    title = "Unload", onPositionChange = unexpectedUnloadCallback,
+})
+local unloadPanel = Panel.new(unloadArea, {
+    popout = true, poppedOut = true, onPositionChange = unexpectedUnloadCallback,
+})
+startDrag(unloadWindow, unloadWindow.root, unloadWindow.titleDrag)
+startDrag(unloadPanel, unloadPanel.overlay.root, unloadPanel.overlayDragLayer)
 Interfaces.unload()
 unloadWindow:Destroy()
 unloadPanel:Destroy()

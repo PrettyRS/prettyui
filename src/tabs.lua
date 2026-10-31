@@ -432,6 +432,7 @@ function Tabs:SetActive(index, notify)
     self.activeIndex = index
     for pageIndex, page in ipairs(self.pages) do
         page.root.hidden = pageIndex ~= index
+        if page.root.hidden then Tooltip.hideContextTooltips(page.content) end
         page._scroll:Refresh()
     end
     for _, entry in ipairs(self.tabs) do self:_UpdateTab(entry) end

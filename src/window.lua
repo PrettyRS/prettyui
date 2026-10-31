@@ -41,6 +41,7 @@ function Window.new(parent, options)
     self.interfaceID = parent.interfaceID
     self.title = options.title
     self.onClose = options.onClose
+    self.onPositionChange = options.onPositionChange
     self.destroyOnClose = options.destroyOnClose == true
     self.minWidth = options.minWidth or MIN_WIDTH
     self.minHeight = options.minHeight or MIN_HEIGHT
@@ -148,7 +149,8 @@ function Window.new(parent, options)
         local dragStart = nil
         local captureExpanded = false
 
-        local function stopDrag()
+        local function stopDrag(notify)
+            local drag = dragStart
             dragStart = nil
             if self.resize then self.resize:SetEnabled(true) end
             captureExpanded = false
@@ -162,10 +164,16 @@ function Window.new(parent, options)
                 self.titleDrag:SetPos(self.root.x, self.root.y)
                 self.titleDrag:SetSize(self.root.width - CLOSE_SIZE - 14, TITLE_HEIGHT)
                 self:_SyncOverlays(false)
+                if notify == true and drag and drag.positionChanged and self.onPositionChange then
+                    self.onPositionChange(self, self.root.x, self.root.y)
+                end
             end
             return false
         end
         self._stopDrag = stopDrag
+        local function finishDrag()
+            return stopDrag(true)
+        end
 
         local function moveDrag(component, x, y)
             local mouse = InterfaceMouse.GetPosition(component, x, y)
@@ -188,6 +196,7 @@ function Window.new(parent, options)
                 if self.root.x ~= nextX or self.root.y ~= nextY then
                     self.root:SetPos(nextX, nextY)
                     self.dragBounds:RememberPosition()
+                    dragStart.positionChanged = true
                 end
                 self.dragFeedback:Update()
             end
@@ -209,8 +218,8 @@ function Window.new(parent, options)
             return false
         end)
         self.titleDrag:Subscribe(ui.Hook.ONHOLD, moveDrag)
-        self.titleDrag:Subscribe(ui.Hook.ONRELEASE, stopDrag)
-        self.titleDrag:Subscribe(ui.Hook.ONDRAGCOMPLETE, stopDrag)
+        self.titleDrag:Subscribe(ui.Hook.ONRELEASE, finishDrag)
+        self.titleDrag:Subscribe(ui.Hook.ONDRAGCOMPLETE, finishDrag)
         self.dragBounds = DragBounds.new(self.parent, self.root, function(dx, dy)
             if dragStart then
                 dragStart.windowX = dragStart.windowX + dx
@@ -241,14 +250,19 @@ function Window.new(parent, options)
         self.topRight.isFlippedVertical = true
     end
 
-    self.closeButton = sprite(self.root, Sprites.CLOSE)
+    self.closeButton = ui.Layer.new(self.root)
+    self.closeButton.clickthrough = false
     self.closeButton:SetPos(-CLOSE_SIZE - CLOSE_RIGHT, 7, 1.0)
     self.closeButton:SetSize(CLOSE_SIZE, CLOSE_SIZE)
+    self.closeSprite = sprite(self.closeButton, Sprites.CLOSE)
+    self.closeSprite.clickthrough = true
+    self.closeSprite:SetPos(1, 1)
+    self.closeSprite:SetSize(CLOSE_SIZE - 2, CLOSE_SIZE - 2)
     self.closeButton:Subscribe(ui.Hook.ONMOUSEOVER, function()
-        self.closeButton.spriteID = Sprites.CLOSE_ACTIVE
+        self.closeSprite.spriteID = Sprites.CLOSE_ACTIVE
     end)
     self.closeButton:Subscribe(ui.Hook.ONMOUSELEAVE, function()
-        self.closeButton.spriteID = Sprites.CLOSE
+        self.closeSprite.spriteID = Sprites.CLOSE
     end)
     self.closeButton:Subscribe(ui.Hook.ONCLICK, function()
         self:Close()

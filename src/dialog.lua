@@ -185,25 +185,32 @@ local function resolveWindowWidth(options)
     return math.max(options.width, footer)
 end
 
-local function bindAction(frame, action)
+local function bindAction(frame, slot)
     return function()
-        if frame.closed or action.disabled then return end
-        if action.onClick == nil or action.onClick() == true then
+        if frame.closed or slot.disabled then return end
+        if slot.action.onClick == nil or slot.action.onClick() == true then
             pop(frame, false)
         end
     end
 end
 
 local function mountActions(window, frame, actions)
+    local slots = {}
+    frame.actionSlots = slots
     local x = -ACTION_PAD
     for index = #actions, 1, -1 do
         local action = actions[index]
         local label = action.label or ""
         local width = FancyButton.getSize(label)
         x = x - width
-        window:AddFancyButton(label, bindAction(frame, action), {
+        local slot = {
+            action = action,
+            disabled = action.disabled == true,
+        }
+        slots[action] = slot
+        slot.button = window:AddFancyButton(label, bindAction(frame, slot), {
             variant = action.variant or "neutral",
-            disabled = action.disabled,
+            disabled = slot.disabled,
             tooltip = action.tooltip,
             xAnchor = 1,
             yAnchor = 1,
@@ -262,6 +269,16 @@ function Dialog.new(parent, options)
     mountActions(window, self, options.actions)
     syncChrome(parent)
     return self
+end
+
+function Dialog:SetActionDisabled(action, disabled)
+    local slot = self.actionSlots[action]
+    if slot == nil then error("Dialog:SetActionDisabled: unknown action") end
+    slot.disabled = disabled == true
+    local button = slot.button
+    if button ~= nil and button.SetDisabled ~= nil then
+        button:SetDisabled(slot.disabled)
+    end
 end
 
 function Dialog:Destroy()
