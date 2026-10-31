@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
@@ -24,7 +25,7 @@ function Spinner.new(parent, options)
     self.running = false
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,
@@ -35,12 +36,12 @@ function Spinner.new(parent, options)
     self.root.clickthrough = true
     Wheel.bind(self.root, options)
 
-    self.backdrop = ui.Sprite.new(self.root)
+    self.backdrop = Components.new(ui.Sprite, self.root)
     self.backdrop:SetSize(0, 0, 1.0, 1.0)
     self.backdrop.spriteID = Sprites.BIG_SPINNER_BACKDROP
     self.backdrop.clickthrough = true
 
-    self.rotating = ui.Sprite.new(self.root)
+    self.rotating = Components.new(ui.Sprite, self.root)
     self.rotating:SetSize(0, 0, 1.0, 1.0)
     self.rotating.spriteID = Sprites.BIG_SPINNER_ROTATING
     self.rotating.rotationDegrees = self.rotation

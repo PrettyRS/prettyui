@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local ContentMethods = require("src/core/content_methods")
 local Cursor = require("src/core/cursor")
 local Layout = require("src/core/layout")
@@ -102,7 +103,7 @@ local function tabWidth(tab)
 end
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -191,7 +192,7 @@ function Tabs:_LayoutTabs()
 end
 
 function Tabs:_CreateIconTab(tab, x, options)
-    tab.visual = ui.Layer.new(self.root)
+    tab.visual = Components.new(ui.Layer, self.root)
     tab.visual:SetPos(x, ICON_Y)
     tab.visual:SetSize(ICON_WIDTH, ICON_HEIGHT)
     tab.visual.clickthrough = true
@@ -209,7 +210,7 @@ function Tabs:_CreateIconTab(tab, x, options)
 end
 
 function Tabs:_CreateTextTab(tab, x, width)
-    tab.visual = ui.Layer.new(self.root)
+    tab.visual = Components.new(ui.Layer, self.root)
     tab.visual:SetPos(x, 0)
     tab.visual:SetSize(width, TEXT_HEIGHT)
     tab.visual.clickthrough = true
@@ -226,7 +227,7 @@ function Tabs:_CreateTextTab(tab, x, width)
     tab.right:SetPos(-TEXT_RIGHT_WIDTH, 0, 1.0)
     tab.right:SetSize(TEXT_RIGHT_WIDTH, TEXT_HEIGHT)
 
-    tab.label = ui.Text.new(tab.visual)
+    tab.label = Components.new(ui.Text, tab.visual)
     tab.label:SetPos(TEXT_LABEL_X, TEXT_LABEL_Y)
     tab.label:SetSize(-(TEXT_LABEL_X + TEXT_LABEL_RIGHT), TEXT_LABEL_HEIGHT, 1.0)
     tab.label.content = tab.text
@@ -249,7 +250,7 @@ function Tabs:_CreateTab(tab, x, options)
         self:_CreateTextTab(tab, x, width)
     end
 
-    tab.hit = ui.Layer.new(self.root)
+    tab.hit = Components.new(ui.Layer, self.root)
     tab.hit:SetPos(x, 0)
     tab.hit:SetSize(width, TAB_BASELINE)
     tab.hit.clickthrough = false
@@ -281,7 +282,7 @@ local function configurePage(tabs, index, options)
     local page = setmetatable({}, TabPage)
     page.tabs = tabs
     page.index = index
-    page.root = ui.Layer.new(tabs.content)
+    page.root = Components.new(ui.Layer, tabs.content)
     page.root:SetSize(0, 0, 1.0, 1.0)
     page.root.clickthrough = true
     page.root.hidden = true
@@ -357,7 +358,7 @@ function Tabs.new(parent, values, options)
     self.tabGap = math.max(0, math.floor(options.tabGap or DEFAULT_TAB_GAP))
     self.tabInset = math.max(0, math.floor(options.tabInset or 0))
 
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.interfaceID = self.root.interfaceID
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, rootHeight, options.widthAnchor or 0, heightAnchor)
@@ -384,7 +385,7 @@ function Tabs.new(parent, values, options)
     self.divider.isTiling = true
     Wheel.bind(self.divider, options)
 
-    self.content = ui.Layer.new(self.root)
+    self.content = Components.new(ui.Layer, self.root)
     self.content:SetPos(0, TAB_BASELINE)
     self.content:SetSize(0, -TAB_BASELINE, 1.0, 1.0)
     self.content.clickthrough = true

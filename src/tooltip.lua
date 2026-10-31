@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
 
@@ -16,7 +17,7 @@ local HOOK_ID = "prettyui_tooltip"
 local contexts = setmetatable({}, { __mode = "k" })
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -202,7 +203,7 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
     self.parent = options.parent or (self.context and self.context.parent) or parent
     self.interfaceID = self.parent.interfaceID
 
-    self.root = ui.Layer.new(self.parent)
+    self.root = Components.new(ui.Layer, self.parent)
     self.root:SetSize(width, height)
     self.root.hidden = true
     self.root.clickthrough = true
@@ -249,7 +250,7 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
     self.bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
     self.bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
 
-    self.label = ui.Text.new(self.root)
+    self.label = Components.new(ui.Text, self.root)
     self.label:SetPos(PADDING_X, PADDING_Y)
     self.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
     self.label.content = text

@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 
@@ -18,7 +19,7 @@ function Sprite.new(parent, sprite, options)
     local width, height = Sprite.getSize(options)
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Sprite.new(parent)
+    self.root = Components.new(ui.Sprite, parent)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

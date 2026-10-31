@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 
 local OverheadBar = {}
@@ -12,7 +13,7 @@ local active = {}
 local nextID = 0
 
 local function sprite(parent, spriteID, width, height)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component:SetSize(width, height)
     component.clickthrough = true
@@ -50,12 +51,12 @@ local function create(entity, targetType, options)
         offsetY = options.offsetY == nil and 8 or options.offsetY,
         visible = options.hidden ~= true,
     }, OverheadBar)
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetSize(variant.width, variant.height)
     self.root.clickthrough = true
     self.root.hidden = true
     self.background = sprite(self.root, variant.background, variant.width, variant.height)
-    self.fillClip = ui.Layer.new(self.root)
+    self.fillClip = Components.new(ui.Layer, self.root)
     self.fillClip:SetSize(0, variant.height)
     self.fillClip.clickthrough = true
     self.fill = sprite(self.fillClip, variant.fill, variant.width, variant.height)

@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Cursor = require("src/core/cursor")
@@ -37,7 +38,7 @@ function SpriteButton.new(parent, spriteName, action, options)
     self.hoverCursor = options.hoverCursor or defaultCursor(normalizedName)
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Sprite.new(parent)
+    self.root = Components.new(ui.Sprite, parent)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

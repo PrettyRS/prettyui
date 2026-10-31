@@ -1,6 +1,7 @@
 local Palette = require("src/core/control_palette")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
+local Components = require("src/core/components")
 
 local ComboBox = {}
 ComboBox.__index = ComboBox
@@ -70,7 +71,7 @@ function ComboBox.new(parent, options)
     self._labelsByID = {}
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.ComboField.new(parent)
+    self.root = Components.new(ui.ComboField, parent)
     self.root.stylesheetID = options.stylesheetID or id.StyleSheet.COMBO_DEFAULT
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(

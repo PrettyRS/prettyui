@@ -1,6 +1,7 @@
 local ItemSlot = require("src/item_slot")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
+local Components = require("src/core/components")
 
 local AchievementPopup = {}
 AchievementPopup.__index = AchievementPopup
@@ -23,7 +24,7 @@ local TEXT_COLOUR = 0xFFFFFFFF
 local nextInstanceID = 0
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -102,7 +103,7 @@ function AchievementPopup.new(parent, options)
     local height = math.max(BORDER_SIZE * 2 + 1, options.height or DEFAULT_HEIGHT)
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(
         options.x or -math.floor(width / 2),
         options.y or DEFAULT_Y,
@@ -122,7 +123,7 @@ function AchievementPopup.new(parent, options)
 
     createFrame(self)
 
-    self.title = ui.Text.new(self.root)
+    self.title = Components.new(ui.Text, self.root)
     self.title:SetPos(BORDER_SIZE + 4, TITLE_TOP)
     self.title:SetSize(-(BORDER_SIZE * 2 + 8), TITLE_HEIGHT, 1.0)
     self.title.content = tostring(options.title or "ACHIEVEMENT COMPLETE")
@@ -150,7 +151,7 @@ function AchievementPopup.new(parent, options)
         textLeft = BORDER_SIZE + SLOT_SIZE + 12
     end
 
-    self.text = ui.Text.new(self.root)
+    self.text = Components.new(ui.Text, self.root)
     self.text:SetPos(textLeft, TITLE_HEIGHT)
     self.text:SetSize(-(textLeft + BORDER_SIZE + 6), -(TITLE_HEIGHT + BORDER_SIZE), 1.0, 1.0)
     self.text.content = tostring(options.text or "")
@@ -182,7 +183,7 @@ function AchievementPopup.new(parent, options)
         end
     end
 
-    self.flash = ui.Rectangle.new(self.root)
+    self.flash = Components.new(ui.Rectangle, self.root)
     self.flash:SetSize(0, 0, 1.0, 1.0)
     self.flash.fill = true
     self.flash.rgba = 0xFFFFFFFF

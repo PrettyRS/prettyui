@@ -10,6 +10,7 @@ local Sprites = require("src/core/sprites")
 local Text = require("src/text")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
+local Components = require("src/core/components")
 
 local CollapseButton = {}
 CollapseButton.__index = CollapseButton
@@ -63,7 +64,7 @@ function CollapseButton.getSize(text, options)
 end
 
 local function sprite(parent)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.clickthrough = true
     return component
 end
@@ -92,7 +93,7 @@ function CollapseButton.new(parent, text, options)
     self.disabledTextColour = options.disabledColour or DISABLED_TEXT_COLOUR
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, SEGMENT_SIZE, options.widthAnchor or 0, 0)
     Wheel.bind(self.root, options)
@@ -109,7 +110,7 @@ function CollapseButton.new(parent, text, options)
     self.right:SetPos(-SEGMENT_SIZE, 0, 1.0)
     self.right:SetSize(SEGMENT_SIZE, SEGMENT_SIZE)
 
-    self.label = ui.Text.new(self.root)
+    self.label = Components.new(ui.Text, self.root)
     self.label:SetPos(12, 0)
     self.label:SetSize(-12 - SEGMENT_SIZE, SEGMENT_SIZE, 1.0)
     self.label.content = self.text
@@ -121,7 +122,7 @@ function CollapseButton.new(parent, text, options)
     self.label.maxLines = 1
     self.label.clickthrough = true
 
-    self.content = ui.Layer.new(self.root)
+    self.content = Components.new(ui.Layer, self.root)
     self.content:SetPos(self.indent, SEGMENT_SIZE + CONTENT_GAP)
     self.content:SetSize(-self.indent, 0, 1.0)
     self.content.hidden = not self.expanded

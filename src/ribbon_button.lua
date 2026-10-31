@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
@@ -19,7 +20,7 @@ function RibbonButton.new(parent, spriteID, action, options)
     self.active = false
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,
@@ -31,11 +32,11 @@ function RibbonButton.new(parent, spriteID, action, options)
     self.root.clickthrough = self.disabled
     Wheel.bind(self.root, options)
 
-    self.background = ui.Sprite.new(self.root)
+    self.background = Components.new(ui.Sprite, self.root)
     self.background:SetSize(BUTTON_SIZE, BUTTON_SIZE)
     self.background.clickthrough = true
 
-    self.icon = ui.Sprite.new(self.root)
+    self.icon = Components.new(ui.Sprite, self.root)
     self.icon:SetPos(ICON_OFFSET, ICON_OFFSET)
     self.icon:SetSize(ICON_SIZE, ICON_SIZE)
     self.icon.spriteID = spriteID

@@ -2,6 +2,7 @@ local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Cursor = require("src/core/cursor")
 local Wheel = require("src/core/wheel")
+local Components = require("src/core/components")
 
 local FancyButton = {}
 FancyButton.__index = FancyButton
@@ -47,7 +48,7 @@ function FancyButton.getSize(text, options)
 end
 
 local function part(parent)
-    local sprite = ui.Sprite.new(parent)
+    local sprite = Components.new(ui.Sprite, parent)
     sprite.clickthrough = true
     return sprite
 end
@@ -71,7 +72,7 @@ function FancyButton.new(parent, text, action, options)
     self.hoverCursor = options.hoverCursor or config.Cursor.CURSOR_BLANK
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, HEIGHT)
     Wheel.bind(self.root, options)
@@ -88,7 +89,7 @@ function FancyButton.new(parent, text, action, options)
     self.right:SetPos(-PART_WIDTH, 0, 1.0)
     self.right:SetSize(PART_WIDTH, HEIGHT)
 
-    self.label = ui.Text.new(self.root)
+    self.label = Components.new(ui.Text, self.root)
     self.label:SetPos(PART_WIDTH, 0)
     self.label:SetSize(-PART_WIDTH * 2, HEIGHT, 1.0)
     self.label.content = text

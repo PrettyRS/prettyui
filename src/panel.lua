@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local ColourPicker = require("src/colour_picker")
 local ComboBox = require("src/combo_box")
@@ -90,7 +91,7 @@ local function copyOptions(value)
 end
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -99,7 +100,7 @@ end
 local function createSurface(parent, options)
     local surface = {}
     local frame = Sprites.HUD_WINDOW
-    surface.root = ui.Layer.new(parent)
+    surface.root = Components.new(ui.Layer, parent)
     surface.interfaceID = surface.root.interfaceID
     surface.root:SetPos(options.x, options.y, options.xAnchor or 0, options.yAnchor or 0)
     surface.root:SetSize(options.width, options.height, options.widthAnchor or 0, options.heightAnchor or 0)
@@ -150,7 +151,7 @@ local function createSurface(parent, options)
     surface.bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
     surface.bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
 
-    surface.container = ui.Layer.new(surface.root)
+    surface.container = Components.new(ui.Layer, surface.root)
     surface.container:SetPos(BORDER_SIZE, BORDER_SIZE)
     surface.container:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
     surface.container.clickthrough = options.clickthrough == true
@@ -160,7 +161,7 @@ local function createSurface(parent, options)
 end
 
 local function createToggle(surface, panel, popoutMode)
-    local button = ui.Sprite.new(surface.root)
+    local button = Components.new(ui.Sprite, surface.root)
     button:SetPos(-TOGGLE_SIZE - TOGGLE_INSET, TOGGLE_INSET, 1.0)
     button:SetSize(TOGGLE_SIZE, TOGGLE_SIZE)
     button.clickthrough = false
@@ -207,7 +208,7 @@ local function createToggle(surface, panel, popoutMode)
 end
 
 local function createDragLayer(parent, surface, panel)
-    local layer = ui.Layer.new(parent)
+    local layer = Components.new(ui.Layer, parent)
     layer:SetPos(surface.root.x, surface.root.y)
     layer:SetSize(surface.root.width, surface.root.height)
     layer.clickthrough = true
@@ -354,11 +355,9 @@ function Panel.getSize(options)
     return options.width or DEFAULT_WIDTH, options.height or DEFAULT_HEIGHT
 end
 
-function Panel.new(parent, options, flowManaged)
+local function buildPanel(parent, options, flowManaged, overlayParent)
     options = options or {}
     local width, height = Panel.getSize(options)
-    local parentContext = Tooltip.getContext(parent)
-    local overlayParent = options.overlayParent or (parentContext and parentContext.parent) or parent
 
     local self = setmetatable({}, Panel)
     self.parent = parent
@@ -506,6 +505,17 @@ function Panel.new(parent, options, flowManaged)
         self:_UpdateResizeEnabled()
     end
     return self
+end
+
+function Panel.new(parent, options, flowManaged)
+    options = options or {}
+    local context = Tooltip.getContext(parent)
+    local overlayParent = options.overlayParent or (context and context.parent) or parent
+    return Components.withBatch(parent, function()
+        return Components.withBatch(overlayParent, function()
+            return buildPanel(parent, options, flowManaged, overlayParent)
+        end)
+    end)
 end
 
 function Panel:_UpdateResizeEnabled()

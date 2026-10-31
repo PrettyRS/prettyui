@@ -10,6 +10,8 @@ local Confirm = require("src/confirm")
 local SelectionButtons = require("src/selection_button")
 local PrettyMiniMenu = require("src/minimenu")
 local OverheadBar = require("src/overhead_bar")
+local CategoryGroups = require("src/core/category_groups")
+local Components = require("src/core/components")
 
 local resources = Plugin.resources
 TextField.SetDefaultSprite(resources and (resources.input_default or resources["input_default.png"]))
@@ -18,6 +20,10 @@ local PrettyUI = {
     AchievementPopup = require("src/achievement_popup"),
     AnchoredTooltip = require("src/anchored_tooltip"),
     BarChart = BarChart,
+    BuildCategoryGroup = CategoryGroups.build,
+    NewComponent = Components.new,
+    RefreshComponentIDs = Components.refresh,
+    WithCategoryBatch = CategoryGroups.withBatch,
     BigSpinner = require("src/big_spinner"),
     CheckboxButton = SelectionButtons.CheckboxButton,
     ColourPicker = require("src/colour_picker"),

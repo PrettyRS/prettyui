@@ -1,6 +1,7 @@
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
+local Components = require("src/core/components")
 
 local Divider = {}
 Divider.__index = Divider
@@ -30,7 +31,7 @@ function Divider.new(parent, options)
     if widthAnchor == nil then widthAnchor = width <= 0 and 1.0 or 0 end
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Sprite.new(parent)
+    self.root = Components.new(ui.Sprite, parent)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

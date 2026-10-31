@@ -2,6 +2,7 @@ local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local clamp = require("src/core/math").clamp
+local Components = require("src/core/components")
 
 local ItemSlot = {}
 ItemSlot.__index = ItemSlot
@@ -56,7 +57,7 @@ function ItemSlot:_CreateItemSprite()
         return
     end
 
-    self.item = ui.Sprite.new(self.root)
+    self.item = Components.new(ui.Sprite, self.root)
     self.item:SetPos(self.itemInset, self.itemInset)
     self.item:SetSize(SLOT_SIZE - self.itemInset * 2, SLOT_SIZE - self.itemInset * 2)
     self.item.clickthrough = true
@@ -69,7 +70,7 @@ function ItemSlot:_CreateItemSprite()
 end
 
 function ItemSlot:_CreateDragItemSprite()
-    self.dragItem = ui.Sprite.new(self.root)
+    self.dragItem = Components.new(ui.Sprite, self.root)
     self.dragItem:SetPos(self.itemInset, self.itemInset)
     self.dragItem:SetSize(SLOT_SIZE - self.itemInset * 2, SLOT_SIZE - self.itemInset * 2)
     self.dragItem.clickthrough = true
@@ -128,7 +129,7 @@ function ItemSlot.new(parent, object, options)
     self.onObjectChange = options.onObjectChange
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,
@@ -139,7 +140,7 @@ function ItemSlot.new(parent, object, options)
     self.root.clickthrough = options.clickthrough ~= false
     Wheel.bind(self.root, options)
 
-    self.background = ui.Sprite.new(self.root)
+    self.background = Components.new(ui.Sprite, self.root)
     self.background:SetSize(SLOT_SIZE, SLOT_SIZE)
     self.background.spriteID = self.backgroundSpriteID
     self.background.clickthrough = true
@@ -147,7 +148,7 @@ function ItemSlot.new(parent, object, options)
     self:_CreateItemSprite()
     self:_CreateDragItemSprite()
 
-    self.disabledOverlay = ui.Rectangle.new(self.root)
+    self.disabledOverlay = Components.new(ui.Rectangle, self.root)
     self.disabledOverlay:SetPos(self.itemInset, self.itemInset)
     self.disabledOverlay:SetSize(SLOT_SIZE - self.itemInset * 2, SLOT_SIZE - self.itemInset * 2)
     self.disabledOverlay.fill = true

@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Layout = require("src/core/layout")
 
 local ContentMethods = {}
@@ -267,19 +268,22 @@ local function addPaired(container, spec, args, getSides, pair)
             args[spec.optionsIndex],
             function() return proxy end
         )
-        local placed = place(
-            side.owner,
-            component,
-            spec,
-            sideArgs,
-            sideArgs[spec.optionsIndex]
-        )
-        results[index] = Layout.manage(
-            side.owner,
-            construct(component, spec, side.content, sideArgs, placed),
-            placed
-        )
-        if spec.bindFlow then results[index]:BindFlow(side.owner) end
+        results[index] = Components.withBatch(side.content, function()
+            local placed = place(
+                side.owner,
+                component,
+                spec,
+                sideArgs,
+                sideArgs[spec.optionsIndex]
+            )
+            local result = Layout.manage(
+                side.owner,
+                construct(component, spec, side.content, sideArgs, placed),
+                placed
+            )
+            if spec.bindFlow then result:BindFlow(side.owner) end
+            return result
+        end)
     end
     proxy = pair(container, results[1], results[2])
     if spec.refreshRowBackgrounds and container.rowBackgroundColours
@@ -300,7 +304,10 @@ function ContentMethods.installSingle(class, options)
         local spec = component
         if isIncluded(spec, options, false) then
             class[spec.method] = function(self, ...)
-                return addSingle(self, spec, { ... })
+                local args = { ... }
+                return Components.withBatch(self.content, function()
+                    return addSingle(self, spec, args)
+                end)
             end
         end
     end

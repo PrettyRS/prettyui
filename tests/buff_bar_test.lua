@@ -256,6 +256,9 @@ logicHandler({ logicTick = 3 })
 expect(first.sprite.x, 32, "an expired native buff releases space on the next tick")
 
 local foreignComponent = component(buffLayer, "sprite")
+foreignComponent.categoryID = 1
+foreignComponent.dynamicID = first.sprite.dynamicID
+first.sprite.categoryID = 0
 foreignComponent:SetSize(28, 28)
 foreignComponent:SetPos(70, 0)
 foreignComponent.hidden = true

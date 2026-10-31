@@ -1,5 +1,6 @@
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
+local Components = require("src/core/components")
 
 local AnchoredTooltip = {}
 AnchoredTooltip.__index = AnchoredTooltip
@@ -31,7 +32,7 @@ local function copyOptions(value)
 end
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -97,7 +98,7 @@ local function createBorder(self)
     self.bottomLeft:SetSize(CORNER_SIZE, CORNER_SIZE)
     self.bottom = {}
     local bottomWidth = self.width - CORNER_SIZE * 2
-    local bottomTop = ui.Rectangle.new(self.root)
+    local bottomTop = Components.new(ui.Rectangle, self.root)
     bottomTop:SetPos(CORNER_SIZE, self.height - EDGE_SIZE)
     bottomTop:SetSize(bottomWidth, 1)
     bottomTop.fill = true
@@ -105,7 +106,7 @@ local function createBorder(self)
     bottomTop.clickthrough = true
     self.bottom[#self.bottom + 1] = bottomTop
 
-    local bottomBottom = ui.Rectangle.new(self.root)
+    local bottomBottom = Components.new(ui.Rectangle, self.root)
     bottomBottom:SetPos(CORNER_SIZE, self.height - 1)
     bottomBottom:SetSize(bottomWidth, 1)
     bottomBottom.fill = true
@@ -179,12 +180,12 @@ function AnchoredTooltip.new(parent, options)
     )
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetSize(self.width, self.height)
     self.root.clickthrough = options.clickthrough ~= false
     self.root.hidden = true
 
-    self.background = ui.Rectangle.new(self.root)
+    self.background = Components.new(ui.Rectangle, self.root)
     self.background:SetPos(EDGE_SIZE, EDGE_SIZE)
     self.background:SetSize(
         self.width - EDGE_SIZE * 2,
@@ -197,7 +198,7 @@ function AnchoredTooltip.new(parent, options)
 
     createBorder(self)
 
-    self.content = ui.Layer.new(self.root)
+    self.content = Components.new(ui.Layer, self.root)
     self.content:SetPos(self.paddingX, self.paddingY)
     self.content:SetSize(-self.paddingX * 2, -self.paddingY * 2, 1.0, 1.0)
     self.content.clickthrough = options.clickthrough ~= false
@@ -214,7 +215,7 @@ function AnchoredTooltip.new(parent, options)
         end
         self.contentResult = result
     elseif self.hasText then
-        self.label = ui.Text.new(self.content)
+        self.label = Components.new(ui.Text, self.content)
         self.label:SetSize(0, 0, 1.0, 1.0)
         self.label.content = self.text
         self.label.font = options.font or id.Font.MUSEO_SANS_13PT_BOLD

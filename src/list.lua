@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Cursor = require("src/core/cursor")
 local InterfaceMouse = require("src/core/mouse")
 local Palette = require("src/core/control_palette")
@@ -47,7 +48,7 @@ local function rowTextColour(list, entry)
 end
 
 local function rectangle(parent, colour, fill)
-    local component = ui.Rectangle.new(parent)
+    local component = Components.new(ui.Rectangle, parent)
     component:SetSize(0, 0, 1.0, 1.0)
     component.fill = fill ~= false
     component.rgba = colour
@@ -56,7 +57,7 @@ local function rectangle(parent, colour, fill)
 end
 
 local function frameEdge(parent, x, y, width, height, xAnchor, yAnchor, widthAnchor, heightAnchor)
-    local component = ui.Rectangle.new(parent)
+    local component = Components.new(ui.Rectangle, parent)
     component:SetPos(x, y, xAnchor or 0, yAnchor or 0)
     component:SetSize(width, height, widthAnchor or 0, heightAnchor or 0)
     component.fill = true
@@ -66,7 +67,7 @@ local function frameEdge(parent, x, y, width, height, xAnchor, yAnchor, widthAnc
 end
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = false
     return component
@@ -106,7 +107,7 @@ function List.new(parent, options)
     self.heightAnchor = options.heightAnchor or 0
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(
         options.width or DEFAULT_WIDTH,
@@ -116,7 +117,7 @@ function List.new(parent, options)
     )
     self.root.clickthrough = false
     self.background = rectangle(self.root, self.backgroundColour)
-    self.viewport = ui.Layer.new(self.root)
+    self.viewport = Components.new(ui.Layer, self.root)
     self.viewport:SetPos(1, 1)
     self.viewport:SetSize(-2, -2, 1.0, 1.0)
     self.viewport.clickthrough = false
@@ -138,7 +139,7 @@ function List.new(parent, options)
     self.downArrow:SetSize(BAR_WIDTH, ARROW_SIZE)
 
     local trackHeight = math.max(1, self:_ResolvedHeight() - ARROW_SIZE * 2 - 2)
-    self.track = ui.Layer.new(self.root)
+    self.track = Components.new(ui.Layer, self.root)
     self.track:SetPos(-BAR_WIDTH - 1, ARROW_SIZE + 1, 1.0, 0)
     self.track:SetSize(BAR_WIDTH, trackHeight)
     self.track.clickthrough = false
@@ -152,7 +153,7 @@ function List.new(parent, options)
     self.trackBottom:SetPos(0, math.max(0, trackHeight - END_SIZE))
     self.trackBottom:SetSize(BAR_WIDTH, END_SIZE)
 
-    self.thumb = ui.Layer.new(self.track)
+    self.thumb = Components.new(ui.Layer, self.track)
     self.thumb.clickthrough = false
     self.thumbTop = sprite(self.thumb, Sprites.SCROLL_THUMB_TOP)
     self.thumbTop:SetSize(BAR_WIDTH, END_SIZE)
@@ -212,7 +213,11 @@ function List.new(parent, options)
         return self:_OnScrollWheel(component, delta)
     end)
 
-    self:SetEntries(options.entries or options.choices or {})
+    local ok, err = pcall(self.SetEntries, self, options.entries or options.choices or {})
+    if not ok then
+        self.root:Destroy()
+        error(err, 0)
+    end
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
 end
@@ -347,84 +352,92 @@ function List:_RefreshRows()
     end
 end
 
+function List:_BuildRow(entry, baseY)
+    local row = Components.new(ui.Layer, self.viewport)
+    local record = { root = row, entry = entry, baseY = baseY }
+    self.rows[#self.rows + 1] = record
+    row:SetPos(0, baseY)
+    row:SetSize(0, self.entryHeight, 1.0, 0)
+    row.clickthrough = self.disabled or not entry.enabled
+
+    local rowBackground = rectangle(row, rowBackgroundColour(self, entry, false))
+    rowBackground:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
+        return self:_OnScrollWheel(component, delta)
+    end)
+    local left = 8
+    if entry.icon ~= nil then
+        local iconSize = math.max(1, math.floor(16 * self.entryIconScale / 100))
+        local icon = Components.new(ui.Sprite, row)
+        icon:SetPos(7, math.floor((self.entryHeight - iconSize) / 2))
+        icon:SetSize(iconSize, iconSize)
+        icon.spriteID = entry.icon
+        icon.clickthrough = true
+        icon:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
+            return self:_OnScrollWheel(component, delta)
+        end)
+        left = 7 + iconSize + 6
+    end
+
+    local label = Components.new(ui.Text, row)
+    label:SetPos(left, 0)
+    label:SetSize(-left - 6, self.entryHeight, 1.0, 0)
+    label.content = entry.text
+    label.font = self.font
+    label.rgba = rowTextColour(self, entry)
+    label.isShadowed = self.shadowed
+    label.maxLines = 1
+    label.alignVertical = ui.AlignMode.CENTRE
+    label.clickthrough = true
+    label:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
+        return self:_OnScrollWheel(component, delta)
+    end)
+    row:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
+        return self:_OnScrollWheel(component, delta)
+    end)
+
+    if not self.disabled and entry.enabled then
+        row:Subscribe(ui.Hook.ONMOUSEOVER, function()
+            rowBackground.rgba = rowBackgroundColour(self, entry, true)
+            return true
+        end)
+        row:Subscribe(ui.Hook.ONMOUSELEAVE, function()
+            rowBackground.rgba = rowBackgroundColour(self, entry, false)
+            return true
+        end)
+        row:Subscribe(ui.Hook.ONCLICK, function()
+            local selected = self.maxSelected > 1 and not entry.selected or true
+            local succeeded = self:_Select(entry, selected, true)
+            if succeeded and self._onEntryClick then
+                self._onEntryClick(self, entry.id, entry.selected)
+            end
+            return false
+        end)
+        Cursor.apply(row, config.Cursor.CURSOR_TICK, true)
+    end
+    record.background = rowBackground
+    record.label = label
+end
+
 function List:_RebuildRows()
     for _, row in ipairs(self.rows) do row.root:Destroy() end
     self.rows = {}
 
-    local visibleIndex = 0
-    for _, entry in ipairs(self.entries) do
-        if entry.visible then
-            local baseY = visibleIndex * self.entryHeight
-            local row = ui.Layer.new(self.viewport)
-            row:SetPos(0, baseY)
-            row:SetSize(0, self.entryHeight, 1.0, 0)
-            row.clickthrough = self.disabled or not entry.enabled
-            visibleIndex = visibleIndex + 1
-
-            local rowBackground = rectangle(row, rowBackgroundColour(self, entry, false))
-            rowBackground:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-                return self:_OnScrollWheel(component, delta)
-            end)
-            local left = 8
-            if entry.icon ~= nil then
-                local iconSize = math.max(1, math.floor(16 * self.entryIconScale / 100))
-                local icon = ui.Sprite.new(row)
-                icon:SetPos(7, math.floor((self.entryHeight - iconSize) / 2))
-                icon:SetSize(iconSize, iconSize)
-                icon.spriteID = entry.icon
-                icon.clickthrough = true
-                icon:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-                    return self:_OnScrollWheel(component, delta)
-                end)
-                left = 7 + iconSize + 6
+    local ok, result = pcall(Components.withBatch, self.viewport, function()
+        local visibleIndex = 0
+        for _, entry in ipairs(self.entries) do
+            if entry.visible then
+                self:_BuildRow(entry, visibleIndex * self.entryHeight)
+                visibleIndex = visibleIndex + 1
             end
-
-            local label = ui.Text.new(row)
-            label:SetPos(left, 0)
-            label:SetSize(-left - 6, self.entryHeight, 1.0, 0)
-            label.content = entry.text
-            label.font = self.font
-            label.rgba = rowTextColour(self, entry)
-            label.isShadowed = self.shadowed
-            label.maxLines = 1
-            label.alignVertical = ui.AlignMode.CENTRE
-            label.clickthrough = true
-            label:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-                return self:_OnScrollWheel(component, delta)
-            end)
-            row:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-                return self:_OnScrollWheel(component, delta)
-            end)
-
-            if not self.disabled and entry.enabled then
-                row:Subscribe(ui.Hook.ONMOUSEOVER, function()
-                    rowBackground.rgba = rowBackgroundColour(self, entry, true)
-                    return true
-                end)
-                row:Subscribe(ui.Hook.ONMOUSELEAVE, function()
-                    rowBackground.rgba = rowBackgroundColour(self, entry, false)
-                    return true
-                end)
-                row:Subscribe(ui.Hook.ONCLICK, function()
-                    local selected = self.maxSelected > 1 and not entry.selected or true
-                    local succeeded = self:_Select(entry, selected, true)
-                    if succeeded and self._onEntryClick then
-                        self._onEntryClick(self, entry.id, entry.selected)
-                    end
-                    return false
-                end)
-                Cursor.apply(row, config.Cursor.CURSOR_TICK, true)
-            end
-            table.insert(self.rows, {
-                root = row,
-                background = rowBackground,
-                label = label,
-                entry = entry,
-                baseY = baseY,
-            })
         end
+        return visibleIndex
+    end)
+    if not ok then
+        for _, row in ipairs(self.rows) do row.root:Destroy() end
+        self.rows = {}
+        error(result, 0)
     end
-
+    local visibleIndex = result
     self.contentHeight = math.max(1, visibleIndex * self.entryHeight)
     self.viewport:SetScrollSize(
         math.max(1, self:_ResolvedWidth() - 2),

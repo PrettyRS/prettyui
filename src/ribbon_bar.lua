@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local RibbonButton = require("src/ribbon_button")
 local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
@@ -41,7 +42,7 @@ local function normalizePosition(value)
 end
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -301,7 +302,7 @@ local function ensureMounted()
     end
     if root == nil then
         interfaceID = gameArea.interfaceID
-        root = ui.Layer.new(gameArea)
+        root = Components.new(ui.Layer, gameArea)
         root.clickthrough = false
         Tooltip.registerContext(root, gameArea, function(target)
             local width, height = barSize()

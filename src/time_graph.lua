@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Stream = require("src/core/time_graph_stream")
 local Wheel = require("src/core/wheel")
 local Tooltip = require("src/tooltip")
@@ -51,7 +52,7 @@ local function timestamp(seconds)
 end
 
 local function rectangle(parent, rgba)
-    local component = ui.Rectangle.new(parent)
+    local component = Components.new(ui.Rectangle, parent)
     component.fill = true
     component.rgba = rgba
     component.clickthrough = true
@@ -59,7 +60,7 @@ local function rectangle(parent, rgba)
 end
 
 local function label(parent, rgba, alignment)
-    local component = ui.Text.new(parent)
+    local component = Components.new(ui.Text, parent)
     component.font = id.Font.MUSEO_SANS_15PT_REGULAR
     component.rgba = rgba or TEXT_RGBA
     component.isShadowed = true
@@ -128,7 +129,7 @@ function TimeGraph.new(parent, options)
     self.dirty = true
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height, self.widthAnchor, self.heightAnchor)
     self.root.hidden = options.visible == false
@@ -139,10 +140,10 @@ function TimeGraph.new(parent, options)
     self.border = rectangle(self.root, 0x766341FF)
     self.border.fill = false
     self.border.outlineThickness = 1
-    self.header = ui.Layer.new(self.root)
+    self.header = Components.new(ui.Layer, self.root)
     Wheel.bind(self.header, options)
     if metric.spriteID ~= nil then
-        self.icon = ui.Sprite.new(self.header)
+        self.icon = Components.new(ui.Sprite, self.header)
         self.icon.spriteID = metric.spriteID
         self.icon.clickthrough = true
     else
@@ -159,7 +160,7 @@ function TimeGraph.new(parent, options)
     end, parentContext)
     Tooltip.bind(self, self.header, self.root, nil)
 
-    self.plot = ui.Layer.new(self.root)
+    self.plot = Components.new(ui.Layer, self.root)
     self.plot.clickthrough = false
     if self.zoomable then
         self.plot:Subscribe(ui.Hook.ONSCROLLWHEEL, function(_, delta)

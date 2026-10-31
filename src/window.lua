@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local clamp = require("src/core/math").clamp
 local Sprites = require("src/core/sprites")
 local ContentMethods = require("src/core/content_methods")
@@ -27,13 +28,13 @@ local MIN_WIDTH = 220
 local MIN_HEIGHT = 140
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = false
     return component
 end
 
-function Window.new(parent, options)
+local function buildWindow(parent, options)
     options = options or {}
 
     local self = setmetatable({}, Window)
@@ -53,7 +54,7 @@ function Window.new(parent, options)
     self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
     self.rowBackgrounds = {}
 
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root.clickthrough = false
     self.root:SetPos(
         options.x or 80,
@@ -138,7 +139,7 @@ function Window.new(parent, options)
             alignHorizontal = ui.AlignMode.CENTRE,
         })
 
-        self.titleDrag = ui.Layer.new(self.parent)
+        self.titleDrag = Components.new(ui.Layer, self.parent)
         self.titleDrag:MoveToFront()
         self.titleDrag:SetPos(self.root.x, self.root.y)
         self.titleDrag:SetSize(self.root.width - CLOSE_SIZE - 14, TITLE_HEIGHT)
@@ -315,6 +316,12 @@ function Window.new(parent, options)
     end
 
     return self
+end
+
+function Window.new(parent, options)
+    return Components.withBatch(parent, function()
+        return buildWindow(parent, options)
+    end)
 end
 
 function Window:SetSize(width, height)

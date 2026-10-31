@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Cursor = require("src/core/cursor")
@@ -51,7 +52,7 @@ function SimpleButton.getSize(content, options)
 end
 
 local function backgroundSprite(parent, tiled)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.clickthrough = true
     component.isTiling = tiled == true
     return component
@@ -75,7 +76,7 @@ function SimpleButton.new(parent, content, action, options)
     self.hoverCursor = options.hoverCursor or config.Cursor.CURSOR_BLANK
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height)
     Wheel.bind(self.root, options)
@@ -113,7 +114,7 @@ function SimpleButton.new(parent, content, action, options)
         local scale = math.min(1, availableWidth / requestedWidth, availableHeight / requestedHeight)
         local iconWidth = math.max(1, math.floor(requestedWidth * scale))
         local iconHeight = math.max(1, math.floor(requestedHeight * scale))
-        self.content = ui.Sprite.new(self.root)
+        self.content = Components.new(ui.Sprite, self.root)
         self.content:SetSize(iconWidth, iconHeight)
         self.content:SetPos(
             math.floor((width - iconWidth) / 2),
@@ -121,7 +122,7 @@ function SimpleButton.new(parent, content, action, options)
         )
         self.content.spriteID = content
     else
-        self.content = ui.Text.new(self.root)
+        self.content = Components.new(ui.Text, self.root)
         self.content:SetPos(TILE_SIZE, 0)
         self.content:SetSize(-TILE_SIZE * 2, 0, 1.0, 1.0)
         self.content.content = content
