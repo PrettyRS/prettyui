@@ -241,14 +241,19 @@ function Window.new(parent, options)
         self.topRight.isFlippedVertical = true
     end
 
-    self.closeButton = sprite(self.root, Sprites.CLOSE)
+    self.closeButton = ui.Layer.new(self.root)
+    self.closeButton.clickthrough = false
     self.closeButton:SetPos(-CLOSE_SIZE - CLOSE_RIGHT, 7, 1.0)
     self.closeButton:SetSize(CLOSE_SIZE, CLOSE_SIZE)
+    self.closeSprite = sprite(self.closeButton, Sprites.CLOSE)
+    self.closeSprite.clickthrough = true
+    self.closeSprite:SetPos(1, 1)
+    self.closeSprite:SetSize(CLOSE_SIZE - 2, CLOSE_SIZE - 2)
     self.closeButton:Subscribe(ui.Hook.ONMOUSEOVER, function()
-        self.closeButton.spriteID = Sprites.CLOSE_ACTIVE
+        self.closeSprite.spriteID = Sprites.CLOSE_ACTIVE
     end)
     self.closeButton:Subscribe(ui.Hook.ONMOUSELEAVE, function()
-        self.closeButton.spriteID = Sprites.CLOSE
+        self.closeSprite.spriteID = Sprites.CLOSE
     end)
     self.closeButton:Subscribe(ui.Hook.ONCLICK, function()
         self:Close()
