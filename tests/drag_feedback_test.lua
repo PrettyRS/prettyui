@@ -562,6 +562,86 @@ liveWindow:Destroy()
 liveArea.width, liveArea.height = 400, 250
 tickPanels()
 
+-- Position callbacks report actual drag changes, not pointer noise or layout.
+local function exercisePositionCallback(create, poppedOut)
+    local events = {}
+    local owner, root, target
+    local destroyOnChange = false
+    local function onPositionChange(component, x, y, overlay)
+        expect(component, owner, "position callback receives the PrettyUI owner")
+        expect(root.x, x, "callback observes the updated horizontal position")
+        expect(root.y, y, "callback observes the updated vertical position")
+        expect(owner.dragFeedback.active.x, x, "feedback updates before the callback")
+        expect(owner.dragFeedback.active.y, y, "vertical feedback updates before the callback")
+        expect(overlay, poppedOut, "callback identifies the moved panel surface")
+        table.insert(events, { x = x, y = y })
+        if destroyOnChange then owner:Destroy() end
+    end
+    local callbackArea = component(nil, "callback-area")
+    callbackArea:SetSize(1000, 700)
+    local cleanup
+    owner, root, target, cleanup = create(callbackArea, onPositionChange)
+    expect(#events, 0, "construction does not emit position changes")
+    simpleClick(owner, root, target)
+    expect(#events, 0, "click does not emit position changes")
+    fire(target, ui.Hook.ONCLICK, 12, 9)
+    fire(target, ui.Hook.ONHOLD, 12, 9)
+    expect(#events, 0, "stationary hold does not emit position changes")
+    fire(target, ui.Hook.ONHOLD, 49, 32)
+    expect(#events, 1, "movement emits one position change")
+    expect(events[1].x, 387, "callback reports resolved parent-relative x, not anchor offset")
+    expect(events[1].y, 273, "callback reports resolved parent-relative y, not anchor offset")
+    fire(target, ui.Hook.ONHOLD, 49, 32)
+    expect(#events, 1, "repeated pointer position does not emit again")
+    local moveHook = poppedOut == nil and ui.Hook.ONHOLD or ui.Hook.ONDRAG
+    fire(target, moveHook, -10000, -10000)
+    expect(#events, 2, "dragging to the boundary emits a position change")
+    expect(events[2].x, 0, "callback reports clamped x")
+    expect(events[2].y, 0, "callback reports clamped y")
+    fire(target, moveHook, -9999, -9999)
+    expect(#events, 2, "movement beyond the same boundary does not emit again")
+    fire(target, ui.Hook.ONRELEASE)
+    fire(target, ui.Hook.ONDRAGCOMPLETE)
+    expect(#events, 2, "release and drag completion do not duplicate changes")
+    callbackArea:SetSize(1200, 800)
+    owner:SetSize(320, 220)
+    expect(#events, 2, "automatic layout and size changes do not emit drag callbacks")
+    destroyOnChange = true
+    fire(target, ui.Hook.ONCLICK, 12, 9)
+    fire(target, ui.Hook.ONHOLD, 12, 9)
+    fire(target, ui.Hook.ONHOLD, 49, 32)
+    expect(#events, 3, "a callback may destroy the moving component")
+    expect(root.destroyed, true, "callback destruction releases the moving surface")
+    expect(owner.dragFeedback, nil, "callback destruction releases drag feedback")
+    if cleanup then cleanup() end
+end
+
+setAlt(true)
+exercisePositionCallback(function(area, onPositionChange)
+    local owner = Window.new(area, {
+        title = "Position callback", x = -150, y = -100,
+        xAnchor = 0.5, yAnchor = 0.5, width = 300, height = 200,
+        onPositionChange = onPositionChange,
+    })
+    return owner, owner.root, owner.titleDrag
+end, nil)
+exercisePositionCallback(function(area, onPositionChange)
+    local owner = Panel.new(area, {
+        x = -150, y = -100, xAnchor = 0.5, yAnchor = 0.5,
+        width = 300, height = 200, onPositionChange = onPositionChange,
+    })
+    return owner, owner.root, owner.dockDragLayer
+end, false)
+exercisePositionCallback(function(area, onPositionChange)
+    local host = Window.new(area, { title = "Panel host" })
+    local owner = host:AddPanel({
+        popout = true, poppedOut = true, popoutClickthrough = true,
+        popoutX = -150, popoutY = -100, popoutXAnchor = 0.5, popoutYAnchor = 0.5,
+        width = 300, height = 200, onPositionChange = onPositionChange,
+    })
+    return owner, owner.overlay.root, owner.overlayDragLayer, function() host:Destroy() end
+end, true)
+
 local unloadWindow = Window.new(area, { title = "Unload" })
 local unloadPanel = Panel.new(area, { popout = true })
 Interfaces.unload()

@@ -372,6 +372,7 @@ function Panel.new(parent, options, flowManaged)
     self.popoutClickthrough = options.popoutClickthrough == true
     self.popoutBackgroundAlpha = clampAlpha(options.popoutBackgroundAlpha or options.backgroundAlpha)
     self.onPopoutChange = options.onPopoutChange
+    self.onPositionChange = options.onPositionChange
     self.rowBackgroundColours = options.rowBackgroundColours
         or options.rowBackgroundColors
         or {}
@@ -607,12 +608,16 @@ function Panel:_MoveDrag(component, x, y)
             0, parent.width - drag.surface.root.width)
         local nextY = clamp(drag.panelY + mouse.y - drag.mouseY,
             0, parent.height - drag.surface.root.height)
-        if drag.surface.root.x ~= nextX or drag.surface.root.y ~= nextY then
+        local positionChanged = drag.surface.root.x ~= nextX or drag.surface.root.y ~= nextY
+        if positionChanged then
             drag.surface.root:SetPos(nextX, nextY)
             local bounds = drag.surface == self.overlay and self.overlayBounds or self.dockBounds
             bounds:RememberPosition()
         end
         self.dragFeedback:Update()
+        if positionChanged and self.onPositionChange then
+            self.onPositionChange(self, nextX, nextY, drag.surface == self.overlay)
+        end
     end
     return false
 end

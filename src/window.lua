@@ -41,6 +41,7 @@ function Window.new(parent, options)
     self.interfaceID = parent.interfaceID
     self.title = options.title
     self.onClose = options.onClose
+    self.onPositionChange = options.onPositionChange
     self.destroyOnClose = options.destroyOnClose == true
     self.minWidth = options.minWidth or MIN_WIDTH
     self.minHeight = options.minHeight or MIN_HEIGHT
@@ -185,11 +186,15 @@ function Window.new(parent, options)
                     0, self.parent.width - self.root.width)
                 local nextY = clamp(dragStart.windowY + mouse.y - dragStart.mouseY,
                     0, self.parent.height - self.root.height)
-                if self.root.x ~= nextX or self.root.y ~= nextY then
+                local positionChanged = self.root.x ~= nextX or self.root.y ~= nextY
+                if positionChanged then
                     self.root:SetPos(nextX, nextY)
                     self.dragBounds:RememberPosition()
                 end
                 self.dragFeedback:Update()
+                if positionChanged and self.onPositionChange then
+                    self.onPositionChange(self, nextX, nextY)
+                end
             end
             return false
         end
