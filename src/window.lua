@@ -149,7 +149,8 @@ function Window.new(parent, options)
         local dragStart = nil
         local captureExpanded = false
 
-        local function stopDrag()
+        local function stopDrag(notify)
+            local drag = dragStart
             dragStart = nil
             if self.resize then self.resize:SetEnabled(true) end
             captureExpanded = false
@@ -163,10 +164,16 @@ function Window.new(parent, options)
                 self.titleDrag:SetPos(self.root.x, self.root.y)
                 self.titleDrag:SetSize(self.root.width - CLOSE_SIZE - 14, TITLE_HEIGHT)
                 self:_SyncOverlays(false)
+                if notify == true and drag and drag.positionChanged and self.onPositionChange then
+                    self.onPositionChange(self, self.root.x, self.root.y)
+                end
             end
             return false
         end
         self._stopDrag = stopDrag
+        local function finishDrag()
+            return stopDrag(true)
+        end
 
         local function moveDrag(component, x, y)
             local mouse = InterfaceMouse.GetPosition(component, x, y)
@@ -186,15 +193,12 @@ function Window.new(parent, options)
                     0, self.parent.width - self.root.width)
                 local nextY = clamp(dragStart.windowY + mouse.y - dragStart.mouseY,
                     0, self.parent.height - self.root.height)
-                local positionChanged = self.root.x ~= nextX or self.root.y ~= nextY
-                if positionChanged then
+                if self.root.x ~= nextX or self.root.y ~= nextY then
                     self.root:SetPos(nextX, nextY)
                     self.dragBounds:RememberPosition()
+                    dragStart.positionChanged = true
                 end
                 self.dragFeedback:Update()
-                if positionChanged and self.onPositionChange then
-                    self.onPositionChange(self, nextX, nextY)
-                end
             end
             return false
         end
@@ -214,8 +218,8 @@ function Window.new(parent, options)
             return false
         end)
         self.titleDrag:Subscribe(ui.Hook.ONHOLD, moveDrag)
-        self.titleDrag:Subscribe(ui.Hook.ONRELEASE, stopDrag)
-        self.titleDrag:Subscribe(ui.Hook.ONDRAGCOMPLETE, stopDrag)
+        self.titleDrag:Subscribe(ui.Hook.ONRELEASE, finishDrag)
+        self.titleDrag:Subscribe(ui.Hook.ONDRAGCOMPLETE, finishDrag)
         self.dragBounds = DragBounds.new(self.parent, self.root, function(dx, dy)
             if dragStart then
                 dragStart.windowX = dragStart.windowX + dx
