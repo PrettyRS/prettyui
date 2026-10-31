@@ -431,8 +431,6 @@ local function setTooltip(bar, entry, value, deferLayout)
         entry.tooltipTarget = trackComponent(bar, ui.Layer.new(entry.layer))
     end
     entry.tooltip = Tooltip.attach(entry.tooltipTarget, entry.layer, value, {
-        -- the bar tracks this tooltips root as soon as its attached so it cant wait for a hover
-        eager = true,
         onMouseOver = function(tooltip)
             if entry.visible then
                 entry.pendingTooltip = tooltip

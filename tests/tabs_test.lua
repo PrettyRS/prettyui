@@ -106,6 +106,7 @@ package.loaded["src/core/sprites"] = {
         disabled = { left = 12, middle = 13, right = 14 },
     },
 }
+hiddenTooltipContexts = {}
 package.loaded["src/tooltip"] = {
     getContext = function() return nil end,
     registerContext = function() return {} end,
@@ -113,6 +114,7 @@ package.loaded["src/tooltip"] = {
     set = function() return true end,
     unbind = function() return true end,
     unregisterContext = function() end,
+    hideContextTooltips = function(collection) hiddenTooltipContexts[collection] = true end,
 }
 package.loaded["src/core/wheel"] = {
     bind = function() end,
@@ -139,5 +141,11 @@ expect(tab.middle.width, -60, "the middle strip is anchored between both caps")
 
 tabs:SetDisabled(1, true)
 expect(tab.width, 90, "disabled styling preserves the safe minimum width")
+
+local tooltipTabs = Tabs.new(parent, { { text = "One" }, { text = "Two" } }, { height = 100 })
+hiddenTooltipContexts = {}
+tooltipTabs:SetActive(2)
+expect(hiddenTooltipContexts[tooltipTabs:GetPage(1).content], true, "leaving a tab hides its tooltips")
+expect(hiddenTooltipContexts[tooltipTabs:GetPage(2).content], nil, "the new tab's tooltips are left alone")
 
 print("tabs_test: ok")

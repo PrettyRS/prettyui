@@ -2,7 +2,6 @@ local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
 
 local Tooltip = {}
-Tooltip.__index = Tooltip
 
 local BORDER_SIZE = 10
 local PADDING_X = 8
@@ -113,9 +112,10 @@ end
 local function moveContextTooltipsToFront(context)
     if context == nil or not context.active then return end
     for _, tooltip in ipairs(context.tooltips) do
-        if tooltip.root ~= nil and ui.Interfaces:GetInterface(tooltip.interfaceID) ~= nil
-            and tooltip.root.hidden ~= true then
-            tooltip.root:MoveToFront()
+        local parts = tooltip._parts
+        if parts ~= nil and ui.Interfaces:GetInterface(tooltip.interfaceID) ~= nil
+            and parts.root.hidden ~= true then
+            parts.root:MoveToFront()
         end
     end
     for _, child in ipairs(context.children) do
@@ -185,67 +185,84 @@ function Tooltip.unbind(owner, field)
 end
 
 local function build(self)
-    self.root = ui.Layer.new(self.parent)
-    self.root:SetSize(self.width, self.height)
-    self.root.hidden = true
-    self.root.clickthrough = true
+    local parts = {}
+    self._parts = parts
+    parts.root = ui.Layer.new(self.parent)
+    parts.root:SetSize(self.width, self.height)
+    parts.root.hidden = true
+    parts.root.clickthrough = true
 
     local frame = Sprites.CONTENT_FRAME
 
-    local centre = sprite(self.root, frame.centre)
-    centre:SetPos(BORDER_SIZE, BORDER_SIZE)
-    centre:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
-    centre.isTiling = true
+    parts.centre = sprite(parts.root, frame.centre)
+    parts.centre:SetPos(BORDER_SIZE, BORDER_SIZE)
+    parts.centre:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
+    parts.centre.isTiling = true
 
-    local top = sprite(self.root, frame.top)
-    top:SetPos(BORDER_SIZE, 0)
-    top:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
-    top.isTiling = true
+    parts.top = sprite(parts.root, frame.top)
+    parts.top:SetPos(BORDER_SIZE, 0)
+    parts.top:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
+    parts.top.isTiling = true
 
-    local bottom = sprite(self.root, frame.bottom)
-    bottom:SetPos(BORDER_SIZE, -BORDER_SIZE, 0, 1.0)
-    bottom:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
-    bottom.isTiling = true
+    parts.bottom = sprite(parts.root, frame.bottom)
+    parts.bottom:SetPos(BORDER_SIZE, -BORDER_SIZE, 0, 1.0)
+    parts.bottom:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
+    parts.bottom.isTiling = true
 
-    local right = sprite(self.root, frame.right)
-    right:SetPos(-BORDER_SIZE, BORDER_SIZE, 1.0)
-    right:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
-    right.isTiling = true
+    parts.right = sprite(parts.root, frame.right)
+    parts.right:SetPos(-BORDER_SIZE, BORDER_SIZE, 1.0)
+    parts.right:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
+    parts.right.isTiling = true
 
-    local left = sprite(self.root, frame.left)
-    left:SetPos(0, BORDER_SIZE)
-    left:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
-    left.isTiling = true
+    parts.left = sprite(parts.root, frame.left)
+    parts.left:SetPos(0, BORDER_SIZE)
+    parts.left:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
+    parts.left.isTiling = true
 
-    local topRight = sprite(self.root, frame.topRight)
-    topRight:SetPos(-BORDER_SIZE, 0, 1.0)
-    topRight:SetSize(BORDER_SIZE, BORDER_SIZE)
+    parts.topRight = sprite(parts.root, frame.topRight)
+    parts.topRight:SetPos(-BORDER_SIZE, 0, 1.0)
+    parts.topRight:SetSize(BORDER_SIZE, BORDER_SIZE)
 
-    local topLeft = sprite(self.root, frame.topLeft)
-    topLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
+    parts.topLeft = sprite(parts.root, frame.topLeft)
+    parts.topLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
 
-    local bottomRight = sprite(self.root, frame.bottomRight)
-    bottomRight:SetPos(-BORDER_SIZE, -BORDER_SIZE, 1.0, 1.0)
-    bottomRight:SetSize(BORDER_SIZE, BORDER_SIZE)
+    parts.bottomRight = sprite(parts.root, frame.bottomRight)
+    parts.bottomRight:SetPos(-BORDER_SIZE, -BORDER_SIZE, 1.0, 1.0)
+    parts.bottomRight:SetSize(BORDER_SIZE, BORDER_SIZE)
 
-    local bottomLeft = sprite(self.root, frame.bottomLeft)
-    bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
-    bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
+    parts.bottomLeft = sprite(parts.root, frame.bottomLeft)
+    parts.bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
+    parts.bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
 
-    self.label = ui.Text.new(self.root)
-    self.label:SetPos(PADDING_X, PADDING_Y)
-    self.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
-    self.label.content = tostring(self.options.text or "")
-    self.label.font = id.Font.MUSEO_SANS_15PT_REGULAR
-    self.label.rgba = TEXT_COLOUR
-    self.label.maxLines = 0
-    self.label.clickthrough = true
+    parts.label = ui.Text.new(parts.root)
+    parts.label:SetPos(PADDING_X, PADDING_Y)
+    parts.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
+    parts.label.content = tostring(self.options.text or "")
+    parts.label.font = id.Font.MUSEO_SANS_15PT_REGULAR
+    parts.label.rgba = TEXT_COLOUR
+    parts.label.maxLines = 0
+    parts.label.clickthrough = true
 end
 
 local function release(self)
-    if self.root == nil then return end
-    if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
-    self.root, self.label = nil, nil
+    if self._parts == nil then return end
+    if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self._parts.root:Destroy() end
+    self._parts = nil
+end
+
+local PARTS = {
+    root = true, label = true, centre = true, top = true, bottom = true, left = true, right = true,
+    topLeft = true, topRight = true, bottomLeft = true, bottomRight = true,
+}
+
+function Tooltip:__index(key)
+    if not PARTS[key] then return Tooltip[key] end
+    if self._parts == nil and self.target ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
+        build(self)
+    end
+    if self._parts == nil then return nil end
+    self.keepBuilt = true
+    return self._parts[key]
 end
 
 function Tooltip.attach(target, parent, value, hoverHandlers)
@@ -267,7 +284,6 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
 
     -- callers with their own leave handling reuse one tooltip across hovers so only the rest release on hide
     self.keepBuilt = hoverHandlers ~= nil and hoverHandlers.onMouseLeave ~= nil
-    if hoverHandlers and hoverHandlers.eager then build(self) end
 
     target.clickthrough = false
 
@@ -291,8 +307,8 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
 
     if self.followCursor then
         target:Subscribe(ui.Hook.ONMOUSEREPEAT, HOOK_ID, function(_, x, y)
-            if self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
-                and self.root.hidden ~= true then
+            if self._parts ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
+                and self._parts.root.hidden ~= true then
                 self.cursorX, self.cursorY = x, y
                 self:Show()
             end
@@ -309,7 +325,7 @@ function Tooltip:Show()
     if self.target == nil
         or ui.Interfaces:GetInterface(self.interfaceID) == nil
         or ui.Interfaces:GetInterface(self.targetInterfaceID) == nil then return end
-    if self.root == nil then build(self) end
+    if self._parts == nil then build(self) end
     local targetX = self.target.x or 0
     local targetY = self.target.y or 0
     if self.context and self.context.active then
@@ -346,9 +362,9 @@ function Tooltip:Show()
         x = clamp(x, margin, maxX)
         y = clamp(y, margin, maxY)
     end
-    self.root:SetPos(x, y)
-    self.root.hidden = false
-    self.root:MoveToFront()
+    self._parts.root:SetPos(x, y)
+    self._parts.root.hidden = false
+    self._parts.root:MoveToFront()
 end
 
 function Tooltip:SetText(text)
@@ -358,11 +374,11 @@ function Tooltip:SetText(text)
     text = tostring(text or "")
     self.options.text = text
     self.width, self.height = measure(text, self.options)
-    if self.root == nil then return true end
-    self.root:SetSize(self.width, self.height)
-    self.label.content = text
+    if self._parts == nil then return true end
+    self._parts.root:SetSize(self.width, self.height)
+    self._parts.label.content = text
 
-    if self.root.hidden ~= true then self:Show() end
+    if self._parts.root.hidden ~= true then self:Show() end
     return true
 end
 
@@ -370,8 +386,8 @@ function Tooltip:Hide()
     self.cursorX, self.cursorY = nil, nil
     if not self.keepBuilt then
         release(self)
-    elseif self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
-        self.root.hidden = true
+    elseif self._parts ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
+        self._parts.root.hidden = true
     end
 end
 

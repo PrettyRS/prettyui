@@ -93,45 +93,55 @@ target.clickthrough = true
 
 local tooltip = Tooltip.attach(target, parent, "Hi")
 expect(tooltip.width, 26, "initial text is measured")
-expect(tooltip.root, nil, "tooltip builds nothing until shown")
+expect(tooltip._parts, nil, "tooltip builds nothing until shown")
 
 expect(tooltip:SetText("A longer tooltip"), true, "tooltip text can be updated")
 expect(tooltip.width, 96, "updated text is remeasured")
-expect(tooltip.root, nil, "updating a hidden tooltip keeps it unbuilt")
+expect(tooltip._parts, nil, "updating a hidden tooltip keeps it unbuilt")
 
 tooltip:Show()
-expect(tooltip.label.content, "A longer tooltip", "the label is built with the latest text")
-expect(tooltip.root.width, 96, "the tooltip root is built at the latest size")
-expect(tooltip.root.hidden, false, "showing builds a visible tooltip")
-expect(tooltip.root.x, 66, "tooltip uses the target placement")
-local frontCount = tooltip.root.frontCount
+expect(tooltip._parts.label.content, "A longer tooltip", "the label is built with the latest text")
+expect(tooltip._parts.root.width, 96, "the tooltip root is built at the latest size")
+expect(tooltip._parts.root.hidden, false, "showing builds a visible tooltip")
+expect(tooltip._parts.root.x, 66, "tooltip uses the target placement")
+local frontCount = tooltip._parts.root.frontCount
 expect(tooltip:SetText("Small"), true, "a visible tooltip can be updated")
 expect(tooltip.width, 41, "a visible tooltip is remeasured")
-expect(tooltip.root.x, 66, "a visible tooltip is repositioned")
-expect(tooltip.root.frontCount, frontCount + 1, "a visible tooltip remains in front")
+expect(tooltip._parts.root.x, 66, "a visible tooltip is repositioned")
+expect(tooltip._parts.root.frontCount, frontCount + 1, "a visible tooltip remains in front")
 
-local shownRoot = tooltip.root
+local shownRoot = tooltip._parts.root
 tooltip:Hide()
 expect(shownRoot.destroyed, true, "hiding releases the tooltip components")
-expect(tooltip.root, nil, "hiding drops the released root")
+expect(tooltip._parts, nil, "hiding drops the released root")
 expect(tooltip:SetText("Rebuilt"), true, "a released tooltip can still be updated")
 tooltip:Show()
-expect(tooltip.label.content, "Rebuilt", "showing again rebuilds with the latest text")
+expect(tooltip._parts.label.content, "Rebuilt", "showing again rebuilds with the latest text")
 
 tooltip:Destroy()
 expect(tooltip:SetText("Ignored"), false, "destroyed tooltips reject updates")
 tooltip:Show()
 expect(tooltip.root, nil, "destroyed tooltips cannot be rebuilt")
 
-local eagerTooltip = Tooltip.attach(component(), parent, "Eager", { eager = true, onMouseLeave = function() end })
-expect(eagerTooltip.root.hidden, true, "eager tooltips are built up front and hidden")
-local eagerRoot = eagerTooltip.root
-eagerTooltip:Show()
-eagerTooltip:Hide()
-expect(eagerTooltip.root, eagerRoot, "tooltips with their own leave handling stay built")
-expect(eagerRoot.hidden, true, "tooltips that stay built still hide")
-eagerTooltip:Destroy()
-expect(eagerRoot.destroyed, true, "destroying releases a tooltip that stayed built")
+local readTooltip = Tooltip.attach(component(), parent, "Read")
+local readRoot = readTooltip.root
+expect(readRoot.hidden, true, "reading root builds the tooltip hidden")
+expect(readTooltip.label.content, "Read", "reading label gives the built label")
+readTooltip:Show()
+readTooltip:Hide()
+expect(readTooltip.root, readRoot, "a tooltip whose root was read stays built")
+expect(readRoot.hidden, true, "a tooltip that stays built still hides")
+readTooltip:Destroy()
+expect(readRoot.destroyed, true, "destroying releases a tooltip that stayed built")
+expect(readTooltip.root, nil, "a destroyed tooltip has no root to read")
+
+local leaveTooltip = Tooltip.attach(component(), parent, "Leave", { onMouseLeave = function() end })
+expect(leaveTooltip._parts, nil, "own leave handling still builds on first show")
+leaveTooltip:Show()
+local leaveRoot = leaveTooltip._parts.root
+leaveTooltip:Hide()
+expect(leaveTooltip._parts.root, leaveRoot, "tooltips with their own leave handling stay built")
+leaveTooltip:Destroy()
 
 local owner = {}
 local boundTarget = component()
@@ -258,8 +268,8 @@ local childTooltip = Tooltip.attach(childTarget, childCollection, "Child")
 childTooltip:Show()
 
 Tooltip.hideContextTooltips(contextCollection)
-expect(contextTooltip.root, nil, "context tooltip hides with its window")
-expect(childTooltip.root, nil, "nested panel tooltip hides with its window")
+expect(contextTooltip._parts, nil, "context tooltip hides with its window")
+expect(childTooltip._parts, nil, "nested panel tooltip hides with its window")
 local deadOwner = {}
 local deadTarget = component()
 Tooltip.bind(deadOwner, deadTarget, parent, "Logout")
