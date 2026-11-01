@@ -1,6 +1,8 @@
 name: Release plugin
 
 on:
+  push:
+    tags: ['v*', '[0-9]*']
   release:
     types: [published]
 
@@ -8,22 +10,23 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ github.event.release.tag_name || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
       TARGET_BRANCH: ${{ github.event.release.target_commitish }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.ref_name }}
           fetch-depth: 0
 
       - name: Synchronize versions on the release branch
+        if: github.event_name == 'release'
         shell: bash
         run: |
           git check-ref-format --branch "$TARGET_BRANCH"
@@ -54,11 +57,22 @@ jobs:
           # Package from the tag, not newer commits on the branch (or the sync commit).
           git checkout --detach "$tag_commit"
 
-      - name: Build and attach plugin ZIP
+      - name: Build plugin and developer assets
+        shell: bash
+        run: |
+          python3 .github/scripts/package_release.py "$RELEASE_TAG" --output "PrettyUI-${RELEASE_TAG}.zip"
+          python3 .github/scripts/package_editor.py "$RELEASE_TAG" --output developer-assets
+
+      - name: Publish release assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          asset="PrettyUI-${RELEASE_TAG}.zip"
-          python3 .github/scripts/package_release.py "$RELEASE_TAG" --output "$asset"
-          gh release upload "$RELEASE_TAG" "$asset" --clobber
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            flags=()
+            if [[ "${RELEASE_TAG#v}" == *-* ]]; then
+              flags+=(--prerelease)
+            fi
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes "${flags[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" "PrettyUI-${RELEASE_TAG}.zip" "developer-assets/PrettyUI-luals-addon-${RELEASE_TAG}.zip" --clobber
