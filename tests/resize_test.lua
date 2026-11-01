@@ -128,6 +128,8 @@ local font = {
 config = {
     Cursor = {
         CURSOR_GOTO = 1, CURSOR_USE = 2, CURSOR_OPEN = 3, TOPLEVEL_V2_MOVE = 4,
+        TOPLEVEL_V2_SCALE_VERT = 5, TOPLEVEL_V2_SCALE_HORZ = 6,
+        TOPLEVEL_V2_SCALE_DIAG_1 = 7, TOPLEVEL_V2_SCALE_DIAG_2 = 8,
     },
     Font = { MUSEO_SANS_15PT_REGULAR = font, CINZEL_13PT_BOLD = font },
 }
@@ -219,10 +221,18 @@ local function expectCleared(controller, active, message)
     expect(active.destroyed, true, message .. " destroys gold native layers")
     expect(controller.dragState, nil, message .. " cancels resize state")
 end
+local edgeCursors = {
+    n = config.Cursor.TOPLEVEL_V2_SCALE_VERT, s = config.Cursor.TOPLEVEL_V2_SCALE_VERT,
+    e = config.Cursor.TOPLEVEL_V2_SCALE_HORZ, w = config.Cursor.TOPLEVEL_V2_SCALE_HORZ,
+    nw = config.Cursor.TOPLEVEL_V2_SCALE_DIAG_1, se = config.Cursor.TOPLEVEL_V2_SCALE_DIAG_1,
+    ne = config.Cursor.TOPLEVEL_V2_SCALE_DIAG_2, sw = config.Cursor.TOPLEVEL_V2_SCALE_DIAG_2,
+}
 local function begin(controller, direction, root)
     local handle = assert(controller.handles[direction], "missing " .. direction .. " resize edge")
     expect(handle.hidden, false, direction .. " edge is reachable without Alt")
     expect(handle.clickthrough, false, direction .. " edge receives pointer input")
+    expect(handle.cursorConfig.mouseOverCursor, edgeCursors[direction:sub(1, 2)],
+        direction .. " edge shows its scale cursor")
     expect(controller.feedback, nil, "hover does not display resize feedback")
     fire(handle, ui.Hook.ONCLICK, 2, 2)
     expectGold(controller, root)
@@ -242,7 +252,7 @@ local parent = component(nil, "parent")
 parent:SetSize(1000, 700)
 local overlayParent = component(nil, "overlayParent")
 overlayParent:SetSize(1200, 800)
-local directions = { "n", "s", "e", "w", "nw", "ne", "sw", "se" }
+local directions = { "n", "s", "e", "w", "nw_v", "ne_v", "sw_v", "se_v" }
 
 -- Resize is opt-in; both existing panel surfaces remain unchanged by default.
 local plainWindow = Window.new(parent, { title = "Default" })
@@ -350,12 +360,13 @@ for _, edge in pairs(clickthroughResize.handles) do
 end
 setAlt(true)
 expect(clickthroughResize.enabled, true, "Alt enables click-through popout resize")
-handle = begin(clickthroughResize, "se", clickthroughPanel.overlay.root)
+handle = begin(clickthroughResize, "se_v", clickthroughPanel.overlay.root)
 active = clickthroughResize.feedback.active
 setAlt(false)
 expectCleared(clickthroughResize, active, "releasing Alt on a click-through popout")
 for _, edge in pairs(clickthroughResize.handles) do
     expect(edge.hidden, true, "releasing Alt hides click-through popout resize edges")
+    expect(edge.cursorConfig.mouseOverCursor, -1, "hidden resize edges drop their scale cursor")
 end
 clickthroughPanel:SetPopoutClickthrough(false)
 expect(clickthroughResize.enabled, true, "disabling click-through enables ordinary resize")
@@ -372,7 +383,7 @@ for _, placement in ipairs({ "first", "inline", "removed" }) do
     flowPanel = flowHost:AddPanel({ resizable = true, inline = true, width = 300, height = 200 })
     if placement == "removed" then previous:Destroy() end
     local before = rect(flowPanel.root)
-    flowHandle = begin(flowPanel.dockResize, "nw", flowPanel.root)
+    flowHandle = begin(flowPanel.dockResize, "nw_v", flowPanel.root)
     fire(flowHandle, ui.Hook.ONHOLD, 22, 17)
     expectRect(flowPanel.root, {
         x = before.x + 20, y = before.y + 15, width = before.width - 20, height = before.height - 15,
@@ -387,10 +398,10 @@ local hoverPoints = {
     s = { 0.5, 1 },
     e = { 1, 0.5 },
     w = { 0, 0.5 },
-    nw = { 0, 0 },
-    ne = { 1, 0 },
-    sw = { 0, 1 },
-    se = { 1, 1 },
+    nw_v = { 0, 0 },
+    ne_v = { 1, 0 },
+    sw_v = { 0, 1 },
+    se_v = { 1, 1 },
 }
 for _, kind in ipairs({ "titled", "untitled", "standalone", "flow", "popout" }) do
     local owner, root, controller, host = createSurface(kind, parent)
@@ -420,6 +431,29 @@ for _, kind in ipairs({ "titled", "untitled", "standalone", "flow", "popout" }) 
     if host then host:Destroy() else owner:Destroy() end
 end
 
+-- Corner arms extend the diagonal grab along both edges without covering the
+-- content, and the straight edges begin where the arms end.
+do
+    local owner, root, controller = createSurface("titled", parent)
+    local before = rect(root)
+    local area = root.parent
+    expect(hoverAt(area, root.x + 25, root.y), controller.handles.nw_h, "top edge near the corner is the corner arm")
+    expect(hoverAt(area, root.x, root.y + 25), controller.handles.nw_v, "left edge near the corner is the corner arm")
+    expect(hoverAt(area, root.x + 35, root.y), controller.handles.n, "top edge past the arm is the north edge")
+    expect(hoverAt(area, root.x, root.y + 35), controller.handles.w, "left edge past the arm is the west edge")
+    local inside = hoverAt(area, root.x + 15, root.y + 8)
+    for _, edge in pairs(controller.handles) do
+        expect(inside ~= edge, true, "content beside the corner arms stays clear of resize handles")
+    end
+    local handle = begin(controller, "nw_h", root)
+    fire(handle, ui.Hook.ONHOLD, 2 - 10, 2 - 10)
+    expectRect(root, {
+        x = before.x - 10, y = before.y - 10, width = before.width + 10, height = before.height + 10,
+    }, "the horizontal corner arm resizes both axes")
+    finish(controller, handle)
+    owner:Destroy()
+end
+
 -- Clicking or dragging a resize edge must not bury the separate header layer.
 local headerWindow, headerRoot, headerResize = createSurface("titled", parent)
 local handle, active
@@ -445,7 +479,7 @@ for _, drag in ipairs({ false, true }) do
         x = before.x + 25, y = before.y + 15, width = before.width, height = before.height,
     }, "header drag moves the resized window without changing dimensions")
 end
-handle = begin(headerResize, "se", headerRoot)
+handle = begin(headerResize, "se_v", headerRoot)
 active = headerResize.feedback.active
 headerResize:Cancel()
 expectCleared(headerResize, active, "explicit cancellation")
@@ -457,10 +491,10 @@ local bounds = component(nil, "bounds")
 bounds:SetSize(600, 400)
 for _, kind in ipairs({ "titled", "standalone", "popout" }) do
     for _, sample in ipairs({
-        { direction = "se", delta = 1000, expected = { x = 100, y = 80, width = 360, height = 250 } },
-        { direction = "se", delta = -1000, expected = { x = 100, y = 80, width = 100, height = 80 } },
-        { direction = "nw", delta = -1000, expected = { x = 40, y = 30, width = 360, height = 250 } },
-        { direction = "nw", delta = 1000, expected = { x = 300, y = 200, width = 100, height = 80 } },
+        { direction = "se_v", delta = 1000, expected = { x = 100, y = 80, width = 360, height = 250 } },
+        { direction = "se_v", delta = -1000, expected = { x = 100, y = 80, width = 100, height = 80 } },
+        { direction = "nw_v", delta = -1000, expected = { x = 40, y = 30, width = 360, height = 250 } },
+        { direction = "nw_v", delta = 1000, expected = { x = 300, y = 200, width = 100, height = 80 } },
     }) do
         local owner, root, controller = createSurface(kind, bounds, {
             width = 300, height = 200, minWidth = 100, minHeight = 80, maxWidth = 360, maxHeight = 250,
@@ -485,12 +519,12 @@ for _, kind in ipairs({ "titled", "standalone", "popout" }) do
         end
         owner:Destroy()
     end
-    for _, direction in ipairs({ "se", "nw" }) do
+    for _, direction in ipairs({ "se_v", "nw_v" }) do
         local owner, root, controller = createSurface(kind, bounds, { width = 300, height = 200 })
         handle = begin(controller, direction, root)
-        local delta = direction == "se" and 10000 or -10000
+        local delta = direction == "se_v" and 10000 or -10000
         fire(handle, ui.Hook.ONHOLD, 2 + delta, 2 + delta)
-        expectRect(root, direction == "se" and { x = 100, y = 80, width = 500, height = 320 }
+        expectRect(root, direction == "se_v" and { x = 100, y = 80, width = 500, height = 320 }
             or { x = 0, y = 0, width = 400, height = 280 }, kind .. " stops at viewport boundary")
         expectGold(controller, root)
         finish(controller, handle)
@@ -500,7 +534,7 @@ for _, kind in ipairs({ "titled", "standalone", "popout" }) do
     local owner, root, controller = createSurface(kind, bounds, {
         width = 220, height = 140, minWidth = 220, minHeight = 140,
     })
-    handle = begin(controller, "nw", root)
+    handle = begin(controller, "nw_v", root)
     fire(handle, ui.Hook.ONHOLD, 1000, 1000)
     expectRect(root, { x = 0, y = 0, width = 220, height = 140 }, "undersized viewport retains minimum and pins origin")
     expectGold(controller, root)
@@ -547,7 +581,7 @@ expectCleared(movingResize, active, "Destroy")
 for _, edge in ipairs(savedHandles) do expect(edge.destroyed, true, "Destroy removes sibling hit areas") end
 
 local closing, closingRoot, closingResize = createSurface("titled", parent, { destroyOnClose = true })
-begin(closingResize, "se", closingRoot)
+begin(closingResize, "se_v", closingRoot)
 active = closingResize.feedback.active
 closing:Close()
 expectCleared(closingResize, active, "destroy-on-close")
@@ -555,7 +589,7 @@ expect(closingRoot.destroyed, true, "destroy-on-close removes the resized surfac
 
 -- A late viewport change during capture must not be undone by the next hold.
 local livePanel, liveRoot, liveResize = createSurface("popout", bounds, { width = 300, height = 200 })
-handle = begin(liveResize, "se", liveRoot)
+handle = begin(liveResize, "se_v", liveRoot)
 fire(handle, ui.Hook.ONHOLD, 42, 22)
 bounds.width, bounds.height = 450, 300
 tick()
@@ -579,12 +613,12 @@ local switching = Panel.new(parent, {
     x = 100, y = 80, width = 300, height = 200,
 })
 local dockResize, overlayResize = switching.dockResize, switching.overlayResize
-handle = begin(dockResize, "se", switching.dock.root)
+handle = begin(dockResize, "se_v", switching.dock.root)
 active = dockResize.feedback.active
 switching:SetPoppedOut(true)
 expectCleared(dockResize, active, "popping out")
 for _, edge in pairs(dockResize.handles) do expect(edge.hidden, true, "popped-out dock edges stay hidden") end
-handle = begin(overlayResize, "nw", switching.overlay.root)
+handle = begin(overlayResize, "nw_v", switching.overlay.root)
 active = overlayResize.feedback.active
 switching:SetPoppedOut(false)
 expectCleared(overlayResize, active, "docking")
@@ -620,7 +654,7 @@ expect(next(logicCallbacks), nil, "destroyed owners leave no logic listeners")
 -- A vanished native interface must be detected before touching any stale handle.
 local unloadedWindow, unloadedRoot, unloadedResize = createSurface("titled", parent)
 local unloadedPanel = Panel.new(parent, { resizable = true, popout = true, overlayParent = overlayParent })
-begin(unloadedResize, "se", unloadedRoot)
+begin(unloadedResize, "se_v", unloadedRoot)
 Interfaces.unload()
 tick()
 expect(unloadedResize.feedback, nil, "interface unload releases resize feedback state")
