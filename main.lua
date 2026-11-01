@@ -55,7 +55,7 @@ local PrettyUI = {
     BuffBar = BuffBar,
 }
 
-PrettyUI.version = "1.3.0-beta"
+PrettyUI.version = "1.3.0-beta.2"
 
 RibbonBar.Start()
 PrettyMiniMenu.Start()
