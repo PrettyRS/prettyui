@@ -16,7 +16,7 @@ local function removeChild(parent, child)
     end
 end
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         parent = parent, kind = kind, children = {}, subscriptions = {}, namedSubscriptions = {},
         x = 0, y = 0, width = 0, height = 0, hidden = false,
@@ -82,11 +82,13 @@ local function component(parent, kind)
         self.destroyed = true
     end
     if parent then table.insert(parent.children, result) end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent) return component(parent, kind) end }
+    return { new = function(parent, categoryID, dynamicID)
+        return component(parent, kind, categoryID, dynamicID)
+    end }
 end
 
 ui = {
@@ -736,6 +738,33 @@ local unloadPanel = Panel.new(unloadArea, {
 })
 startDrag(unloadWindow, unloadWindow.root, unloadWindow.titleDrag)
 startDrag(unloadPanel, unloadPanel.overlay.root, unloadPanel.overlayDragLayer)
+local Components = require("src/core/components")
+local DragFeedback = require("src/core/drag_feedback")
+local feedbackHost = component(area, "shared-feedback-host")
+feedbackHost:SetSize(360, 200)
+local autoOwner = Components.new(ui.Layer, feedbackHost, { categoryID = "auto" })
+autoOwner:SetSize(90, 65)
+local autoFrames = DragFeedback.new(feedbackHost, autoOwner)
+expect(autoFrames.origin.parent, feedbackHost, "auto feedback stays beside its logical root")
+expect(autoFrames.active.categoryID > 0, true, "auto owner creates a managed final frame")
+autoFrames:Destroy()
+
+local autoPhysicalHost = Components.new(ui.Layer, area, { categoryID = "auto" })
+autoPhysicalHost:SetSize(360, 200)
+local legacyOwner = Components.new(ui.Layer, autoPhysicalHost, {
+    _categoryPolicy = "legacy",
+})
+legacyOwner:SetSize(90, 65)
+local legacyFrames = DragFeedback.new(autoPhysicalHost, legacyOwner)
+expect(legacyFrames.active.categoryID, autoPhysicalHost.categoryID,
+    "legacy owner overrides an auto physical overlay for the final frame")
+expect(Components.new(ui.Layer, autoPhysicalHost).categoryID > 0, true,
+    "detached feedback does not relabel the shared auto physical host")
+legacyFrames:Destroy()
+autoOwner:Destroy()
+legacyOwner:Destroy()
+autoPhysicalHost:Destroy()
+
 Interfaces.unload()
 unloadWindow:Destroy()
 unloadPanel:Destroy()

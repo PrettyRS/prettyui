@@ -9,7 +9,7 @@ end
 local created = {}
 ui = {
     Rectangle = {
-        new = function(parent)
+        new = function(parent, categoryID, dynamicID)
             local rectangle = { parent = parent }
             function rectangle:SetPos(x, y)
                 self.x, self.y = x, y
@@ -25,7 +25,7 @@ ui = {
                 self.destroyed = true
             end
             created[#created + 1] = rectangle
-            return Interfaces.component(rectangle, parent)
+            return Interfaces.component(rectangle, parent, categoryID, dynamicID)
         end,
     },
 }

@@ -1,6 +1,5 @@
 local TextField = require("src/text_field")
 local KeybindField = require("src/keybind_field")
-local RibbonBar = require("src/ribbon_bar")
 local BuffBar = require("src/buff_bar")
 local TimeGraph = require("src/time_graph")
 local BarChart = require("src/bar_chart")
@@ -10,6 +9,8 @@ local Confirm = require("src/confirm")
 local SelectionButtons = require("src/selection_button")
 local PrettyMiniMenu = require("src/minimenu")
 local OverheadBar = require("src/overhead_bar")
+local CategoryGroups = require("src/core/category_groups")
+local Components = require("src/core/components")
 
 local resources = Plugin.resources
 TextField.SetDefaultSprite(resources and (resources.input_default or resources["input_default.png"]))
@@ -18,6 +19,10 @@ local PrettyUI = {
     AchievementPopup = require("src/achievement_popup"),
     AnchoredTooltip = require("src/anchored_tooltip"),
     BarChart = BarChart,
+    BuildCategoryGroup = CategoryGroups.build,
+    NewComponent = Components.new,
+    RefreshComponentIDs = Components.refresh,
+    WithCategoryBatch = CategoryGroups.withBatch,
     BigSpinner = require("src/big_spinner"),
     CheckboxButton = SelectionButtons.CheckboxButton,
     ColourPicker = require("src/colour_picker"),
@@ -38,7 +43,6 @@ local PrettyUI = {
     OverheadBar = OverheadBar,
     Sprites = require("src/core/sprites"),
     RibbonButton = require("src/ribbon_button"),
-    RibbonBar = RibbonBar,
     RadioButton = SelectionButtons.RadioButton,
     SimpleButton = require("src/simple_button"),
     Slider = require("src/slider"),
@@ -50,21 +54,18 @@ local PrettyUI = {
     TextField = TextField,
     Tooltip = require("src/tooltip"),
     Window = require("src/window"),
-    Scrollbar = require("src/scrollbar"),
     SimpleView = require("src/simple_view"),
     BuffBar = BuffBar,
 }
 
 PrettyUI.version = "1.3.0-beta.2"
 
-RibbonBar.Start()
 PrettyMiniMenu.Start()
 
 function PluginShutdown()
     KeybindField.Shutdown()
     PrettyMiniMenu.Shutdown()
     Dialog.Shutdown()
-    RibbonBar.Shutdown()
     BuffBar.Shutdown()
     TimeGraph.Shutdown()
     BarChart.Shutdown()

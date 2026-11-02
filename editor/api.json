@@ -218,31 +218,6 @@
         }
       }
     },
-    "Scrollbar": {
-      "bases": [
-        "SimpleView"
-      ],
-      "options": {
-        "x": "number",
-        "y": "number",
-        "width": "number",
-        "height": "number",
-        "scrollable": "boolean",
-        "scrollStep": "number",
-        "contentHeight": "number"
-      },
-      "methods": {
-        "new": {
-          "params": {
-            "parent": "any",
-            "options": "PrettyUI.ScrollbarOptions?"
-          },
-          "returns": [
-            "PrettyUI.Scrollbar"
-          ]
-        }
-      }
-    },
     "Panel": {
       "options": {
         "x": "number",
@@ -1808,102 +1783,6 @@
           "params": {
             "enabled": "boolean"
           }
-        }
-      }
-    },
-    "RibbonBar": {
-      "options": {
-        "id": "string",
-        "identifier": "string",
-        "icon": "number",
-        "object": "any",
-        "active": "boolean",
-        "disabled": "boolean",
-        "tooltip": "string|PrettyUI.TooltipOptions",
-        "label": "string",
-        "onClick": "fun(handle: PrettyUI.RibbonHandle, active: boolean)"
-      },
-      "methods": {
-        "Register": {
-          "static": true,
-          "params": {
-            "options": "PrettyUI.RibbonBarOptions"
-          },
-          "returns": [
-            "PrettyUI.RibbonHandle"
-          ]
-        },
-        "Unregister": {
-          "static": true,
-          "params": {
-            "identifier": "string"
-          },
-          "returns": [
-            "boolean"
-          ]
-        },
-        "SetPosition": {
-          "static": true,
-          "params": {
-            "value": "string"
-          }
-        },
-        "GetPosition": {
-          "static": true,
-          "params": {},
-          "returns": [
-            "string"
-          ]
-        },
-        "SetAutoHide": {
-          "static": true,
-          "params": {
-            "value": "boolean"
-          }
-        },
-        "GetAutoHide": {
-          "static": true,
-          "params": {},
-          "returns": [
-            "boolean"
-          ]
-        }
-      }
-    },
-    "RibbonHandle": {
-      "fields": {
-        "id": "string"
-      },
-      "methods": {
-        "SetActive": {
-          "params": {
-            "active": "boolean"
-          },
-          "returns": [
-            "boolean"
-          ]
-        },
-        "SetIcon": {
-          "params": {
-            "icon": "number"
-          },
-          "returns": [
-            "boolean"
-          ]
-        },
-        "SetTooltip": {
-          "params": {
-            "value": "string|PrettyUI.TooltipOptions|nil"
-          },
-          "returns": [
-            "boolean"
-          ]
-        },
-        "Destroy": {
-          "params": {},
-          "returns": [
-            "boolean"
-          ]
         }
       }
     },

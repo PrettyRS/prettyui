@@ -20,7 +20,7 @@ local function updateLayout(component)
 end
 
 local liveComponents = 0
-local function component(parent, kind, interfaceID)
+local function component(parent, kind, interfaceID, categoryID, dynamicID)
     local result = {
         position = { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
         size = { width = 0, height = 0, widthParentPc = 0, heightParentPc = 0 },
@@ -64,7 +64,8 @@ local function component(parent, kind, interfaceID)
     updateLayout(result)
     liveComponents = liveComponents + 1
     if parent then table.insert(parent.children, result) end
-    return Interfaces.component(result, interfaceID and { interfaceID = interfaceID } or parent)
+    if interfaceID ~= nil then result.interfaceID = interfaceID end
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local root = component(nil, "Layer")
@@ -89,10 +90,18 @@ id = {
 ui = {
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
     Hook = { ONMOUSEOVER = 1, ONMOUSEREPEAT = 2, ONMOUSELEAVE = 3, ONCLICK = 4, ONSCROLLWHEEL = 5 },
-    Layer = { new = function(parent) return component(parent, "Layer") end },
-    Rectangle = { new = function(parent) return component(parent, "Rectangle") end },
-    Sprite = { new = function(parent) return component(parent, "Sprite") end },
-    Text = { new = function(parent) return component(parent, "Text") end },
+    Layer = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "Layer", nil, categoryID, dynamicID)
+    end },
+    Rectangle = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "Rectangle", nil, categoryID, dynamicID)
+    end },
+    Sprite = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "Sprite", nil, categoryID, dynamicID)
+    end },
+    Text = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "Text", nil, categoryID, dynamicID)
+    end },
     Interfaces = {
         GetComponent = function(_, componentID)
             if componentID == id.Component.TOPLEVEL_V2__ROOT
@@ -646,6 +655,25 @@ openMenu(menu, true)
 click(rows(assert(hoverParent(menu, parent)))[1])
 expect(selected, "remounted", "restart and native interface reload allow a fresh submenu action")
 closeMenu()
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Opted-in submenu", children(),
+        { categoryID = "auto" })
+end)
+openMenu(menu)
+local autoOverlay = assert(hoverParent(menu, parent))
+expect(autoOverlay.parent, nativeHitbox, "managed submenu stays on the native menu host")
+expect(autoOverlay.categoryID > 0, true, "managed submenu allocates its own category")
+closeMenu()
+
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Existing submenu", children())
+end)
+openMenu(menu)
+local legacyOverlay = assert(hoverParent(menu, parent))
+expect(legacyOverlay.categoryID, nativeHitbox.categoryID,
+    "legacy submenu retains native allocation on the same host")
+closeMenu()
+
 PrettyMiniMenu.Shutdown()
 
 print("minimenu_test: ok")

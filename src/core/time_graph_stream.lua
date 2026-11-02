@@ -45,7 +45,9 @@ function Stream.CreateEventBus()
         for _, callback in ipairs(snapshot) do
             local ok, message = pcall(callback, { metric = metric, value = value })
             if not ok then
-                pcall(log, "[prettyui] TimeGraph update subscriber failed: " .. tostring(message))
+                pcall(function()
+                    log("[prettyui] TimeGraph update subscriber failed: " .. tostring(message))
+                end)
             end
         end
         return true
