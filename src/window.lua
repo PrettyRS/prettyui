@@ -41,6 +41,7 @@ function Window.new(parent, options)
     self.interfaceID = parent.interfaceID
     self.title = options.title
     self.onClose = options.onClose
+    self.hideCloseButton = options.hideCloseButton == true
     self.destroyOnClose = options.destroyOnClose == true
     self.minWidth = options.minWidth or MIN_WIDTH
     self.minHeight = options.minHeight or MIN_HEIGHT
@@ -117,12 +118,20 @@ function Window.new(parent, options)
         self.titleCentre.isTiling = true
 
         self.titleCentreRight = sprite(self.root, Sprites.TITLEBAR_CENTRE_RIGHT)
-        self.titleCentreRight:SetPos(-TITLE_RIGHT_WIDTH - TITLE_INNER_WIDTH, 0, 1.0)
-        self.titleCentreRight:SetSize(TITLE_INNER_WIDTH, TITLE_HEIGHT)
+        if self.hideCloseButton then
+            self.titleCentreRight:SetPos(-TITLE_LEFT_WIDTH - 100, 0, 1.0)
+            self.titleCentreRight:SetSize(100, TITLE_HEIGHT)
+            self.titleCentreRight.isTiling = true
 
-        self.titleRight = sprite(self.root, Sprites.TITLEBAR_RIGHT)
-        self.titleRight:SetPos(-TITLE_RIGHT_WIDTH, 0, 1.0)
-        self.titleRight:SetSize(TITLE_RIGHT_WIDTH, TITLE_HEIGHT)
+            self.titleRight = sprite(self.root, Sprites.TITLEBAR_LEFT)
+            self.titleRight.isFlippedHorizontally = true
+            self.titleRight:SetPos(-TITLE_LEFT_WIDTH, 0, 1.0)
+            self.titleRight:SetSize(TITLE_LEFT_WIDTH, TITLE_HEIGHT)
+        else
+            self.titleRight = sprite(self.root, Sprites.TITLEBAR_RIGHT)
+            self.titleRight:SetPos(-TITLE_RIGHT_WIDTH, 0, 1.0)
+            self.titleRight:SetSize(TITLE_RIGHT_WIDTH, TITLE_HEIGHT)
+        end
 
         self.titleLeft:MoveToFront()
         self.titleRight:MoveToFront()
@@ -241,19 +250,26 @@ function Window.new(parent, options)
         self.topRight.isFlippedVertical = true
     end
 
-    self.closeButton = sprite(self.root, Sprites.CLOSE)
-    self.closeButton:SetPos(-CLOSE_SIZE - CLOSE_RIGHT, 7, 1.0)
-    self.closeButton:SetSize(CLOSE_SIZE, CLOSE_SIZE)
-    self.closeButton:Subscribe(ui.Hook.ONMOUSEOVER, function()
-        self.closeButton.spriteID = Sprites.CLOSE_ACTIVE
-    end)
-    self.closeButton:Subscribe(ui.Hook.ONMOUSELEAVE, function()
-        self.closeButton.spriteID = Sprites.CLOSE
-    end)
-    self.closeButton:Subscribe(ui.Hook.ONCLICK, function()
-        self:Close()
-        return false
-    end)
+    if not self.hideCloseButton then
+        self.closeButton = ui.Layer.new(self.root)
+        self.closeButton.clickthrough = false
+        self.closeButton:SetPos(-CLOSE_SIZE - CLOSE_RIGHT, 7, 1.0)
+        self.closeButton:SetSize(CLOSE_SIZE, CLOSE_SIZE)
+        self.closeSprite = sprite(self.closeButton, Sprites.CLOSE)
+        self.closeSprite.clickthrough = true
+        self.closeSprite:SetPos(1, 1)
+        self.closeSprite:SetSize(CLOSE_SIZE - 2, CLOSE_SIZE - 2)
+        self.closeButton:Subscribe(ui.Hook.ONMOUSEOVER, function()
+            self.closeSprite.spriteID = Sprites.CLOSE_ACTIVE
+        end)
+        self.closeButton:Subscribe(ui.Hook.ONMOUSELEAVE, function()
+            self.closeSprite.spriteID = Sprites.CLOSE
+        end)
+        self.closeButton:Subscribe(ui.Hook.ONCLICK, function()
+            self:Close()
+            return false
+        end)
+    end
 
     local parentTooltipContext = Tooltip.getContext(parent)
     local tooltipParent = parentTooltipContext and parentTooltipContext.parent or parent
@@ -280,7 +296,11 @@ function Window.new(parent, options)
             return rootX + (scrollRoot.x or 0), rootY + (scrollRoot.y or 0)
         end,
     })
-    self.closeButton:MoveToFront()
+    
+    if self.closeButton then
+        self.closeButton:MoveToFront()
+    end
+    
     self.tooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
         local rootX, rootY = self._scroll:_AbsolutePosition()
         return rootX + (target.x or 0),
