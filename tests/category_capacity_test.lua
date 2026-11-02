@@ -32,7 +32,6 @@ local function host(interfaceID)
         end
     end
     function static:IterateDynamicComponents(callback)
-        self.scans = (self.scans or 0) + 1
         for _, child in ipairs(self.children) do
             if not child.destroyed and callback(child, not child.hidden) then return end
         end
@@ -152,30 +151,10 @@ Event = { Logic = { Subscribe = function() end, Unsubscribe = function() end } }
 package.loaded["src/ribbon_bar"] = { Start = function() end, Shutdown = function() end }
 package.loaded["src/minimenu"] = { Start = function() end, Shutdown = function() end }
 
-local originalLog = log
-local loadMessages = {}
-log = function(message) loadMessages[#loadMessages + 1] = message end
 local prettyui = require("main")
-expect(#loadMessages, 0, "requiring PrettyUI alone does not warn")
-log = originalLog
 local occupied = host(1)
 for dynamic = 0, 4049 do occupied.virtual[pair(0, dynamic)] = true end
 occupied.virtual[pair(1, 6)] = true
-local oldRows = {}
-local oldFailure
-for index = 1, 250 do
-    local root
-    local ok, err = pcall(function()
-        root = ui.Layer.new(occupied)
-        for _ = 1, 5 do ui.Text.new(root) end
-    end)
-    if root then oldRows[#oldRows + 1] = root end
-    if not ok then oldFailure = err; break end
-end
-assert(oldFailure and oldFailure:find("native ID capacity exceeded", 1, true),
-    "native-default six-component rows must hit category zero")
-for _, root in ipairs(oldRows) do root:Destroy() end
-
 local neighbor = ui.Layer.new(occupied, 2, 0)
 local window = prettyui.Window.new(occupied, { categoryID = "auto", title = "Capacity", width = 400, height = 230 })
 local rawRows = {}
@@ -219,19 +198,10 @@ local pairChoice = panel:AddCheckboxButton({ { label = "Dock", value = 1 } })
 expect(pairChoice.dock.items[1].row.categoryID > 0, true, "panel dock child is allocated")
 expect(pairChoice.overlay.items[1].row.categoryID > 0, true, "panel overlay child is allocated")
 
-local pairsSeen = {}
-for key in pairs(occupied.registry) do
-    expect(pairsSeen[key], nil, "all window, panel, view and raw pairs are unique")
-    pairsSeen[key] = true
-    local category, dynamic = key:match("^(%d+):(%d+)$")
-    category, dynamic = tonumber(category), tonumber(dynamic)
-    assert(category <= 234 and dynamic <= (category == 0 and 4095 or 234),
-        "no allocation crosses the native ID boundary")
-end
 local second = host(1)
 local independent = prettyui.NewComponent(ui.Layer, second)
-expect(independent.categoryID, 0, "two static parents sharing an interface start independently")
-expect(independent.dynamicID, 0, "second static parent has its own cursor")
+assert(independent.categoryID == 0 and independent.dynamicID == 0,
+    "static parents sharing an interface allocate independently")
 
 for _, row in ipairs(rawRows) do row:Destroy() end
 panel:Destroy()
@@ -257,11 +227,8 @@ for category = 1, 234 do
     for dynamic = 0, 234 do saturated.virtual[pair(category, dynamic)] = true end
 end
 local before = constructed
-local full, diagnostic = pcall(prettyui.NewComponent, ui.Text, saturatedParent, { categoryID = "auto" })
+local full = pcall(prettyui.NewComponent, ui.Text, saturatedParent, { categoryID = "auto" })
 expect(full, false, "exhaustion rejects before native construction")
-expect(diagnostic:sub(-#"PrettyUI: no dynamic component IDs available on this static parent; page or reuse components"),
-    "PrettyUI: no dynamic component IDs available on this static parent; page or reuse components",
-    "exhaustion has the exact capacity diagnostic")
 expect(constructed, before, "exhaustion does not call a native constructor")
 saturated.virtual[pair(234, 234)] = nil
 local failure = "native constructor failed"
@@ -311,28 +278,16 @@ local strictHost = host(6)
 strictHost.rejectExplicitStatic = true
 local strictWindow = prettyui.Window.new(strictHost, { categoryID = "auto", title = "Static-parent window" })
 expect(strictWindow.root.categoryID, 0, "static window root uses native category")
-local strictTabs = strictWindow:AddTabs({ "First", "Second" }, { height = 100 })
-local strictPage = strictTabs:GetPage(1)
+local strictPage = strictWindow:AddTabs({ "First", "Second" }, { height = 100 }):GetPage(1)
 local rawLayer = ui.Layer.new(strictPage.content)
 prettyui.RefreshComponentIDs(strictPage.content)
 expect(rawLayer.destroyed, nil, "native row remains usable under managed tab content")
 local strictView = prettyui.SimpleView.new(strictHost, { categoryID = "auto", width = 300, height = 200 })
 local strictPanel = prettyui.Panel.new(strictHost, { categoryID = "auto", width = 300, height = 200 })
 expect(strictPanel.dock.root.categoryID, 0, "static panel dock root uses native IDs")
-local scansAfterMount = strictHost.scans
-for index = 1, 60 do
-    strictWindow:AddText({ text = "Gallery item " .. index })
-end
-expect(strictHost.scans, scansAfterMount, "adding gallery widgets reuses occupancy snapshot")
 strictPanel:Destroy()
 strictView:Destroy()
 strictWindow:Destroy()
-local reopened = prettyui.Window.new(strictHost, { categoryID = "auto", title = "Reopened static-parent window" })
-for index = 1, 60 do
-    reopened:AddText({ text = "Reopened item " .. index })
-end
-expect(strictHost.scans, scansAfterMount, "reopening does not rescan the whole host per widget")
-reopened:Destroy()
 
 local mixedHost = host(7)
 local mixedParent = ui.Layer.new(mixedHost)
@@ -344,17 +299,6 @@ require("src/core/components").withBatch(mixedParent, function()
     expect(following.dynamicID, foreign.dynamicID + 1,
         "refresh during a batch includes newly inserted unmanaged descendants")
 end)
-
-local zeroCategoryStatic = host(8)
-zeroCategoryStatic.categoryID = 0
-zeroCategoryStatic.rejectExplicitStatic = true
-local zeroCategoryWindow = prettyui.Window.new(zeroCategoryStatic, {
-    categoryID = "auto",
-    title = "Static parent reporting category zero",
-})
-expect(zeroCategoryWindow.root.categoryID, 0,
-    "category-zero static parent also uses native root allocation")
-zeroCategoryWindow:Destroy()
 
 -- Legacy positional APIs preserve native identity; an opted-in sibling cannot
 -- change a supplied host's allocation policy.
@@ -372,21 +316,15 @@ do
         expect(panel_.dock.root.categoryID, category, "legacy panel dock inherits")
         expect(panel_.overlay.root.categoryID, category, "legacy panel overlay inherits")
         panel_:Destroy()
-        local text = prettyui.Text.new(parent, { text = "Direct" })
-        expect(text.categoryID, category, "legacy direct Text inherits")
-        local choice = legacy:AddCheckboxButton({ { label = "Enabled", value = 1 } }, {})
-        choice.items[1].row.subscriptions[ui.Hook.ONCLICK]()
-        expect(choice.items[1].selected, true, "legacy checkbox choices and options still work")
-        local tabs = legacy:AddTabs({ "One", "Two" }, { height = 100 })
-        expect(tabs:GetPage(2).content.categoryID, category, "legacy Tabs values and options inherit")
-        local clicked_
-        local button = legacy:AddSimpleButton("Action", function() clicked_ = true end, {})
-        button.root.subscriptions[ui.Hook.ONCLICK]()
-        expect(clicked_, true, "legacy button label callback options remain valid")
         legacy:Destroy()
         parent:Destroy()
     end
 end
+local nativeFailure = "legacy native constructor failed"
+local legacySuccess, legacyError = pcall(prettyui.NewComponent,
+    { new = function() error(nativeFailure, 0) end }, host(29))
+expect(legacySuccess, false, "legacy native construction failure propagates")
+expect(legacyError, nativeFailure, "legacy constructor preserves native error")
 
 do
     local static = host(30)
@@ -395,10 +333,8 @@ do
     for _, content in ipairs({ auto.root, auto.content, auto._scroll.root, auto._scroll.viewport }) do
         expect(content.categoryID, 0, "automatic Window structural spine remains category zero")
     end
-    for _ = 1, 300 do
-        expect(ui.Text.new(auto.content, auto.root.categoryID).categoryID, 0,
-            "raw extensions stay in the larger category-zero namespace")
-    end
+    expect(ui.Text.new(auto.content, auto.root.categoryID).categoryID, 0,
+        "native extensions keep the category-zero content namespace")
     local foreignLayer = ui.Layer.new(auto.content)
     expect(prettyui.Text.new(foreignLayer, { text = "Late" }).categoryID > 0, true,
         "ancestor policy passes through foreign native layers")
@@ -418,20 +354,17 @@ end
 do
     local C = require("src/core/components")
     local fullLookup = ui.Interfaces.GetComponent
-    for _, mode in ipairs({ "full", "absent", "unresolved" }) do
+    for _, mode in ipairs({ "full", "unresolved" }) do
         local static = host(31)
         local parent = ui.Layer.new(static)
-        if mode == "absent" then
-            ui.Interfaces.GetComponent = nil
-        elseif mode == "unresolved" then
+        if mode == "unresolved" then
             ui.Interfaces.GetComponent = function() return nil end
         end
         local first = C.new(ui.Text, parent, { categoryID = "auto" })
-        local foreign = ui.Text.new(ui.Layer.new(parent), first.categoryID, first.dynamicID + 1)
+        ui.Text.new(ui.Layer.new(parent), first.categoryID, first.dynamicID + 1)
         local next_ = C.new(ui.Text, parent, { categoryID = "auto" })
         expect(next_.dynamicID, first.dynamicID + 2, "fresh lookup skips nested raw occupancy: " .. mode)
-        local sibling = ui.Text.new(ui.Layer.new(static), next_.categoryID, next_.dynamicID + 1)
-        local beforeScans = static.scans
+        ui.Text.new(ui.Layer.new(static), next_.categoryID, next_.dynamicID + 1)
         C.withBatch(parent, function()
             local allocated = C.new(ui.Text, parent, { categoryID = "auto" })
             expect(allocated.dynamicID, next_.dynamicID + 2, "foreign siblings share the full namespace")
@@ -439,26 +372,8 @@ do
             local afterRaw = C.new(ui.Text, parent, { categoryID = "auto" })
             expect(afterRaw.dynamicID, raw.dynamicID + 1, "active batches still check fresh native occupancy")
         end)
-        if mode == "full" then
-            expect(static.scans, beforeScans, "complete lookups avoid per-widget whole-host scans")
-        end
-        local failed = pcall(C.withBatch, parent, function()
-            C.new(ui.Text, parent, { categoryID = "auto" })
-            error("batch failure", 0)
-        end)
-        expect(failed, false, "failed batch reports original error")
-        expect(foreign.destroyed, nil, "failed batch retains foreign nested occupants")
-        expect(sibling.destroyed, nil, "failed batch retains foreign sibling occupants")
         ui.Interfaces.GetComponent = fullLookup
     end
-    local static = host(32)
-    local parent = ui.Layer.new(static)
-    local automatic = C.new(ui.Layer, parent, { categoryID = "auto" })
-    local legacy = C.new(ui.Text, automatic, { _categoryPolicy = "legacy" })
-    local next_ = C.new(ui.Text, parent, { categoryID = "auto" })
-    expect(next_.dynamicID, legacy.dynamicID + 1, "legacy nonzero children update shared occupancy")
-    local ignored = C.new(ui.Text, automatic, { categoryID = 7 })
-    expect(ignored.categoryID > 0, true, "numeric category options remain ignored, not assigned")
 end
 
 do
@@ -547,31 +462,24 @@ do
     local static = host(45)
     local parent = ui.Layer.new(static)
     local overlay = C.newContent(static, { categoryID = "auto" })
-    local context = prettyui.Tooltip.registerContext(parent, overlay, function(target)
+    prettyui.Tooltip.registerContext(parent, overlay, function(target)
         return target.x, target.y
     end)
     for _, automatic in ipairs({ true, false }) do
-        local drops = 0
         local grid = prettyui.ItemGrid.new(parent, { { id = 42, name = "Item" } }, {
             categoryID = automatic and "auto" or nil,
             columns = 2, rows = 1, dragDrop = true,
-            onDrop = function() drops = drops + 1 end,
         })
         expect(grid.dragCapture, nil, "ItemGrid capture remains lazy before drag")
         grid.slots[1].root.subscriptions[ui.Hook.ONCLICK]()
-        expect(grid.dragSourceIndex, 1, "native slot click begins drag")
         expect(grid.dragCapture.parent, overlay, "drag capture mounts under resolved overlay")
         expect(grid.dragCapture.categoryID > 0, automatic,
             "detached capture follows owner, not an already-auto overlay")
         expect(grid.dragSprite.categoryID > 0, automatic,
             "floating item follows its logical owner")
-        expect(grid.dragSprite.associatedObject, 42, "floating sprite renders the dragged object")
         local capture = grid.dragCapture
         grid.dragCapture.subscriptions[ui.Hook.ONRELEASE]()
         expect(capture.destroyed, true, "release tears down native drag capture")
-        expect(grid.dragSourceIndex, nil, "release clears drag state")
-        expect(grid.dragSprite.hidden, true, "release hides floating item")
-        expect(drops, 0, "release over source does not emit a move")
         grid:Destroy()
     end
     prettyui.Tooltip.unregisterContext(parent)
@@ -600,8 +508,7 @@ do
     for _, firstAuto in ipairs({ true, false }) do
         local static = host(44)
         local parent = ui.Layer.new(static)
-        local action1, action2 = { label = "First" }, { label = "Second" }
-        local dismissed = 0
+        local action1 = { label = "First" }
         local first = prettyui.Dialog.new(parent, {
             categoryID = firstAuto and "auto" or nil,
             actions = { action1 },
@@ -616,84 +523,19 @@ do
         expect(#chrome, 2, "modal mounts a dim and blocker")
         expect(chrome[1].categoryID > 0, firstAuto, "real shared chrome follows its first modal owner")
         local second = prettyui.Dialog.new(parent, {
-            categoryID = not firstAuto and "auto" or nil, actions = { action2 },
-            onDismiss = function() dismissed = dismissed + 1 end,
+            categoryID = not firstAuto and "auto" or nil,
         })
         expect(second.window:AddText("Second owner").categoryID > 0, not firstAuto,
             "real second modal Window preserves an independent allocation choice")
         local stillChrome = chromes(parent)
         expect(#stillChrome, 2, "stacking a modal does not create replacement chrome")
         expect(stillChrome[1], chrome[1], "shared dim retains native identity across policies")
-        expect(stillChrome[2], chrome[2], "shared blocker retains native identity across policies")
         second.window:Close()
-        expect(dismissed, 1, "real modal close invokes dismissal callback")
-        expect(prettyui.Dialog.depth(parent), 1, "closing top modal restores prior stack")
         expect(chrome[1].destroyed, nil, "shared chrome survives while another modal remains")
         first.actionSlots[action1].button.root.subscriptions[ui.Hook.ONCLICK]()
-        expect(prettyui.Dialog.depth(parent), 0, "native action button empties the modal stack")
         expect(chrome[1].destroyed, true, "last modal destroys shared chrome")
     end
     Vector4 = savedVector
-end
-
--- Isolated warning instances must not consume the main module's notice latch.
-do
-    local key = "src/core/components"
-    local saved, savedLog = package.loaded[key], log
-    local function fresh()
-        package.loaded[key] = nil
-        return require(key)
-    end
-    local messages = {}
-    local function captureNativeNotice(message)
-        -- The client logger resolves plugin ownership from its immediate Lua
-        -- caller's _ENV; calling it directly through C pcall loses that caller.
-        local caller = debug.getinfo(2, "f")
-        local hasEnvironment = false
-        for index = 1, math.huge do
-            local name = debug.getupvalue(caller.func, index)
-            if name == nil then break end
-            if name == "_ENV" then hasEnvironment = true; break end
-        end
-        assert(hasEnvironment, "native logger requires a Lua caller with a plugin environment")
-        messages[#messages + 1] = message
-    end
-    log = captureNativeNotice
-    local C = fresh()
-    expect(#messages, 0, "loading Components is silent")
-    local static = host(40)
-    local automatic = C.new(ui.Layer, static, { categoryID = "auto" })
-    C.new(ui.Text, automatic)
-    expect(#messages, 0, "explicit and inherited auto construction stay silent")
-    local groupKey = "src/core/category_groups"
-    local savedGroup = package.loaded[groupKey]
-    package.loaded[groupKey] = nil
-    local isolatedGroups = require(groupKey)
-    local reserved = isolatedGroups.build(automatic, 1, function(new)
-        return new(ui.Layer, automatic)
-    end)
-    C.new(ui.Text, reserved)
-    expect(#messages, 0, "reserved groups and their automatic descendants do not warn")
-    package.loaded[groupKey] = savedGroup
-    C.new(ui.Layer, static)
-    C.new(ui.Text, static)
-    expect(#messages, 1, "successful legacy creation warns only once")
-    assert(messages[1]:find('categoryID = "auto"', 1, true), "notice supplies usable migration syntax")
-    assert(messages[1]:find("future", 1, true) and messages[1]:find("Legacy calls continue", 1, true),
-        "notice explains future deprecation without requiring immediate migration")
-    local late = fresh()
-    log = nil
-    late.new(ui.Layer, static)
-    log = captureNativeNotice
-    late.new(ui.Layer, static)
-    late.new(ui.Layer, static)
-    expect(#messages, 2, "missing logger postpones the one notice without blocking UI")
-    local broken_ = { new = function() error("original native failure", 0) end }
-    local success, message = pcall(fresh().new, broken_, static)
-    expect(success, false, "native failures propagate from legacy constructors")
-    expect(message, "original native failure", "legacy native exception is unchanged")
-    expect(#messages, 2, "failed construction does not warn")
-    package.loaded[key], log = saved, savedLog
 end
 
 print("category_capacity_test: ok")

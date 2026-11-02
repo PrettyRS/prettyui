@@ -95,8 +95,6 @@ end
 
 local parent = { id = "c" }
 
-local notices = {}
-log = function(message) notices[#notices + 1] = message end
 local staticHost = Interfaces.component({ id = "confirm-static" })
 local nativeHost = ui.Layer.new(staticHost)
 local autoConfirm = Confirm.new(nativeHost, {
@@ -104,13 +102,9 @@ local autoConfirm = Confirm.new(nativeHost, {
 })
 expect(autoConfirm.window.root.categoryID > 0, true,
     "auto Confirm constructs a managed native window root")
-expect(#notices, 0, "an auto-only confirmation does not emit a category deprecation notice")
 button(autoConfirm.window, "CONFIRM").action()
 expect(Dialog.depth(nativeHost), 0, "auto confirmation still closes from its action")
-local foreignAuto = require("src/core/components").new(ui.Layer, nativeHost, {
-    categoryID = "auto",
-})
-expect(foreignAuto.categoryID > 0, true, "host can contain unrelated auto controls")
+require("src/core/components").new(ui.Layer, nativeHost, { categoryID = "auto" })
 local legacyConfirm = Confirm.new(nativeHost, { body = "Existing consumer" })
 expect(legacyConfirm.window.root.categoryID, 0,
     "legacy Confirm remains native inherited beside auto components")

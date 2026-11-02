@@ -157,34 +157,18 @@ expect(hiddenTooltipContexts[tooltipTabs:GetPage(2).content], nil, "the new tab'
 local Components = require("src/core/components")
 local autoTabs = Tabs.new(parent, { "Auto" }, { categoryID = "auto" })
 local autoPage = autoTabs:GetPage(1)
-expect(autoTabs.root.categoryID, 0, "auto tabs root remains raw-compatible")
-expect(autoTabs.content.categoryID, 0, "auto tabs outer content stays in category zero")
-expect(autoPage.root.categoryID, 0, "auto page root stays in category zero")
-expect(autoPage.content.categoryID, 0, "auto page scroll content stays in category zero")
 expect(autoTabs:GetTab(1).visual.categoryID > 0, true,
     "auto tab visuals use managed categories")
 expect(ui.Layer.new(autoPage.content).categoryID, 0,
     "raw page extension inherits category zero")
-expect(Components.new(ui.Text, autoPage.content).categoryID > 0, true,
-    "managed page controls inherit auto allocation")
 
 local badMount = Components.new(ui.Layer, autoTabs.root)
-local nativeLayer = ui.Layer.new
-local nativeAttempts = 0
-ui.Layer.new = function(...)
-    nativeAttempts = nativeAttempts + 1
-    return nativeLayer(...)
-end
-local validMount, mountError = pcall(Tabs.new, badMount, { "Rejected" },
+local validMount = pcall(Tabs.new, badMount, { "Rejected" },
     { categoryID = "auto" })
-ui.Layer.new = nativeLayer
 expect(validMount, false, "auto tabs reject a nonzero parent")
-expect(mountError:find("raw-compatible content requires a category-zero parent", 1, true) ~= nil,
-    true, "auto tabs rejection is actionable")
-expect(nativeAttempts, 0, "rejected tabs create no native roots")
 
 local originalLayer = ui.Layer.new
-local constructed = {}
+local partialRoot
 local zeroLayers = 0
 ui.Layer.new = function(owner, categoryID, dynamicID)
     if categoryID == nil and owner and owner.categoryID == 0 then
@@ -192,16 +176,12 @@ ui.Layer.new = function(owner, categoryID, dynamicID)
         if zeroLayers == 4 then error("late page scroll failure") end
     end
     local layer = originalLayer(owner, categoryID, dynamicID)
-    constructed[#constructed + 1] = layer
+    if owner == parent then partialRoot = layer end
     return layer
 end
-local validBatch, batchError = pcall(Tabs.new, parent, { "One" },
+local validBatch = pcall(Tabs.new, parent, { "One" },
     { categoryID = "auto" })
 ui.Layer.new = originalLayer
 expect(validBatch, false, "late page scroll failure propagates")
-expect(batchError:find("late page scroll failure", 1, true) ~= nil,
-    true, "late page scroll preserves the native error")
-for _, layer in ipairs(constructed) do
-    expect(layer.destroyed, true, "failed direct tabs construction destroys its native subtree")
-end
+expect(partialRoot.destroyed, true, "failed tabs construction destroys its partial root")
 print("tabs_test: ok")

@@ -60,7 +60,7 @@ end
 
 -- Cached occupancy speeds up batches; a fresh authoritative lookup is still
 -- required immediately before every explicit native construction.
-local function occupiedIDs(staticParent)
+function Components.occupiedIDs(staticParent)
     local occupied, visited = {}, {}
     local function visit(collection)
         if visited[collection] or collection.IterateDynamicComponents == nil then return end
@@ -213,12 +213,9 @@ local function register(component, staticParent, state, policy)
     Components.setPolicy(component, policy)
     knownHosts[component] = staticParent
     local slot = slotOf(component.categoryID, component.dynamicID)
-    if slot then
-        if state.occupied then state.occupied[slot] = true end
-        if state.batch and state.batch.occupied then state.batch.occupied[slot] = true end
-    end
+    if slot and state.occupied then state.occupied[slot] = true end
     if state.batch then
-        local created = state.batch.created
+        local created = state.batch
         created[#created + 1] = component
     end
     if policy == "legacy" and not warned and type(log) == "function" then
@@ -235,20 +232,13 @@ end
 function Components.refresh(parent)
     local staticParent = staticParentOf(parent)
     local state = stateFor(staticParent)
-    if state.batch then
-        local occupied = occupiedIDs(staticParent)
-        state.batch.occupied = occupied
-        state.occupied = occupied
-    else
-        state.occupied = nil
-    end
+    state.occupied = state.batch and Components.occupiedIDs(staticParent) or nil
 end
 
 -- A raw category batch already walked this host; share its updated snapshot.
 function Components.useSnapshot(parent, occupied)
     local state = stateFor(staticParentOf(parent))
     state.occupied = occupied
-    if state.batch then state.batch.occupied = occupied end
 end
 
 -- Cache shared occupancy across widget batches; callback-created raw components
@@ -257,19 +247,17 @@ function Components.withBatch(parent, callback)
     local staticParent = staticParentOf(parent)
     local state = stateFor(staticParent)
     if state.batch then return callback() end
-    local occupied = state.occupied
-    if occupied == nil and staticParent.GetChild and staticParent.IterateDynamicComponents then
-        occupied = occupiedIDs(staticParent)
-        state.occupied = occupied
+    if state.occupied == nil and staticParent.GetChild and staticParent.IterateDynamicComponents then
+        state.occupied = Components.occupiedIDs(staticParent)
     end
-    state.batch = { occupied = occupied, created = {} }
-    local batch = state.batch
+    local created = {}
+    state.batch = created
     local ok, result = pcall(callback)
     state.batch = nil
-    if not ok then state.occupied = nil end
     if not ok then
-        for index = #batch.created, 1, -1 do
-            local component = batch.created[index]
+        state.occupied = nil
+        for index = #created, 1, -1 do
+            local component = created[index]
             if component.Destroy then pcall(component.Destroy, component) end
         end
         error(result, 0)
@@ -309,12 +297,11 @@ function Components.new(nativeType, parent, options)
         return register(nativeType.new(parent), staticParent, state, policy)
     end
 
-    local occupied = state.batch and state.batch.occupied or state.occupied
+    local occupied = state.occupied
     local cached = occupied ~= nil
     if occupied == nil and staticParent.IterateDynamicComponents then
-        occupied = occupiedIDs(staticParent)
+        occupied = Components.occupiedIDs(staticParent)
         state.occupied = occupied
-        if state.batch then state.batch.occupied = occupied end
     end
     for attempt = 1, cached and 2 or 1 do
         for offset = 0, CAPACITY - 1 do
@@ -335,7 +322,6 @@ function Components.new(nativeType, parent, options)
                     state.cursor = (slot + 1) % CAPACITY
                     if state.cursor == 0 then
                         state.occupied = nil
-                        if state.batch then state.batch.occupied = nil end
                     end
                     return component
                 end
@@ -344,9 +330,8 @@ function Components.new(nativeType, parent, options)
         -- Reclaim slots freed since the last snapshot, without discarding live
         -- category-group reservations.
         if attempt == 1 and cached and staticParent.IterateDynamicComponents then
-            occupied = occupiedIDs(staticParent)
+            occupied = Components.occupiedIDs(staticParent)
             state.occupied = occupied
-            if state.batch then state.batch.occupied = occupied end
         end
     end
     error(EXHAUSTED, 2)

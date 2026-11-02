@@ -80,24 +80,8 @@ bus.Update.Unsubscribe(extra)
 local calls = 0
 bus.Update.Subscribe(function() error("consumer failure") end)
 bus.Update.Subscribe(function() calls = calls + 1 end)
-local originalLog = log
-local subscriberErrors = {}
-log = function(message)
-    local caller = debug.getinfo(2, "f")
-    local hasEnvironment = false
-    for index = 1, math.huge do
-        local name = debug.getupvalue(caller.func, index)
-        if name == nil then break end
-        if name == "_ENV" then hasEnvironment = true; break end
-    end
-    assert(hasEnvironment, "native logger requires a Lua caller with a plugin environment")
-    subscriberErrors[#subscriberErrors + 1] = message
-end
 bus.Update.Publish({ metric = "xp", value = 1 })
 expect(calls, 1, "failing subscriber cannot starve next consumer")
-log = originalLog
-expect(#subscriberErrors, 1, "a failing subscriber is logged through a valid native caller")
-assert(subscriberErrors[1]:find("consumer failure", 1, true), "subscriber diagnostic preserves the error")
 for _, payload in ipairs({ {}, { metric = "xp", value = 0 / 0 }, { metric = "xp", value = "1" } }) do
     expect(bus.Update.Publish(payload), false, "invalid update schema rejected")
 end

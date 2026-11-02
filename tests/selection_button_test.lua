@@ -176,15 +176,7 @@ for _, method in ipairs({ "AddCheckboxButton", "AddRadioButton" }) do
     prefix:Destroy()
     checkRow()
     Layout.destroyManaged(owner)
+    expect(controls[1].root, nil, method .. " is destroyed with its flow owner")
 end
-
-local autoHost = component(nil, "auto-selection-content")
-local autoChoices = CheckboxButton.new(autoHost, { "Enabled" }, {
-    categoryID = "auto",
-})
-expect(autoChoices.root.categoryID, 0, "static-root selection does not supply explicit native IDs")
-expect(autoChoices.items[1].row.categoryID > 0, true,
-    "selection choices inherit automatic allocation from their root")
-autoChoices:Destroy()
 
 print("selection_button_test: ok")

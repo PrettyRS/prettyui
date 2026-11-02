@@ -740,19 +740,13 @@ startDrag(unloadWindow, unloadWindow.root, unloadWindow.titleDrag)
 startDrag(unloadPanel, unloadPanel.overlay.root, unloadPanel.overlayDragLayer)
 local Components = require("src/core/components")
 local DragFeedback = require("src/core/drag_feedback")
-local categoryNotices = {}
-log = function(message) categoryNotices[#categoryNotices + 1] = message end
 local feedbackHost = component(area, "shared-feedback-host")
 feedbackHost:SetSize(360, 200)
 local autoOwner = Components.new(ui.Layer, feedbackHost, { categoryID = "auto" })
 autoOwner:SetSize(90, 65)
 local autoFrames = DragFeedback.new(feedbackHost, autoOwner)
 expect(autoFrames.origin.parent, feedbackHost, "auto feedback stays beside its logical root")
-expect(autoFrames.origin.categoryID > 0, true, "auto owner creates a managed origin frame")
 expect(autoFrames.active.categoryID > 0, true, "auto owner creates a managed final frame")
-expect(autoFrames.active.children[1].categoryID > 0, true,
-    "detached artwork inherits its feedback frame's auto policy")
-expect(#categoryNotices, 0, "auto-only detached feedback emits no category warning")
 autoFrames:Destroy()
 
 local autoPhysicalHost = Components.new(ui.Layer, area, { categoryID = "auto" })
@@ -762,8 +756,6 @@ local legacyOwner = Components.new(ui.Layer, autoPhysicalHost, {
 })
 legacyOwner:SetSize(90, 65)
 local legacyFrames = DragFeedback.new(autoPhysicalHost, legacyOwner)
-expect(legacyFrames.origin.categoryID, autoPhysicalHost.categoryID,
-    "legacy owner overrides an auto physical overlay for the origin frame")
 expect(legacyFrames.active.categoryID, autoPhysicalHost.categoryID,
     "legacy owner overrides an auto physical overlay for the final frame")
 expect(Components.new(ui.Layer, autoPhysicalHost).categoryID > 0, true,

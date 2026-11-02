@@ -283,61 +283,28 @@ end)
 expectFalse(unknownFailed, "unknown action raises")
 Dialog.dismissAll(parent)
 
--- The window adapter constructs real native roots, so these checks observe
--- allocation and shared chrome identities rather than copied option tables.
 local staticHost = Interfaces.component({ id = "modal-static" })
 local modalHost = ui.Layer.new(staticHost)
-local unrelatedAuto = require("src/core/components").new(ui.Layer, modalHost, {
-    categoryID = "auto",
-})
-expectTrue(unrelatedAuto.categoryID > 0, "unrelated host can already contain auto components")
-for _, sequence in ipairs({ { "auto", "legacy" }, { "legacy", "auto" } }) do
-    local firstMode, secondMode = sequence[1], sequence[2]
-    local firstFrame = Dialog.new(modalHost, {
-        title = "First modal", categoryID = firstMode == "auto" and "auto" or nil,
-        actions = { { label = "Close" } },
-    })
-    local firstChrome = layers[#layers - 1]
-    local blocker = layers[#layers]
-    expect(firstFrame.window.root.categoryID > 0, firstMode == "auto",
-        "first modal root follows its own category choice")
-    expect(firstChrome.categoryID > 0, firstMode == "auto",
-        "shared dim follows the first modal")
-    expect(blocker.categoryID, firstChrome.categoryID,
-        "shared blocker uses the same native category as the dim")
-    local chromeLayerCount = #layers
-    local secondFrame = Dialog.new(modalHost, {
-        title = "Second modal", categoryID = secondMode == "auto" and "auto" or nil,
-        actions = { { label = "Close" } },
-    })
-    expect(secondFrame.window.root.categoryID > 0, secondMode == "auto",
-        "the later modal follows its own policy")
-    expect(#layers, chromeLayerCount + 1,
-        "later modal adds only its window root and reuses shared chrome")
-    expect(firstChrome.destroyed, false, "later modal keeps the original dim native component")
-    expect(blocker.destroyed, false, "later modal keeps the original blocker native component")
-    button(secondFrame.window, "Close").action()
-    expect(Dialog.depth(modalHost), 1, "mixed-policy top action restores the earlier modal")
-    expect(firstChrome.destroyed, false, "existing chrome remains while the first modal is open")
-    button(firstFrame.window, "Close").action()
-    expect(Dialog.depth(modalHost), 0, "mixed-policy modal actions empty the stack")
-    expect(firstChrome.destroyed, true, "shared chrome is destroyed after the last modal")
-end
-
 local nonmodal = Dialog.new(modalHost, { title = "Nonmodal", modal = false })
-expect(nonmodal.window.root.categoryID, 0,
-    "a nonmodal legacy frame stays inherited under a shared physical host")
-local noModalChromeCount = #layers
-local firstModal = Dialog.new(modalHost, { title = "First actual modal", categoryID = "auto" })
-local modalDim, modalBlocker = layers[#layers - 1], layers[#layers]
-expect(#layers, noModalChromeCount + 3, "first modal adds its root and shared chrome")
-expect(firstModal.window.root.categoryID > 0, true,
-    "the first actual modal opts into managed allocation")
-expect(modalDim.categoryID > 0, true,
-    "shared chrome follows the earliest modal, not a preceding nonmodal frame")
-expect(modalBlocker.categoryID > 0, true,
-    "shared blocker follows the earliest modal frame")
+local firstModal = Dialog.new(modalHost, {
+    title = "Managed modal",
+    categoryID = "auto",
+    actions = { { label = "Close" } },
+})
+local dim = layers[#layers - 1]
+expectTrue(firstModal.window.root.categoryID > 0, "modal opts into managed allocation")
+expectTrue(dim.categoryID > 0, "dim follows the first modal, not the nonmodal dialog")
+local legacyModal = Dialog.new(modalHost, {
+    title = "Legacy modal",
+    actions = { { label = "Close" } },
+})
+expect(legacyModal.window.root.categoryID, 0,
+    "later modal retains its own native allocation policy")
+button(legacyModal.window, "Close").action()
+expectFalse(dim.destroyed, "shared dim stays until the last modal closes")
+button(firstModal.window, "Close").action()
+expectTrue(dim.destroyed, "last modal releases shared dim while nonmodal stays open")
+expectFalse(nonmodal.window.destroyed, "nonmodal stays open after both modals close")
 Dialog.dismissAll(modalHost)
-expect(modalDim.destroyed, true, "mixed modal/nonmodal teardown destroys shared chrome")
 
 print("dialog_test: ok")

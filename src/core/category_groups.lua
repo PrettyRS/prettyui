@@ -11,30 +11,6 @@ local function staticParentOf(component)
     return component.parentStatic or component
 end
 
--- GetChild alone does not establish that a nested ID is free on every client.
--- Walk dynamic descendants, including hidden pages and other plugins' children.
-local function occupiedIDs(staticParent)
-    local occupied = {}
-    local visited = {}
-    local function visit(collection)
-        if visited[collection] or collection.IterateDynamicComponents == nil then return end
-        visited[collection] = true
-        collection:IterateDynamicComponents(function(child)
-            if child.parentStatic == staticParent then
-                local categoryID, dynamicID = child.categoryID, child.dynamicID
-                if categoryID and categoryID >= 1 and categoryID <= LAST_CATEGORY and
-                    dynamicID and dynamicID >= 0 and dynamicID < IDS_PER_CATEGORY then
-                    occupied[(categoryID - 1) * IDS_PER_CATEGORY + dynamicID] = true
-                end
-                visit(child)
-            end
-            return false
-        end)
-    end
-    visit(staticParent)
-    return occupied
-end
-
 local function findBlock(staticParent, occupied, cursor, count)
     for offset = 0, CAPACITY - 1 do
         local start = (cursor + offset) % CAPACITY
@@ -43,8 +19,7 @@ local function findBlock(staticParent, occupied, cursor, count)
             local categoryID = 1 + math.floor(start / IDS_PER_CATEGORY)
             local free = true
             for step = 0, count - 1 do
-                if occupied[start + step] or
-                    Components.isOccupied(staticParent, categoryID, firstID + step) then
+                if occupied[start + step] then
                     free = false
                     break
                 end
@@ -74,13 +49,13 @@ function CategoryGroups.withBatch(parent, callback)
     state.busy = true
     local occupied
     local ok, result = pcall(function()
-        occupied = occupiedIDs(staticParent)
+        occupied = Components.occupiedIDs(staticParent)
         Components.useSnapshot(staticParent, occupied)
         local function build(count, builder)
             assert(type(count) == "number" and count % 1 == 0 and count >= 1 and
                 count <= IDS_PER_CATEGORY, "PrettyUI: category group size must be 1..235")
             if occupied == nil then
-                occupied = occupiedIDs(staticParent)
+                occupied = Components.occupiedIDs(staticParent)
                 Components.useSnapshot(staticParent, occupied)
             end
             local start, categoryID, firstID, token = findBlock(staticParent, occupied,

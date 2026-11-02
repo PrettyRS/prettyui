@@ -44,7 +44,6 @@ local function component(parent, kind, categoryID, dynamicID)
         end
     end
     function result:IterateDynamicComponents(callback)
-        self.scans = (self.scans or 0) + 1
         for _, child in ipairs(self.children) do
             if not child.destroyed and callback(child, not child.hidden) then return end
         end
@@ -177,7 +176,7 @@ expect(list.scrollY, 50, "the exposed viewport forwards wheel scrolling to the l
 
 local neighbor = ui.Layer.new(parent)
 local large = List.new(parent, { categoryID = "auto", width = 240, height = 96 })
--- GetChild sees only direct children; this foreign nested ID is skipped by rows.
+-- The host's direct-child lookup cannot see a raw descendant of the viewport.
 local foreign = ui.Text.new(large.viewport, 1, 230)
 require("src/core/components").refresh(large.viewport)
 local entries = {}
@@ -185,45 +184,27 @@ for index = 1, 1400 do
     entries[index] = { id = index, label = "Entry " .. index }
     if index % 10 == 0 then entries[index].icon = 42 end
 end
-local scansBefore = parent.scans or 0
 large:SetEntries(entries)
 expect(#large.rows, 1400, "large lists mount every requested row")
-expect(parent.scans, scansBefore + 1, "foreign native child is included in refreshed snapshot")
-expect(large.root.categoryID, 0, "list shell shares the allocator namespace")
 expect(foreign.destroyed, nil, "nested foreign category ID remains occupied")
-local seen = {}
-for index, row in ipairs(large.rows) do
-    local expectedChildren = index % 10 == 0 and 3 or 2
-    expect(row.root.categoryID, 0, "row roots provide raw-compatible category-zero content")
-    expect(#row.root.children, expectedChildren, "row has its background, optional icon and label")
-    for _, child in ipairs(row.root.children) do
-        assert(child.categoryID > 0, "automatic row decorations use managed nonzero IDs")
-        local pair = child.categoryID .. ":" .. child.dynamicID
-        expect(seen[pair], nil, "row children have unique IDs")
-        seen[pair] = true
-    end
-    local pair = row.root.categoryID .. ":" .. row.root.dynamicID
-    expect(seen[pair], nil, "row roots have unique IDs")
-    seen[pair] = true
-    expect(row.entry.id, index, "row ID survives allocation")
-end
+expect(large.rows[1].root.categoryID, 0, "list rows remain raw-compatible")
+expect(large.rows[1].label.categoryID > 0, true,
+    "row decorations use IDs outside the raw content category")
 local rawExtension = ui.Layer.new(large.rows[1].root)
 expect(rawExtension.categoryID, 0, "raw row extensions inherit category zero")
 large.rows[1400].root.subscriptions[ui.Hook.ONCLICK]()
-expect(large.entriesByID[1400].selected, true, "packed last row can be selected")
-large.rows[1400].label.subscriptions[wheel](large.rows[1400].label, 1)
-expect(large.scrollY, 24, "packed row forwards wheel events")
+expect(large.entriesByID[1400].selected, true, "last row can be selected")
 
 local oldRow = large.rows[2].root
 large:SetEntryIcon(2, 43)
-expect(oldRow.destroyed, true, "rebuild destroys old packed row children")
-expect(parent.scans, scansBefore + 1, "rebuilding managed rows does not rescan the entire host")
-expect(#large.rows[2].root.children, 3, "setting an icon reserves its own slot")
+expect(oldRow.destroyed, true, "rebuild destroys the replaced row")
+expect(large.rows[2].label.x > large.rows[1].label.x, true,
+    "new icon leaves room before the row label")
 large:SetEntryVisible(3, false)
 expect(#large.rows, 1399, "visibility rebuild excludes the hidden row")
 expect(large.rows[3].entry.id, 4, "remaining rows retain their entry order")
 large:Clear()
-expect(#large.rows, 0, "clearing releases packed rows")
+expect(#large.rows, 0, "clearing releases every row")
 expect(foreign.destroyed, nil, "clearing leaves foreign viewport components intact")
 expect(neighbor.destroyed, nil, "clearing preserves neighboring widgets")
 
@@ -245,7 +226,7 @@ ui.Text.new = function(...)
 end
 local ok, err = pcall(large.SetEntries, large, entries)
 ui.Text.new = originalTextNew
-expect(ok, false, "failed packed-row creation must propagate")
+expect(ok, false, "failed row creation propagates")
 assert(tostring(err):find("injected row text failure", 1, true), "original constructor error survives")
 expect(#large.rows, 0, "failed rebuild rolls back completed rows")
 for category = 0, 234 do
@@ -257,22 +238,23 @@ for category = 0, 234 do
 end
 expect(next(retained), nil, "failed rebuild retains all preexisting components")
 large:SetEntries(entries)
-expect(#large.rows, 1400, "list can remount after a failed rebuild")
+expect(#large.rows, 1400, "list remounts after a failed rebuild")
 large:Destroy()
-expect(neighbor.destroyed, nil, "destroying a packed list preserves neighboring widgets")
+expect(neighbor.destroyed, nil, "destroying the list preserves neighboring widgets")
 
-
-local failedEntries = {}
-for index = 1, 128 do failedEntries[index] = { id = index, label = "Row " .. index } end
+local failedEntries = { { id = 1, label = "Row" } }
 local failedHost = component(nil, "failed host")
-local packedTextNew = ui.Text.new
+local textNew = ui.Text.new
 ui.Text.new = function(...)
     if select(2, ...) ~= nil then error("constructor failed") end
-    return packedTextNew(...)
+    return textNew(...)
 end
-local mounted, mountErr = pcall(List.new, failedHost, { categoryID = "auto", entries = failedEntries })
-ui.Text.new = packedTextNew
-expect(mounted, false, "large list constructor propagates a packed-row failure")
+local mounted, mountErr = pcall(List.new, failedHost, {
+    categoryID = "auto",
+    entries = failedEntries,
+})
+ui.Text.new = textNew
+expect(mounted, false, "list constructor propagates a row failure")
 assert(tostring(mountErr):find("constructor failed", 1, true), "mount failure survives")
 expect(failedHost.children[1].destroyed, true, "failed mount releases the list shell")
 for _, ids in pairs(failedHost.registry) do

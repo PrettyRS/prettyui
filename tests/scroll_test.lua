@@ -237,7 +237,7 @@ simpleView:Destroy()
 
 local messages = {}
 log = function(message)
-    if not message:find("categoryID", 1, true) then table.insert(messages, message) end
+    if message:find("deprecated", 1, true) then messages[#messages + 1] = message end
 end
 local Scrollbar = require("src/scrollbar")
 local legacyA = Scrollbar.new(parent, { width = 120, height = 80 })

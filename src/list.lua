@@ -354,70 +354,78 @@ function List:_RefreshRows()
     end
 end
 
-function List:_BuildRow(entry, baseY)
-    local row = Components.newContent(self.viewport)
-    local record = { root = row, entry = entry, baseY = baseY }
-    self.rows[#self.rows + 1] = record
-    row:SetPos(0, baseY)
-    row:SetSize(0, self.entryHeight, 1.0, 0)
-    row.clickthrough = self.disabled or not entry.enabled
+local function buildRows(self)
+    local visibleIndex = 0
+    for _, entry in ipairs(self.entries) do
+        if entry.visible then
+            local baseY = visibleIndex * self.entryHeight
+            local row = Components.newContent(self.viewport)
+            local record = { root = row, entry = entry, baseY = baseY }
+            self.rows[#self.rows + 1] = record
+            row:SetPos(0, baseY)
+            row:SetSize(0, self.entryHeight, 1.0, 0)
+            row.clickthrough = self.disabled or not entry.enabled
+            visibleIndex = visibleIndex + 1
 
-    local rowBackground = rectangle(row, rowBackgroundColour(self, entry, false))
-    rowBackground:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-        return self:_OnScrollWheel(component, delta)
-    end)
-    local left = 8
-    if entry.icon ~= nil then
-        local iconSize = math.max(1, math.floor(16 * self.entryIconScale / 100))
-        local icon = Components.new(ui.Sprite, row)
-        icon:SetPos(7, math.floor((self.entryHeight - iconSize) / 2))
-        icon:SetSize(iconSize, iconSize)
-        icon.spriteID = entry.icon
-        icon.clickthrough = true
-        icon:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-            return self:_OnScrollWheel(component, delta)
-        end)
-        left = 7 + iconSize + 6
-    end
-
-    local label = Components.new(ui.Text, row)
-    label:SetPos(left, 0)
-    label:SetSize(-left - 6, self.entryHeight, 1.0, 0)
-    label.content = entry.text
-    label.font = self.font
-    label.rgba = rowTextColour(self, entry)
-    label.isShadowed = self.shadowed
-    label.maxLines = 1
-    label.alignVertical = ui.AlignMode.CENTRE
-    label.clickthrough = true
-    label:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-        return self:_OnScrollWheel(component, delta)
-    end)
-    row:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-        return self:_OnScrollWheel(component, delta)
-    end)
-
-    if not self.disabled and entry.enabled then
-        row:Subscribe(ui.Hook.ONMOUSEOVER, function()
-            rowBackground.rgba = rowBackgroundColour(self, entry, true)
-            return true
-        end)
-        row:Subscribe(ui.Hook.ONMOUSELEAVE, function()
-            rowBackground.rgba = rowBackgroundColour(self, entry, false)
-            return true
-        end)
-        row:Subscribe(ui.Hook.ONCLICK, function()
-            local selected = self.maxSelected > 1 and not entry.selected or true
-            local succeeded = self:_Select(entry, selected, true)
-            if succeeded and self._onEntryClick then
-                self._onEntryClick(self, entry.id, entry.selected)
+            local rowBackground = rectangle(row, rowBackgroundColour(self, entry, false))
+            rowBackground:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
+                return self:_OnScrollWheel(component, delta)
+            end)
+            local left = 8
+            if entry.icon ~= nil then
+                local iconSize = math.max(1, math.floor(16 * self.entryIconScale / 100))
+                local icon = Components.new(ui.Sprite, row)
+                icon:SetPos(7, math.floor((self.entryHeight - iconSize) / 2))
+                icon:SetSize(iconSize, iconSize)
+                icon.spriteID = entry.icon
+                icon.clickthrough = true
+                icon:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
+                    return self:_OnScrollWheel(component, delta)
+                end)
+                left = 7 + iconSize + 6
             end
-            return false
-        end)
-        Cursor.apply(row, config.Cursor.CURSOR_TICK, true)
+
+            local label = Components.new(ui.Text, row)
+            label:SetPos(left, 0)
+            label:SetSize(-left - 6, self.entryHeight, 1.0, 0)
+            label.content = entry.text
+            label.font = self.font
+            label.rgba = rowTextColour(self, entry)
+            label.isShadowed = self.shadowed
+            label.maxLines = 1
+            label.alignVertical = ui.AlignMode.CENTRE
+            label.clickthrough = true
+            label:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
+                return self:_OnScrollWheel(component, delta)
+            end)
+            row:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
+                return self:_OnScrollWheel(component, delta)
+            end)
+
+            if not self.disabled and entry.enabled then
+                row:Subscribe(ui.Hook.ONMOUSEOVER, function()
+                    rowBackground.rgba = rowBackgroundColour(self, entry, true)
+                    return true
+                end)
+                row:Subscribe(ui.Hook.ONMOUSELEAVE, function()
+                    rowBackground.rgba = rowBackgroundColour(self, entry, false)
+                    return true
+                end)
+                row:Subscribe(ui.Hook.ONCLICK, function()
+                    local selected = self.maxSelected > 1 and not entry.selected or true
+                    local succeeded = self:_Select(entry, selected, true)
+                    if succeeded and self._onEntryClick then
+                        self._onEntryClick(self, entry.id, entry.selected)
+                    end
+                    return false
+                end)
+                Cursor.apply(row, config.Cursor.CURSOR_TICK, true)
+            end
+            record.background = rowBackground
+            record.label = label
+        end
     end
-    record.background = rowBackground
-    record.label = label
+    return visibleIndex
 end
 
 function List:_RebuildRows()
@@ -425,14 +433,7 @@ function List:_RebuildRows()
     self.rows = {}
 
     local ok, result = pcall(Components.withBatch, self.viewport, function()
-        local visibleIndex = 0
-        for _, entry in ipairs(self.entries) do
-            if entry.visible then
-                self:_BuildRow(entry, visibleIndex * self.entryHeight)
-                visibleIndex = visibleIndex + 1
-            end
-        end
-        return visibleIndex
+        return buildRows(self)
     end)
     if not ok then
         self.rows = {}

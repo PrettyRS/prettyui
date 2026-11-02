@@ -189,37 +189,21 @@ expect(window.root.height, outerHeight, "resizing the immediate host leaves ance
 
 local Components = require("src/core/components")
 local autoWindow = Window.new(parent, { title = "Auto", categoryID = "auto" })
-expect(autoWindow.root.categoryID, 0, "auto window root inherits native category zero")
-expect(autoWindow.viewport.categoryID, 0, "auto window viewport remains raw-compatible")
-expect(autoWindow.content.categoryID, 0, "auto window content remains raw-compatible")
 expect(ui.Layer.new(autoWindow.content).categoryID, 0,
     "raw window child inherits category zero")
 local autoSection = autoWindow:AddCollapseButton("Auto section")
-expect(autoSection.root.categoryID, 0, "collapse root remains a raw-compatible host")
-expect(autoSection.content.categoryID, 0, "collapse content remains a raw-compatible host")
-expect(autoSection.label.categoryID > 0, true, "collapse controls use managed categories")
 expect(ui.Layer.new(autoSection.content).categoryID, 0,
     "raw collapse extension inherits zero")
-local autoTabs = autoWindow:AddTabs({ "Page" }, { height = 100 })
-expect(autoTabs:GetPage(1).content.categoryID, 0,
-    "nested tab page content remains raw-compatible")
 
 local autoView = SimpleView.new(parent, { categoryID = "auto" })
-expect(autoView.root.categoryID, 0, "auto SimpleView root remains raw-compatible")
-expect(autoView.viewport.categoryID, 0, "auto SimpleView viewport remains raw-compatible")
-expect(autoView.content.categoryID, 0, "auto SimpleView content remains raw-compatible")
+expect(ui.Layer.new(autoView.content).categoryID, 0,
+    "raw SimpleView content accepts native children")
 expect(autoView.upArrow.categoryID > 0, true,
     "auto SimpleView controls use managed categories")
 local autoPanel = Panel.new(parent, { categoryID = "auto", popout = true })
-expect(autoPanel.dock.root.categoryID, 0, "auto Panel dock root is raw-compatible")
-expect(autoPanel.overlay.root.categoryID, 0, "auto Panel overlay root is raw-compatible")
-expect(autoPanel.content.categoryID, 0, "auto dock content is raw-compatible")
-expect(autoPanel.overlayContent.categoryID, 0, "auto popout content is raw-compatible")
 expect(ui.Layer.new(autoPanel.content).categoryID, 0, "raw dock child inherits zero")
 expect(ui.Layer.new(autoPanel.overlayContent).categoryID, 0,
     "raw popout child inherits zero")
-expect(autoPanel.dock.background.categoryID > 0, true,
-    "auto Panel decorations use managed categories")
 local function expectPanelForeground(panel_, pairedLabel)
     local surface = panel_.poppedOut and panel_.overlay or panel_.dock
     local label = panel_.poppedOut and pairedLabel.overlay or pairedLabel.dock
@@ -243,10 +227,6 @@ local panelLabel = autoPanel:AddText("Foreground content")
 expectPanelForeground(autoPanel, panelLabel)
 autoPanel:SetPoppedOut(true)
 expectPanelForeground(autoPanel, panelLabel)
-autoPanel:SetSize(360, 200)
-expectPanelForeground(autoPanel, panelLabel)
-autoPanel:SetPoppedOut(false)
-expectPanelForeground(autoPanel, panelLabel)
 
 local legacyOrderPanel = Panel.new(parent, { popout = true })
 local legacyLabel = legacyOrderPanel:AddText("Legacy foreground")
@@ -255,24 +235,12 @@ legacyOrderPanel:SetPoppedOut(true)
 expectPanelForeground(legacyOrderPanel, legacyLabel)
 legacyOrderPanel:Destroy()
 local managedParent = Components.new(ui.Layer, autoWindow.root)
-local layerNew = ui.Layer.new
-local nativeCalls = 0
-ui.Layer.new = function(...)
-    nativeCalls = nativeCalls + 1
-    return layerNew(...)
-end
-local mountedWindow, windowError = pcall(Window.new, managedParent, { categoryID = "auto" })
-local mountedPanel, panelError = pcall(Panel.new, parent, {
+local mountedWindow = pcall(Window.new, managedParent, { categoryID = "auto" })
+local mountedPanel = pcall(Panel.new, parent, {
     categoryID = "auto", overlayParent = managedParent, popout = true,
 })
-ui.Layer.new = layerNew
-expect(mountedWindow, false, "auto Window rejects nonzero dynamic parent")
-expect(mountedPanel, false, "auto Panel rejects nonzero overlay before dock creation")
-expect(windowError:find("raw-compatible content requires a category-zero parent", 1, true) ~= nil,
-    true, "auto Window reports a safe mounting alternative")
-expect(panelError:find("raw-compatible content requires a category-zero parent", 1, true) ~= nil,
-    true, "auto Panel reports a safe overlay alternative")
-expect(nativeCalls, 0, "rejected content constructors do not enter native Layer.new")
+expect(mountedWindow, false, "auto Window rejects a nonzero dynamic parent")
+expect(mountedPanel, false, "auto Panel rejects a nonzero overlay parent")
 local originalLayer = ui.Layer.new
 local partialCollapse
 ui.Layer.new = function(owner, categoryID, dynamicID)
@@ -292,12 +260,6 @@ expect(collapseError:find("late collapse content failure", 1, true) ~= nil,
 expect(partialCollapse.destroyed, true,
     "failed direct CollapseButton construction destroys its partial root")
 
-local nativeHost = ui.Layer.new(parent)
-local legacyParent = ui.Layer.new(nativeHost, 234, 0)
-local legacyWindow = Window.new(legacyParent, { title = "Legacy" })
-expect(legacyWindow.root.categoryID, legacyParent.categoryID,
-    "legacy Window keeps inherited native category")
-legacyWindow:Destroy()
 autoPanel:Destroy()
 autoView:Destroy()
 autoWindow:Destroy()

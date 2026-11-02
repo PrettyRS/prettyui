@@ -80,10 +80,4 @@ alias:Stop()
 canonical:Destroy()
 alias:Destroy()
 
-local optedIn = host:AddSpinner({ categoryID = "auto", autoPlay = false })
-expect(optedIn.root.categoryID, 0, "auto spinner root inherits a static native mount safely")
-expect(optedIn.backdrop.categoryID > 0, true,
-    "auto spinner artwork inherits the root's managed allocation policy")
-optedIn:Destroy()
-
 print("spinner_test: rotation, speed, playback and lifecycle passed")

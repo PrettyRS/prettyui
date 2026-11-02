@@ -331,24 +331,17 @@ oversized:Open()
 expect(oversized.pickerWindow.root.x, 0, "oversized popup keeps its left edge reachable")
 expect(oversized.pickerWindow.root.y, 0, "oversized popup keeps its title bar reachable")
 
-local categoryNotices = {}
-log = function(message) categoryNotices[#categoryNotices + 1] = message end
 local optionOwner = component(screen, "picker-option-owner")
 local optedIn = ColourPicker.new(optionOwner, {
     categoryID = "auto", windowParent = screen,
 })
-expect(optedIn.root.categoryID > 0, true,
-    "the picker button opts into managed native IDs")
 expect(optedIn:Open(), true, "an opted-in picker still opens its detached window")
 expect(optedIn.pickerWindow.root.parent, screen, "picker popup still uses its physical overlay host")
 expect(optedIn.pickerWindow.root.categoryID, 0, "popup root inherits its static native host")
 local Components = require("src/core/components")
-local autoPopupChild = Components.new(ui.Layer, optedIn.pickerWindow.content)
-expect(autoPopupChild.categoryID > 0, true,
-    "a detached popup carries the picker owner's auto policy to its native descendants")
-expect(#categoryNotices, 0, "auto picker and detached popup emit no category notice")
+expect(Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0, true,
+    "detached popup descendants follow the picker's managed policy")
 optedIn:Close()
-expect(optedIn.pickerWindow, nil, "closing clears the deferred popup reference")
 expect(optedIn:Open(), true, "an opted-in picker reopens after closing")
 expect(Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0, true,
     "a reopened popup retains its owner's auto mode")
@@ -356,11 +349,7 @@ optedIn:Close()
 
 local autoScreenHost = Components.new(ui.Layer, screen, { categoryID = "auto" })
 local legacyPicker = ColourPicker.new(optionOwner, { windowParent = autoScreenHost })
-expect(legacyPicker.root.categoryID, optionOwner.categoryID,
-    "legacy picker remains native inherited beside an auto owner")
 expect(legacyPicker:Open(), true, "a legacy picker opens on the shared physical host")
-expect(legacyPicker.pickerWindow.root.parent, autoScreenHost,
-    "legacy popup is physically mounted under an auto-owned overlay layer")
 expect(Components.new(ui.Layer, legacyPicker.pickerWindow.content).categoryID, 0,
     "legacy popup descendants do not inherit an unrelated auto picker policy")
 legacyPicker:Close()

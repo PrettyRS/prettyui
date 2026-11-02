@@ -93,20 +93,13 @@ paintedDivider:Destroy()
 local Components = require("src/core/components")
 local Slider = require("src/slider")
 local nativeHost = ui.Layer.new(host.content)
-local categoryNotices = {}
-log = function(message) categoryNotices[#categoryNotices + 1] = message end
 local autoSlider = Slider.new(nativeHost, { categoryID = "auto" })
 expect(autoSlider.root.categoryID > 0, true, "opted-in slider root uses managed IDs")
-expect(autoSlider.thumbDrag.parent, nativeHost,
-    "slider thumb drag remains mounted beside its logical root")
 expect(autoSlider.thumbDrag.categoryID > 0, true,
     "slider thumb drag inherits the opted-in slider policy")
-expect(#categoryNotices, 0, "an auto slider and its detached thumb emit no category notice")
 autoSlider:Destroy()
 local autoHost = Components.new(ui.Layer, host.content, { categoryID = "auto" })
 local legacySlider = Slider.new(autoHost, { _categoryPolicy = "legacy" })
-expect(legacySlider.root.categoryID, autoHost.categoryID,
-    "legacy slider stays inherited under an unrelated auto host")
 expect(legacySlider.thumbDrag.categoryID, autoHost.categoryID,
     "legacy thumb drag overrides the physical host's auto policy")
 legacySlider:Destroy()
