@@ -1,0 +1,100 @@
+name: Sync PrettyUI documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/sync-docs.yml'
+      - '.github/scripts/sync_docs.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prettyui-docs-sync
+  cancel-in-progress: false
+
+jobs:
+  sync-docs:
+    if: github.repository == 'PrettyRS/prettyui'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate destination repository
+        shell: bash
+        env:
+          DOCS_REPOSITORY: ${{ vars.PRETTYUI_DOCS_REPOSITORY }}
+        run: |
+          if [[ ! $DOCS_REPOSITORY =~ ^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$ || $DOCS_REPOSITORY == */. || $DOCS_REPOSITORY == */.. ]]; then
+            echo 'Set PRETTYUI_DOCS_REPOSITORY to a nonempty owner/repository before syncing.' >&2
+            exit 1
+          fi
+
+      - name: Check out current library main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: prettyui
+          persist-credentials: false
+
+      - name: Record the checked-out source commit
+        id: source
+        shell: bash
+        run: echo "sha=$(git -C prettyui rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out documentation site main
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRETTYUI_DOCS_REPOSITORY }}
+          ref: main
+          path: site
+          ssh-key: ${{ secrets.PRETTYUI_DOCS_DEPLOY_KEY }}
+          persist-credentials: true
+
+      - name: Synchronize documentation and detect changes
+        id: mirror
+        shell: bash
+        run: |
+          python3 prettyui/.github/scripts/sync_docs.py prettyui site
+          docs_status=$(git -C site status --porcelain --untracked-files=all -- content/prettyui/ content/prettyui-changelog.md)
+          if [[ -n $docs_status ]]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: steps.mirror.outputs.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Set up Hugo
+        if: steps.mirror.outputs.changed == 'true'
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: '0.169.0'
+          extended: true
+
+      - name: Build and verify public documentation
+        if: steps.mirror.outputs.changed == 'true'
+        working-directory: site
+        run: |
+          npm ci
+          npm run build
+          npm run verify
+
+      - name: Commit and push validated mirror
+        if: steps.mirror.outputs.changed == 'true'
+        working-directory: site
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- content/prettyui/ content/prettyui-changelog.md
+          git commit -m "Sync PrettyUI docs from PrettyRS/prettyui@$SOURCE_SHA"
+          git push origin HEAD:refs/heads/main
