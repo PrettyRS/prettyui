@@ -1,3 +1,5 @@
+local Interfaces = require("tests/interface_fixture")
+
 local function expect(actual, expected, message)
     if actual ~= expected then
         error(message .. ": expected " .. tostring(expected)
@@ -22,7 +24,7 @@ Vector4 = { new = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 local windows = {}
 local layers = {}
 
-local function fakeLayer(parent)
+local function fakeLayer(parent, categoryID, dynamicID)
     local layer = {
         parent = parent,
         clickthrough = false,
@@ -38,18 +40,21 @@ local function fakeLayer(parent)
         self.destroyed = true
     end
     layers[#layers + 1] = layer
-    return layer
+    return Interfaces.component(layer, parent, categoryID, dynamicID)
 end
 
-local function fakeRect(parent)
+local function fakeRect(parent, categoryID, dynamicID)
     local rect = { parent = parent, fill = false, clickthrough = false, colour = nil }
     function rect:SetPos() end
     function rect:SetSize() end
-    return rect
+    return Interfaces.component(rect, parent, categoryID, dynamicID)
 end
 
 local function fakeWindow(parent, options)
+    Interfaces.component(parent)
+    local root = require("src/core/components").new(ui.Layer, parent, options)
     local window = {
+        root = root,
         parent = parent,
         options = options,
         title = options.title,
@@ -82,7 +87,9 @@ local function fakeWindow(parent, options)
         if self.destroyOnClose then self:Destroy() end
     end
     function window:Destroy()
+        if self.destroyed then return end
         self.destroyed = true
+        self.root:Destroy()
     end
     windows[#windows + 1] = window
     return window
@@ -275,5 +282,62 @@ local unknownFailed = pcall(function()
 end)
 expectFalse(unknownFailed, "unknown action raises")
 Dialog.dismissAll(parent)
+
+-- The window adapter constructs real native roots, so these checks observe
+-- allocation and shared chrome identities rather than copied option tables.
+local staticHost = Interfaces.component({ id = "modal-static" })
+local modalHost = ui.Layer.new(staticHost)
+local unrelatedAuto = require("src/core/components").new(ui.Layer, modalHost, {
+    categoryID = "auto",
+})
+expectTrue(unrelatedAuto.categoryID > 0, "unrelated host can already contain auto components")
+for _, sequence in ipairs({ { "auto", "legacy" }, { "legacy", "auto" } }) do
+    local firstMode, secondMode = sequence[1], sequence[2]
+    local firstFrame = Dialog.new(modalHost, {
+        title = "First modal", categoryID = firstMode == "auto" and "auto" or nil,
+        actions = { { label = "Close" } },
+    })
+    local firstChrome = layers[#layers - 1]
+    local blocker = layers[#layers]
+    expect(firstFrame.window.root.categoryID > 0, firstMode == "auto",
+        "first modal root follows its own category choice")
+    expect(firstChrome.categoryID > 0, firstMode == "auto",
+        "shared dim follows the first modal")
+    expect(blocker.categoryID, firstChrome.categoryID,
+        "shared blocker uses the same native category as the dim")
+    local chromeLayerCount = #layers
+    local secondFrame = Dialog.new(modalHost, {
+        title = "Second modal", categoryID = secondMode == "auto" and "auto" or nil,
+        actions = { { label = "Close" } },
+    })
+    expect(secondFrame.window.root.categoryID > 0, secondMode == "auto",
+        "the later modal follows its own policy")
+    expect(#layers, chromeLayerCount + 1,
+        "later modal adds only its window root and reuses shared chrome")
+    expect(firstChrome.destroyed, false, "later modal keeps the original dim native component")
+    expect(blocker.destroyed, false, "later modal keeps the original blocker native component")
+    button(secondFrame.window, "Close").action()
+    expect(Dialog.depth(modalHost), 1, "mixed-policy top action restores the earlier modal")
+    expect(firstChrome.destroyed, false, "existing chrome remains while the first modal is open")
+    button(firstFrame.window, "Close").action()
+    expect(Dialog.depth(modalHost), 0, "mixed-policy modal actions empty the stack")
+    expect(firstChrome.destroyed, true, "shared chrome is destroyed after the last modal")
+end
+
+local nonmodal = Dialog.new(modalHost, { title = "Nonmodal", modal = false })
+expect(nonmodal.window.root.categoryID, 0,
+    "a nonmodal legacy frame stays inherited under a shared physical host")
+local noModalChromeCount = #layers
+local firstModal = Dialog.new(modalHost, { title = "First actual modal", categoryID = "auto" })
+local modalDim, modalBlocker = layers[#layers - 1], layers[#layers]
+expect(#layers, noModalChromeCount + 3, "first modal adds its root and shared chrome")
+expect(firstModal.window.root.categoryID > 0, true,
+    "the first actual modal opts into managed allocation")
+expect(modalDim.categoryID > 0, true,
+    "shared chrome follows the earliest modal, not a preceding nonmodal frame")
+expect(modalBlocker.categoryID > 0, true,
+    "shared blocker follows the earliest modal frame")
+Dialog.dismissAll(modalHost)
+expect(modalDim.destroyed, true, "mixed modal/nonmodal teardown destroys shared chrome")
 
 print("dialog_test: ok")

@@ -25,7 +25,7 @@ function Spinner.new(parent, options)
     self.running = false
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

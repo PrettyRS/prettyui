@@ -129,7 +129,7 @@ function ItemSlot.new(parent, object, options)
     self.onObjectChange = options.onObjectChange
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

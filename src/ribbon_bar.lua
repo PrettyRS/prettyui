@@ -191,6 +191,7 @@ local function showSettings()
     end
 
     settingsWindow = Window.new(gameArea, {
+        _categoryPolicy = Components.policyOf(root),
         title = "PrettyUI Settings",
         x = -math.floor(SETTINGS_WIDTH / 2),
         y = -math.floor(SETTINGS_HEIGHT / 2),
@@ -245,6 +246,7 @@ local function createEntryButton(entry)
         entry.active = button.active
         if options.onClick then options.onClick(entry.handle, button.active) end
     end, {
+        _categoryPolicy = Components.policyOf(gameArea, options),
         tooltip = entry.tooltipValue,
         disabled = options.disabled == true,
     })
@@ -262,7 +264,10 @@ local function rebuildButtons()
         root,
         Sprites.SPRITE_BUTTONS.SETTINGS.neutral,
         toggleSettings,
-        { tooltip = "PrettyUI plugin ribbon settings" })
+        {
+            tooltip = "PrettyUI plugin ribbon settings",
+            _categoryPolicy = Components.policyOf(root),
+        })
     settingsButton:SetActive(settingsOpen)
     for _, entry in ipairs(entries) do createEntryButton(entry) end
     layoutRoot()
@@ -302,7 +307,9 @@ local function ensureMounted()
     end
     if root == nil then
         interfaceID = gameArea.interfaceID
-        root = Components.new(ui.Layer, gameArea)
+        root = Components.new(ui.Layer, gameArea, {
+            _categoryPolicy = Components.policyOf(gameArea, entries[1].options),
+        })
         root.clickthrough = false
         Tooltip.registerContext(root, gameArea, function(target)
             local width, height = barSize()

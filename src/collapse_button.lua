@@ -69,7 +69,7 @@ local function sprite(parent)
     return component
 end
 
-function CollapseButton.new(parent, text, options)
+local function buildCollapseButton(parent, text, options)
     options = options or {}
     local width = CollapseButton.getSize(text, options)
 
@@ -93,7 +93,7 @@ function CollapseButton.new(parent, text, options)
     self.disabledTextColour = options.disabledColour or DISABLED_TEXT_COLOUR
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.newContent(parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, SEGMENT_SIZE, options.widthAnchor or 0, 0)
     Wheel.bind(self.root, options)
@@ -122,7 +122,7 @@ function CollapseButton.new(parent, text, options)
     self.label.maxLines = 1
     self.label.clickthrough = true
 
-    self.content = Components.new(ui.Layer, self.root)
+    self.content = Components.newContent(self.root)
     self.content:SetPos(self.indent, SEGMENT_SIZE + CONTENT_GAP)
     self.content:SetSize(-self.indent, 0, 1.0)
     self.content.hidden = not self.expanded
@@ -167,6 +167,12 @@ function CollapseButton.new(parent, text, options)
     self:_UpdateState()
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
+end
+
+function CollapseButton.new(parent, text, options)
+    return Components.withBatch(parent, function()
+        return buildCollapseButton(parent, text, options)
+    end)
 end
 
 function CollapseButton:_ExpandedHeight()

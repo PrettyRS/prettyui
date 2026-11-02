@@ -78,7 +78,7 @@ function List.getSize(options)
     return options.width or DEFAULT_WIDTH, options.height or DEFAULT_HEIGHT
 end
 
-function List.new(parent, options)
+local function buildList(parent, options)
     options = options or {}
     local self = setmetatable({}, List)
     self.onChange = options.onChange
@@ -107,7 +107,7 @@ function List.new(parent, options)
     self.heightAnchor = options.heightAnchor or 0
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.newContent(parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(
         options.width or DEFAULT_WIDTH,
@@ -117,7 +117,7 @@ function List.new(parent, options)
     )
     self.root.clickthrough = false
     self.background = rectangle(self.root, self.backgroundColour)
-    self.viewport = Components.new(ui.Layer, self.root)
+    self.viewport = Components.newContent(self.root)
     self.viewport:SetPos(1, 1)
     self.viewport:SetSize(-2, -2, 1.0, 1.0)
     self.viewport.clickthrough = false
@@ -213,13 +213,15 @@ function List.new(parent, options)
         return self:_OnScrollWheel(component, delta)
     end)
 
-    local ok, err = pcall(self.SetEntries, self, options.entries or options.choices or {})
-    if not ok then
-        self.root:Destroy()
-        error(err, 0)
-    end
+    self:SetEntries(options.entries or options.choices or {})
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
+end
+
+function List.new(parent, options)
+    return Components.withBatch(parent, function()
+        return buildList(parent, options)
+    end)
 end
 
 function List:_SetScrollbarHidden(hidden)
@@ -353,7 +355,7 @@ function List:_RefreshRows()
 end
 
 function List:_BuildRow(entry, baseY)
-    local row = Components.new(ui.Layer, self.viewport)
+    local row = Components.newContent(self.viewport)
     local record = { root = row, entry = entry, baseY = baseY }
     self.rows[#self.rows + 1] = record
     row:SetPos(0, baseY)
@@ -433,7 +435,6 @@ function List:_RebuildRows()
         return visibleIndex
     end)
     if not ok then
-        for _, row in ipairs(self.rows) do row.root:Destroy() end
         self.rows = {}
         error(result, 0)
     end

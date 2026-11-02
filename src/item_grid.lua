@@ -171,7 +171,9 @@ end
 function ItemGrid:_CreateDragCapture()
     if self.dragSourceIndex == nil or self.dragCapture then return false end
 
-    self.dragCapture = Components.new(ui.Button, self.overlayParent)
+    self.dragCapture = Components.new(ui.Button, self.overlayParent, {
+        _categoryPolicy = Components.policyOf(self.root),
+    })
     self.dragCapture:SetSize(0, 0, 1.0, 1.0)
     self.dragCapture.clickthrough = false
     self.dragCapture.alpha = 0
@@ -202,7 +204,9 @@ function ItemGrid:_BeginDrag(index)
     if slot.tooltip then slot.tooltip:Hide() end
 
     if self.dragSprite == nil then
-        self.dragSprite = Components.new(ui.Sprite, self.overlayParent)
+        self.dragSprite = Components.new(ui.Sprite, self.overlayParent, {
+            _categoryPolicy = Components.policyOf(self.root),
+        })
         self.dragSprite.clickthrough = true
     end
     local width = slot.item.width or (SLOT_SIZE - slot.itemInset * 2)
@@ -268,7 +272,7 @@ function ItemGrid.new(parent, objects, options)
     self.entries = {}
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

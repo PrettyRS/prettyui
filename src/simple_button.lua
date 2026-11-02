@@ -76,7 +76,7 @@ function SimpleButton.new(parent, content, action, options)
     self.hoverCursor = options.hoverCursor or config.Cursor.CURSOR_BLANK
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height)
     Wheel.bind(self.root, options)

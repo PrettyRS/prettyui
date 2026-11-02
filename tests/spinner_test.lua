@@ -4,12 +4,12 @@ local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 
-local function component(parent)
+local function component(parent, categoryID, dynamicID)
     local value = {}
     function value:SetPos(x, y) self.x, self.y = x, y end
     function value:SetSize(width, height) self.width, self.height = width, height end
     function value:Destroy() self.destroyed = true end
-    return Interfaces.component(value, parent)
+    return Interfaces.component(value, parent, categoryID, dynamicID)
 end
 
 ui = { Sprite = { new = component }, Layer = { new = component } }
@@ -79,5 +79,11 @@ expect(alias.rotating.rotationDegrees, 6, "default spinner advances in the inten
 alias:Stop()
 canonical:Destroy()
 alias:Destroy()
+
+local optedIn = host:AddSpinner({ categoryID = "auto", autoPlay = false })
+expect(optedIn.root.categoryID, 0, "auto spinner root inherits a static native mount safely")
+expect(optedIn.backdrop.categoryID > 0, true,
+    "auto spinner artwork inherits the root's managed allocation policy")
+optedIn:Destroy()
 
 print("spinner_test: rotation, speed, playback and lifecycle passed")

@@ -141,7 +141,7 @@ local function resize(self, width, height)
     self.bottomRight:SetPos(width - CORNER_SIZE, height - CORNER_SIZE)
 end
 
-function AnchoredTooltip.new(parent, options)
+local function buildAnchoredTooltip(parent, options)
     if parent == nil then error("AnchoredTooltip requires a parent component collection") end
     options = options or {}
     if options.npc == nil and options.loc == nil and options.position == nil and
@@ -180,7 +180,7 @@ function AnchoredTooltip.new(parent, options)
     )
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.newContent(parent, options)
     self.root:SetSize(self.width, self.height)
     self.root.clickthrough = options.clickthrough ~= false
     self.root.hidden = true
@@ -198,7 +198,7 @@ function AnchoredTooltip.new(parent, options)
 
     createBorder(self)
 
-    self.content = Components.new(ui.Layer, self.root)
+    self.content = Components.newContent(self.root)
     self.content:SetPos(self.paddingX, self.paddingY)
     self.content:SetSize(-self.paddingX * 2, -self.paddingY * 2, 1.0, 1.0)
     self.content.clickthrough = options.clickthrough ~= false
@@ -207,13 +207,7 @@ function AnchoredTooltip.new(parent, options)
     self.contentHeight = self.height - self.paddingY * 2
 
     if self.buildContent then
-        local succeeded, result = pcall(self.buildContent, self, self.content)
-        if not succeeded then
-            self.root:Destroy()
-            self.root = nil
-            error(result, 0)
-        end
-        self.contentResult = result
+        self.contentResult = self.buildContent(self, self.content)
     elseif self.hasText then
         self.label = Components.new(ui.Text, self.content)
         self.label:SetSize(0, 0, 1.0, 1.0)
@@ -240,6 +234,12 @@ function AnchoredTooltip.new(parent, options)
         self:Update()
     end)
     return self
+end
+
+function AnchoredTooltip.new(parent, options)
+    return Components.withBatch(parent, function()
+        return buildAnchoredTooltip(parent, options)
+    end)
 end
 
 function AnchoredTooltip.show(options)

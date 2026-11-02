@@ -51,7 +51,7 @@ local function create(entity, targetType, options)
         offsetY = options.offsetY == nil and 8 or options.offsetY,
         visible = options.hidden ~= true,
     }, OverheadBar)
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetSize(variant.width, variant.height)
     self.root.clickthrough = true
     self.root.hidden = true

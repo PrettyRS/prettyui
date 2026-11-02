@@ -35,7 +35,9 @@ local function layout(frame, parts, width, height, size)
 end
 
 local function createFrame(parent, root, sprites, size)
-    local frame = Components.new(ui.Layer, parent)
+    local frame = Components.new(ui.Layer, parent, {
+        _categoryPolicy = Components.policyOf(root),
+    })
     frame.clickthrough = true
     frame:SetPos(root.x, root.y)
     local parts = {

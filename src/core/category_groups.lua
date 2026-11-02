@@ -43,22 +43,26 @@ local function findBlock(staticParent, occupied, cursor, count)
             local categoryID = 1 + math.floor(start / IDS_PER_CATEGORY)
             local free = true
             for step = 0, count - 1 do
-                if occupied[start + step] or staticParent:GetChild(categoryID, firstID + step) then
+                if occupied[start + step] or
+                    Components.isOccupied(staticParent, categoryID, firstID + step) then
                     free = false
                     break
                 end
             end
-            if free then return start, categoryID, firstID end
+            if free then
+                local token = Components.reserve(staticParent, categoryID, firstID, count)
+                if token then return start, categoryID, firstID, token end
+            end
         end
     end
     return nil
 end
 
--- One occupancy walk per synchronous batch. No other Lua callback can mount
--- components between groups; each successful group updates the snapshot.
+-- Synchronous groups share one occupancy walk. The builder itself can create
+-- raw/managed components, so reservations and fresh checks protect its slots.
 function CategoryGroups.withBatch(parent, callback)
     local staticParent = staticParentOf(parent)
-    if staticParent.GetChild == nil or staticParent.IterateDynamicComponents == nil then
+    if staticParent.IterateDynamicComponents == nil then
         error("PrettyUI: category group requires static-parent child lookup and iteration", 2)
     end
     local state = cursors[staticParent]
@@ -71,10 +75,15 @@ function CategoryGroups.withBatch(parent, callback)
     local occupied
     local ok, result = pcall(function()
         occupied = occupiedIDs(staticParent)
+        Components.useSnapshot(staticParent, occupied)
         local function build(count, builder)
             assert(type(count) == "number" and count % 1 == 0 and count >= 1 and
                 count <= IDS_PER_CATEGORY, "PrettyUI: category group size must be 1..235")
-            local start, categoryID, firstID = findBlock(staticParent, occupied,
+            if occupied == nil then
+                occupied = occupiedIDs(staticParent)
+                Components.useSnapshot(staticParent, occupied)
+            end
+            local start, categoryID, firstID, token = findBlock(staticParent, occupied,
                 state.cursor, count)
             if start == nil then error(EXHAUSTED, 2) end
 
@@ -84,19 +93,31 @@ function CategoryGroups.withBatch(parent, callback)
                 if staticParentOf(actualParent) ~= staticParent then
                     error("PrettyUI: category group parent belongs to another static component", 2)
                 end
+                if actualParent == staticParent or actualParent.categoryID == -1 then
+                    error("PrettyUI: category groups require a dynamic parent; create a native root first", 2)
+                end
                 local dynamicID = firstID + #created
-                if staticParent:GetChild(categoryID, dynamicID) ~= nil then
+                if Components.isOccupied(actualParent, categoryID, dynamicID, token) then
                     error("PrettyUI: reserved category ID became occupied", 2)
                 end
                 local component = nativeType.new(actualParent, categoryID, dynamicID)
+                Components.setPolicy(component, "auto")
                 created[#created + 1] = component
                 return component
             end
             local built, value = pcall(builder, new)
+            Components.release(token)
             if not built or #created ~= count then
                 for index = #created, 1, -1 do
-                    pcall(created[index].Destroy, created[index])
+                    if created[index].Destroy then
+                        pcall(created[index].Destroy, created[index])
+                    end
                 end
+                -- The caller may catch this builder error and continue the
+                -- batch. Discard reservations observed by managed allocation
+                -- as occupied, without discarding other live reservations.
+                occupied = nil
+                Components.useSnapshot(staticParent, nil)
                 if not built then error(value, 0) end
                 error("PrettyUI: category group created fewer components than reserved", 2)
             end
@@ -107,7 +128,7 @@ function CategoryGroups.withBatch(parent, callback)
         return callback(build)
     end)
     state.busy = false
-    if occupied then Components.useSnapshot(staticParent, occupied) end
+    if occupied then Components.useSnapshot(staticParent, ok and occupied or nil) end
     if not ok then error(result, 0) end
     return result
 end

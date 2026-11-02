@@ -55,7 +55,7 @@ local function buildWindow(parent, options)
     self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
     self.rowBackgrounds = {}
 
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.newContent(parent, options)
     self.root.clickthrough = false
     self.root:SetPos(
         options.x or 80,
@@ -140,7 +140,9 @@ local function buildWindow(parent, options)
             alignHorizontal = ui.AlignMode.CENTRE,
         })
 
-        self.titleDrag = Components.new(ui.Layer, self.parent)
+        self.titleDrag = Components.new(ui.Layer, self.parent, {
+            _categoryPolicy = Components.policyOf(self.root),
+        })
         self.titleDrag:MoveToFront()
         self.titleDrag:SetPos(self.root.x, self.root.y)
         self.titleDrag:SetSize(self.root.width - CLOSE_SIZE - 14, TITLE_HEIGHT)

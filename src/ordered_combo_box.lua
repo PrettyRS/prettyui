@@ -57,12 +57,12 @@ local function findOwnerWindow(context)
     end
 end
 
-function OrderedComboBox.new(parent, options)
+local function buildOrderedComboBox(parent, options, overlayParent, policy)
     options = options or {}
     local self = setmetatable({}, OrderedComboBox)
     self.parent = parent
     self.context = Tooltip.getContext(parent)
-    self.overlayParent = options.overlayParent or (self.context and self.context.parent) or parent
+    self.overlayParent = overlayParent
     self.ownerWindow = findOwnerWindow(self.context)
     self.onChange = options.onChange
     self.disabled = options.disabled == true
@@ -76,7 +76,7 @@ function OrderedComboBox.new(parent, options)
     self._pendingInputContents = {}
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(
         options.width or DEFAULT_WIDTH,
@@ -123,6 +123,7 @@ function OrderedComboBox.new(parent, options)
     self.button:MoveToFront()
 
     self.dropdown = List.new(self.overlayParent, {
+        _categoryPolicy = policy,
         width = options.width or DEFAULT_WIDTH,
         height = self.entryHeight + 2,
         entryHeight = self.entryHeight,
@@ -192,6 +193,21 @@ function OrderedComboBox.new(parent, options)
         )
     end
     return self
+end
+
+function OrderedComboBox.new(parent, options)
+    options = options or {}
+    local context = Tooltip.getContext(parent)
+    local overlayParent = options.overlayParent or (context and context.parent) or parent
+    local policy = Components.policyOf(parent, options)
+    if policy == "auto" then
+        Components.checkContentParent(overlayParent, { _categoryPolicy = policy })
+    end
+    return Components.withBatch(parent, function()
+        return Components.withBatch(overlayParent, function()
+            return buildOrderedComboBox(parent, options, overlayParent, policy)
+        end)
+    end)
 end
 
 function OrderedComboBox:_SetInput(value)

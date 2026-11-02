@@ -468,7 +468,9 @@ function ColourPicker:Open()
     local pickerX, pickerY, pickerWidth, pickerHeight = self:_PickerWindowBounds()
     local pickerYOffset = self:_PickerYOffset()
     local picker
+    local policy = Components.policyOf(self.root)
     picker = Window.new(self.windowParent, {
+        _categoryPolicy = policy,
         title = self.options.windowTitle or self.options.title or "Colour picker",
         x = pickerX,
         y = pickerY,

@@ -8,7 +8,7 @@ end
 
 local mousePosition
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         parent = parent,
         kind = kind,
@@ -47,11 +47,11 @@ local function component(parent, kind)
         parent.children = parent.children or {}
         table.insert(parent.children, result)
     end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
-local function canvas(parent)
-    local result = component(parent, "canvas")
+local function canvas(parent, categoryID, dynamicID)
+    local result = component(parent, "canvas", categoryID, dynamicID)
     result.rectangles = {}
     function result:Clear()
         self.rectangles = {}
@@ -79,7 +79,8 @@ local function canvas(parent)
 end
 
 local function simpleButton(parent, options, action)
-    local root = component(parent, "button")
+    local root = require("src/core/components").new(ui.Layer, parent, options)
+    root.kind = "button"
     root:SetPos(options and options.x or 0, options and options.y or 0)
     root:SetSize(options and options.width or 24, options and options.height or 24)
     local content = component(root, "button-content")
@@ -94,9 +95,13 @@ local function simpleButton(parent, options, action)
 end
 
 ui = {
-    Rectangle = { new = function(parent) return component(parent, "rectangle") end },
+    Rectangle = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "rectangle", categoryID, dynamicID)
+    end },
     Canvas = { new = canvas },
-    Layer = { new = function(parent) return component(parent, "layer") end },
+    Layer = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "layer", categoryID, dynamicID)
+    end },
     Hook = {
         ONCLICK = 1,
         ONHOLD = 2,
@@ -137,7 +142,8 @@ package.loaded["src/tooltip"] = {
 }
 package.loaded["src/window"] = {
     new = function(parent, options)
-        local root = component(parent, "window")
+        local root = require("src/core/components").new(ui.Layer, parent, options)
+        root.kind = "window"
         root:SetPos(options.x, options.y)
         root:SetSize(options.width, options.height)
         local content = component(root, "window-content")
@@ -155,8 +161,11 @@ package.loaded["src/window"] = {
                 return button
             end,
             Show = function() end,
-            Close = function() end,
-            Destroy = function() end,
+            Close = function(self)
+                if options.onClose then options.onClose() end
+                self:Destroy()
+            end,
+            Destroy = function(self) self.root:Destroy() end,
         }
         return window
     end,
@@ -321,5 +330,39 @@ local oversized = ColourPicker.new(smallScreen, {})
 oversized:Open()
 expect(oversized.pickerWindow.root.x, 0, "oversized popup keeps its left edge reachable")
 expect(oversized.pickerWindow.root.y, 0, "oversized popup keeps its title bar reachable")
+
+local categoryNotices = {}
+log = function(message) categoryNotices[#categoryNotices + 1] = message end
+local optionOwner = component(screen, "picker-option-owner")
+local optedIn = ColourPicker.new(optionOwner, {
+    categoryID = "auto", windowParent = screen,
+})
+expect(optedIn.root.categoryID > 0, true,
+    "the picker button opts into managed native IDs")
+expect(optedIn:Open(), true, "an opted-in picker still opens its detached window")
+expect(optedIn.pickerWindow.root.parent, screen, "picker popup still uses its physical overlay host")
+expect(optedIn.pickerWindow.root.categoryID, 0, "popup root inherits its static native host")
+local Components = require("src/core/components")
+local autoPopupChild = Components.new(ui.Layer, optedIn.pickerWindow.content)
+expect(autoPopupChild.categoryID > 0, true,
+    "a detached popup carries the picker owner's auto policy to its native descendants")
+expect(#categoryNotices, 0, "auto picker and detached popup emit no category notice")
+optedIn:Close()
+expect(optedIn.pickerWindow, nil, "closing clears the deferred popup reference")
+expect(optedIn:Open(), true, "an opted-in picker reopens after closing")
+expect(Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0, true,
+    "a reopened popup retains its owner's auto mode")
+optedIn:Close()
+
+local autoScreenHost = Components.new(ui.Layer, screen, { categoryID = "auto" })
+local legacyPicker = ColourPicker.new(optionOwner, { windowParent = autoScreenHost })
+expect(legacyPicker.root.categoryID, optionOwner.categoryID,
+    "legacy picker remains native inherited beside an auto owner")
+expect(legacyPicker:Open(), true, "a legacy picker opens on the shared physical host")
+expect(legacyPicker.pickerWindow.root.parent, autoScreenHost,
+    "legacy popup is physically mounted under an auto-owned overlay layer")
+expect(Components.new(ui.Layer, legacyPicker.pickerWindow.content).categoryID, 0,
+    "legacy popup descendants do not inherit an unrelated auto picker policy")
+legacyPicker:Close()
 
 print("colour_picker_test: ok")

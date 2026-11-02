@@ -80,7 +80,7 @@ end
 local buffLayer = newLayer()
 local debuffLayer = newLayer(100, 200)
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     nextDynamicID = nextDynamicID + 1
     local result = {
         dynamicID = nextDynamicID,
@@ -120,12 +120,14 @@ local function component(parent, kind)
         self.movedToFront = true
     end
     table.insert(parent.dynamicComponents, result)
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function componentFactory(kind)
     return {
-        new = function(parent) return component(parent, kind) end,
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, kind, categoryID, dynamicID)
+        end,
     }
 end
 
@@ -154,6 +156,11 @@ ui = {
         GROUP_BOX = 8,
     },
 }
+local staticHost = Interfaces.component({ kind = "native-static-host" })
+buffLayer.parent = staticHost
+debuffLayer.parent = staticHost
+Interfaces.component(buffLayer, staticHost, 0, 0)
+Interfaces.component(debuffLayer, staticHost, 0, 1)
 id = {
     Component = {
         BUFF_BAR__BUFF_RENDER_LAYER = BUFF_LAYER_ID,
@@ -182,7 +189,8 @@ Event = {
         Unsubscribe = function() logicHandler = nil end,
     },
 }
-log = function() end
+local categoryNotices = {}
+log = function(message) categoryNotices[#categoryNotices + 1] = message end
 
 local BuffBar = require("src/buff_bar")
 
@@ -210,6 +218,33 @@ local function captureEntry(layer, addEntry, hasTooltip)
         tooltipLabel = components[6] and components[6].dynamicComponents[10],
     }
 end
+
+local autoHandle, autoEntry = captureEntry(buffLayer, function()
+    return BuffBar.addBuff({
+        spriteID = 17, tooltip = "Auto native buff", categoryID = "auto",
+    })
+end, true)
+for _, native in ipairs({ autoEntry.background, autoEntry.sprite, autoEntry.border, autoEntry.label }) do
+    expect(native.categoryID > 0, true,
+        "each auto buff sibling allocates a managed native category")
+end
+expect(autoEntry.tooltipTarget.categoryID > 0, true,
+    "the initial tooltip target retains its entry's allocation mode")
+expect(autoEntry.tooltipRoot.categoryID, 0,
+    "the raw-compatible auto tooltip root inherits the render layer's zero category")
+expect(autoEntry.tooltipLabel.categoryID > 0, true,
+    "auto tooltip descendants allocate independently of their zero-category root")
+expect(#categoryNotices, 0, "auto-only buff registration emits no category notice")
+expect(autoHandle:SetTooltip(nil), true, "auto entry removes its first tooltip")
+expect(autoHandle:SetTooltip({ text = "Reopened tooltip" }), true,
+    "the same entry recreates a deferred tooltip")
+local replacementTarget = buffLayer.dynamicComponents[#buffLayer.dynamicComponents - 1]
+local replacementRoot = buffLayer.dynamicComponents[#buffLayer.dynamicComponents]
+expect(replacementTarget.categoryID > 0, true,
+    "later tooltip targets inherit their original auto entry policy")
+expect(replacementRoot.categoryID, 0,
+    "later tooltip attachment retains a native category-zero extension host")
+expect(BuffBar.removeBuff(autoHandle), true, "auto-only buff cleans up before legacy layout checks")
 
 local firstHandle, first = captureEntry(buffLayer, function()
     return BuffBar.addBuff({

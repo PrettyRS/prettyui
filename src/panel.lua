@@ -100,7 +100,7 @@ end
 local function createSurface(parent, options)
     local surface = {}
     local frame = Sprites.HUD_WINDOW
-    surface.root = Components.new(ui.Layer, parent)
+    surface.root = Components.newContent(parent, options)
     surface.interfaceID = surface.root.interfaceID
     surface.root:SetPos(options.x, options.y, options.xAnchor or 0, options.yAnchor or 0)
     surface.root:SetSize(options.width, options.height, options.widthAnchor or 0, options.heightAnchor or 0)
@@ -151,11 +151,14 @@ local function createSurface(parent, options)
     surface.bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
     surface.bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
 
-    surface.container = Components.new(ui.Layer, surface.root)
+    surface.container = Components.newContent(surface.root)
     surface.container:SetPos(BORDER_SIZE, BORDER_SIZE)
     surface.container:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
     surface.container.clickthrough = options.clickthrough == true
     surface.container.enabled = options.clickthrough ~= true
+
+    -- Category-zero content must stay above managed, nonzero-category artwork.
+    surface.background:MoveToBack()
 
     return surface
 end
@@ -208,7 +211,9 @@ local function createToggle(surface, panel, popoutMode)
 end
 
 local function createDragLayer(parent, surface, panel)
-    local layer = Components.new(ui.Layer, parent)
+    local layer = Components.new(ui.Layer, parent, {
+        _categoryPolicy = Components.policyOf(surface.root),
+    })
     layer:SetPos(surface.root.x, surface.root.y)
     layer:SetSize(surface.root.width, surface.root.height)
     layer.clickthrough = true
@@ -355,7 +360,7 @@ function Panel.getSize(options)
     return options.width or DEFAULT_WIDTH, options.height or DEFAULT_HEIGHT
 end
 
-local function buildPanel(parent, options, flowManaged, overlayParent)
+local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     options = options or {}
     local width, height = Panel.getSize(options)
 
@@ -381,6 +386,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent)
     self.poppedOut = self._canPopout and options.poppedOut == true
 
     self.dock = createSurface(parent, {
+        _categoryPolicy = policy,
         x = options.x or 0,
         y = options.y or 0,
         xAnchor = options.xAnchor,
@@ -396,6 +402,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent)
     self.height = self.dock.root.height
     self.contentWidth = self.width - BORDER_SIZE * 2
     self.overlay = createSurface(overlayParent, {
+        _categoryPolicy = policy,
         x = options.popoutX or DEFAULT_POPOUT_X,
         y = options.popoutY or DEFAULT_POPOUT_Y,
         xAnchor = options.popoutXAnchor,
@@ -512,9 +519,15 @@ function Panel.new(parent, options, flowManaged)
     options = options or {}
     local context = Tooltip.getContext(parent)
     local overlayParent = options.overlayParent or (context and context.parent) or parent
+    local policy = Components.policyOf(parent, options)
+    if policy == "auto" then
+        local policyOptions = { _categoryPolicy = policy }
+        Components.checkContentParent(parent, policyOptions)
+        Components.checkContentParent(overlayParent, policyOptions)
+    end
     return Components.withBatch(parent, function()
         return Components.withBatch(overlayParent, function()
-            return buildPanel(parent, options, flowManaged, overlayParent)
+            return buildPanel(parent, options, flowManaged, overlayParent, policy)
         end)
     end)
 end

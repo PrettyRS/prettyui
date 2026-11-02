@@ -282,7 +282,7 @@ local function configurePage(tabs, index, options)
     local page = setmetatable({}, TabPage)
     page.tabs = tabs
     page.index = index
-    page.root = Components.new(ui.Layer, tabs.content)
+    page.root = Components.newContent(tabs.content)
     page.root:SetSize(0, 0, 1.0, 1.0)
     page.root.clickthrough = true
     page.root.hidden = true
@@ -338,7 +338,7 @@ local function configurePage(tabs, index, options)
     return page
 end
 
-function Tabs.new(parent, values, options)
+local function buildTabs(parent, values, options)
     options = options or {}
     local normalized = normalizeTabs(values)
     local width, height = Tabs.getSize(normalized, options)
@@ -358,7 +358,7 @@ function Tabs.new(parent, values, options)
     self.tabGap = math.max(0, math.floor(options.tabGap or DEFAULT_TAB_GAP))
     self.tabInset = math.max(0, math.floor(options.tabInset or 0))
 
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.newContent(parent, options)
     self.interfaceID = self.root.interfaceID
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, rootHeight, options.widthAnchor or 0, heightAnchor)
@@ -385,7 +385,7 @@ function Tabs.new(parent, values, options)
     self.divider.isTiling = true
     Wheel.bind(self.divider, options)
 
-    self.content = Components.new(ui.Layer, self.root)
+    self.content = Components.newContent(self.root)
     self.content:SetPos(0, TAB_BASELINE)
     self.content:SetSize(0, -TAB_BASELINE, 1.0, 1.0)
     self.content.clickthrough = true
@@ -404,6 +404,12 @@ function Tabs.new(parent, values, options)
     self:SetActive(initial, false)
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
+end
+
+function Tabs.new(parent, values, options)
+    return Components.withBatch(parent, function()
+        return buildTabs(parent, values, options)
+    end)
 end
 
 function Tabs:BindFlow(owner)

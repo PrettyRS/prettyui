@@ -6,7 +6,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function component(parent)
+local function component(parent, categoryID, dynamicID)
     local result = {
         x = 0,
         y = 0,
@@ -37,7 +37,7 @@ local function component(parent)
         self.destroyed = true
     end
     if parent then table.insert(parent.children, result) end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local parent = component()
@@ -47,10 +47,14 @@ parent.height = 400
 ui = {
     Hook = { ONMOUSEOVER = 1, ONMOUSELEAVE = 2, ONMOUSEREPEAT = 3 },
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
-    Layer = { new = function(owner) return component(owner) end },
-    Sprite = { new = function(owner) return component(owner) end },
-    Text = { new = function(owner)
-        local label = component(owner)
+    Layer = { new = function(owner, categoryID, dynamicID)
+        return component(owner, categoryID, dynamicID)
+    end },
+    Sprite = { new = function(owner, categoryID, dynamicID)
+        return component(owner, categoryID, dynamicID)
+    end },
+    Text = { new = function(owner, categoryID, dynamicID)
+        local label = component(owner, categoryID, dynamicID)
         label.enabled = false
         return label
     end },
@@ -270,6 +274,76 @@ childTooltip:Show()
 Tooltip.hideContextTooltips(contextCollection)
 expect(contextTooltip._parts, nil, "context tooltip hides with its window")
 expect(childTooltip._parts, nil, "nested panel tooltip hides with its window")
+local Components = require("src/core/components")
+local autoOwner = Components.new(ui.Layer, parent, { categoryID = "auto" })
+local autoTarget = Components.new(ui.Layer, autoOwner)
+local ownerTooltip = Tooltip.attach(autoTarget, parent, { text = "Auto owner" })
+expect(ownerTooltip.root.categoryID, 0, "auto tooltip host stays raw-compatible")
+expect(ownerTooltip.label.categoryID > 0, true, "auto tooltip decoration uses managed IDs")
+expect(ui.Layer.new(ownerTooltip.root).categoryID, 0, "raw tooltip child inherits zero")
+local autoBinding = {}
+Tooltip.bind(autoBinding, autoTarget, parent, "Initial")
+expect(autoBinding.tooltip.root.categoryID, 0, "bound tooltip preserves target ownership")
+Tooltip.set(autoBinding, { text = "Replacement" })
+expect(autoBinding.tooltip.label.categoryID > 0, true,
+    "replacement tooltip retains auto allocation")
+Tooltip.unbind(autoBinding)
+ownerTooltip:Destroy()
+
+local lazyTooltip = Tooltip.attach(autoTarget, parent, "Deferred auto owner")
+lazyTooltip:Show()
+local firstLazyRoot = parent.children[#parent.children]
+expect(firstLazyRoot.categoryID, 0, "lazy auto tooltip mounts a raw-compatible host")
+expect(firstLazyRoot.children[#firstLazyRoot.children].categoryID > 0, true,
+    "lazy auto tooltip labels retain the target policy")
+lazyTooltip:Hide()
+expect(firstLazyRoot.destroyed, true, "unretained lazy tooltip releases its native root on hide")
+lazyTooltip:Show()
+local rebuiltLazyRoot = parent.children[#parent.children]
+expect(rebuiltLazyRoot == firstLazyRoot, false, "show after hide rebuilds a new tooltip root")
+expect(rebuiltLazyRoot.categoryID, 0, "rebuilt lazy tooltip stays raw-compatible")
+expect(rebuiltLazyRoot.children[#rebuiltLazyRoot.children].categoryID > 0, true,
+    "rebuilt tooltip retains automatic allocation for decorations")
+lazyTooltip:Destroy()
+
+local legacyOwner = Components.new(ui.Layer, parent)
+local legacyTarget = Components.new(ui.Layer, legacyOwner)
+local autoOverlay = Components.new(ui.Layer, parent, { categoryID = "auto" })
+local legacyTooltip = Tooltip.attach(legacyTarget, autoOverlay, "Legacy on auto overlay")
+expect(legacyTooltip.label.categoryID, 0,
+    "legacy tooltip decorations do not inherit the unrelated auto overlay's policy")
+legacyTooltip:Destroy()
+local invalidOverlay = Components.new(ui.Layer, autoOverlay)
+local beforeInvalid = #invalidOverlay.children
+local valid, reason = pcall(Tooltip.attach, autoTarget, invalidOverlay, "Cannot mount")
+expect(valid, false, "auto tooltip rejects a nonzero overlay parent")
+expect(reason:find("raw-compatible content requires a category-zero parent", 1, true) ~= nil,
+    true, "rejected tooltip gives the safe mounting guidance")
+expect(#invalidOverlay.children, beforeInvalid, "rejected tooltip creates no native layers")
+
+local initialLayer = ui.Layer.new
+local initialSprite = ui.Sprite.new
+local partialTooltipRoot
+ui.Layer.new = function(owner, categoryID, dynamicID)
+    local layer = initialLayer(owner, categoryID, dynamicID)
+    if owner == parent then partialTooltipRoot = layer end
+    return layer
+end
+ui.Sprite.new = function(owner, categoryID, dynamicID)
+    if owner == partialTooltipRoot then error("late tooltip decoration failure") end
+    return initialSprite(owner, categoryID, dynamicID)
+end
+local failingTooltip = Tooltip.attach(autoTarget, parent, "Fail")
+local tooltipBuilt, tooltipError = pcall(failingTooltip.Show, failingTooltip)
+ui.Layer.new = initialLayer
+ui.Sprite.new = initialSprite
+expect(tooltipBuilt, false, "late tooltip decoration failure propagates")
+expect(tooltipError:find("late tooltip decoration failure", 1, true) ~= nil,
+    true, "tooltip preserves its native decoration error")
+expect(partialTooltipRoot.destroyed, true,
+    "failed lazy construction batch destroys its initial category-zero host")
+
+failingTooltip:Destroy()
 local deadOwner = {}
 local deadTarget = component()
 Tooltip.bind(deadOwner, deadTarget, parent, "Logout")

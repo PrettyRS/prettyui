@@ -429,7 +429,9 @@ local function setTooltip(bar, entry, value, deferLayout)
     end
 
     if entry.tooltipTarget == nil then
-        entry.tooltipTarget = trackComponent(bar, Components.new(ui.Layer, entry.layer))
+        entry.tooltipTarget = trackComponent(bar, Components.new(ui.Layer, entry.layer, {
+            _categoryPolicy = entry.categoryPolicy,
+        }))
     end
     entry.tooltip = Tooltip.attach(entry.tooltipTarget, entry.layer, value, {
         onMouseOver = function(tooltip)
@@ -524,13 +526,14 @@ local function add(bar, options)
     end
 
     nextEntryID = nextEntryID + 1
+    local policyOptions = { _categoryPolicy = Components.policyOf(layer, options) }
 
-    local background = trackComponent(bar, Components.new(ui.Rectangle, layer))
+    local background = trackComponent(bar, Components.new(ui.Rectangle, layer, policyOptions))
     background.fill = true
     background.rgba = options.backgroundRgba or BACKGROUND_RGBA
     background.clickthrough = true
 
-    local sprite = trackComponent(bar, Components.new(ui.Sprite, layer))
+    local sprite = trackComponent(bar, Components.new(ui.Sprite, layer, policyOptions))
     sprite.outlineWidth = 1
     sprite.clickthrough = true
     if options.objId ~= nil then
@@ -540,7 +543,7 @@ local function add(bar, options)
         sprite.spriteID = options.spriteID
     end
 
-    local border = trackComponent(bar, Components.new(ui.Rectangle, layer))
+    local border = trackComponent(bar, Components.new(ui.Rectangle, layer, policyOptions))
     border.fill = false
     border.outlineThickness = BORDER_THICKNESS
     border.rgba = bar.allowBorderOverride and (options.borderRgba or bar.borderRGBA)
@@ -550,7 +553,7 @@ local function add(bar, options)
     local remainingTicks = options.duration ~= nil
         and math.ceil(options.duration * TICKS_PER_SECOND)
         or nil
-    local label = trackComponent(bar, Components.new(ui.Text, layer))
+    local label = trackComponent(bar, Components.new(ui.Text, layer, policyOptions))
     label.font = options.font or id.Font.NOTOSANS_BOLD_12
     label.isShadowed = true
     label.alignHorizontal = ui.AlignMode.CENTRE
@@ -563,6 +566,7 @@ local function add(bar, options)
     local visible = options.visible ~= false
 
     local entry = {
+        categoryPolicy = policyOptions._categoryPolicy,
         id = nextEntryID,
         background = background,
         sprite = sprite,

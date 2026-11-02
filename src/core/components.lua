@@ -4,10 +4,46 @@ local IDS_PER_CATEGORY = 235
 local LAST_CATEGORY = 234
 local CAPACITY = LAST_CATEGORY * IDS_PER_CATEGORY
 local EXHAUSTED = "PrettyUI: no dynamic component IDs available on this static parent; page or reuse components"
+local INHERITED_EXHAUSTED = "PrettyUI: inherited category has no safe dynamic component IDs remaining; use a category-zero content host or PrettyUI.NewComponent"
+local RESERVED_INHERITED = 'PrettyUI: inherited allocation overlaps an active category-group reservation; use PrettyUI.NewComponent with categoryID = "auto"'
+local CONTENT_PARENT_ERROR = "PrettyUI: raw-compatible content requires a category-zero parent; mount on a PrettyUI content host or a native category-zero layer"
+local UNLOADED = "PrettyUI: component interface is not loaded; remount the UI"
+local UNVERIFIABLE = "PrettyUI: cannot verify component IDs on this static parent"
+local LEGACY_NOTICE = 'PrettyUI: omitting categoryID uses legacy parent-category inheritance and will be deprecated in a future version; use { categoryID = "auto" } on a root window/view/component for higher-capacity allocation. Legacy calls continue to work.'
 local states = setmetatable({}, { __mode = "k" })
-
+local policies = setmetatable({}, { __mode = "k" })
+local knownHosts = setmetatable({}, { __mode = "k" })
+local warned = false
 local function staticParentOf(parent)
-    return parent.parentStatic or parent
+    local host = knownHosts[parent]
+    if host then return host end
+    host = parent.parentStatic or parent
+    knownHosts[parent] = host
+    return host
+end
+
+local function ancestryPolicy(component)
+    while component do
+        local policy = policies[component]
+        if policy then return policy end
+        component = component.parent
+    end
+    return nil
+end
+
+function Components.policyOf(parent, options, fallbackParent)
+    if options and options.categoryID == "auto" then return "auto" end
+    if options and (options._categoryPolicy == "auto" or options._categoryPolicy == "legacy") then
+        return options._categoryPolicy
+    end
+    return ancestryPolicy(parent) or ancestryPolicy(fallbackParent) or "legacy"
+end
+
+function Components.setPolicy(component, policy)
+    assert(policy == "auto" or policy == "legacy", "invalid component allocation policy")
+    policies[component] = policy
+    knownHosts[component] = component.parentStatic or component
+    return component
 end
 
 local function pairAt(index)
@@ -22,8 +58,8 @@ local function slotOf(categoryID, dynamicID)
     return nil
 end
 
--- Some clients only return direct children from GetChild. Include nested and
--- hidden descendants before choosing an ID in the shared static namespace.
+-- Cached occupancy speeds up batches; a fresh authoritative lookup is still
+-- required immediately before every explicit native construction.
 local function occupiedIDs(staticParent)
     local occupied, visited = {}, {}
     local function visit(collection)
@@ -45,16 +81,157 @@ end
 local function stateFor(staticParent)
     local state = states[staticParent]
     if not state then
-        -- Native roots and unmanaged children retain category zero. Only the
-        -- nonzero grouped range has survived large live-client construction.
-        state = { cursor = 0, owned = {}, occupied = nil }
+        -- Cache numeric IDs while the host is loaded; never query an unloaded
+        -- component handle merely to discover its interface namespace.
+        state = {
+            cursor = 0, owned = {}, occupied = nil, reserved = {},
+            interfaceID = staticParent.interfaceID, staticID = staticParent.staticID,
+        }
         states[staticParent] = state
+        knownHosts[staticParent] = staticParent
     end
     return state
 end
 
--- Mixed native constructors outside PrettyUI must refresh the snapshot before
--- the next allocation if they insert IDs beneath an already mounted root.
+local function loadedInterface(state)
+    local interfaces = ui and ui.Interfaces
+    if state.interfaceID ~= nil and interfaces and interfaces.GetInterface and
+        interfaces:GetInterface(state.interfaceID) == nil then
+        error(UNLOADED, 3)
+    end
+    return interfaces
+end
+
+-- A full-ID lookup is usable only when it can also resolve a known dynamic
+-- parent. Otherwise a nil candidate could conceal nested native components.
+local function nativeOccupant(staticParent, state, parent, categoryID, dynamicID)
+    local interfaces = loadedInterface(state)
+    if state.fullLookup ~= false and interfaces and interfaces.GetComponent and
+        interfaces.GetInterface and type(state.interfaceID) == "number" and
+        type(state.staticID) == "number" then
+        if parent ~= staticParent and parent.parentStatic == staticParent and
+            type(parent.categoryID) == "number" and parent.categoryID >= 0 and
+            type(parent.dynamicID) == "number" and parent.dynamicID >= 0 then
+            local resolved = interfaces:GetComponent(state.interfaceID, state.staticID,
+                parent.categoryID, parent.dynamicID)
+            if resolved ~= parent then state.fullLookup = false end
+        end
+        if state.fullLookup ~= false then
+            return interfaces:GetComponent(state.interfaceID, state.staticID,
+                categoryID, dynamicID) ~= nil
+        end
+    end
+    if staticParent.IterateDynamicComponents == nil then error(UNVERIFIABLE, 3) end
+    local visited, found = {}, false
+    local function visit(collection)
+        if found or visited[collection] then return end
+        if collection.IterateDynamicComponents == nil then error(UNVERIFIABLE, 3) end
+        visited[collection] = true
+        collection:IterateDynamicComponents(function(child)
+            if child.parentStatic == staticParent then
+                if child.categoryID == categoryID and child.dynamicID == dynamicID then
+                    found = true
+                    return true
+                end
+                visit(child)
+            end
+            return false
+        end)
+    end
+    visit(staticParent)
+    return found
+end
+
+local function reservedAt(state, categoryID, dynamicID)
+    local slot = slotOf(categoryID, dynamicID)
+    return slot and state.reserved[slot] or nil
+end
+
+function Components.isOccupied(parent, categoryID, dynamicID, reservation)
+    local staticParent = staticParentOf(parent)
+    local state = stateFor(staticParent)
+    local token = reservedAt(state, categoryID, dynamicID)
+    if token and token ~= reservation then return true end
+    return nativeOccupant(staticParent, state, parent, categoryID, dynamicID)
+end
+
+function Components.reserve(parent, categoryID, firstID, count)
+    local staticParent = staticParentOf(parent)
+    local state = stateFor(staticParent)
+    for dynamicID = firstID, firstID + count - 1 do
+        local slot = slotOf(categoryID, dynamicID)
+        if not slot or (state.occupied and state.occupied[slot]) or
+            Components.isOccupied(parent, categoryID, dynamicID) then return nil end
+    end
+    local reservation = { state = state, slots = {} }
+    for dynamicID = firstID, firstID + count - 1 do
+        local slot = slotOf(categoryID, dynamicID)
+        state.reserved[slot] = reservation
+        reservation.slots[#reservation.slots + 1] = slot
+    end
+    return reservation
+end
+
+function Components.release(reservation)
+    if not reservation then return end
+    for _, slot in ipairs(reservation.slots) do
+        if reservation.state.reserved[slot] == reservation then
+            reservation.state.reserved[slot] = nil
+        end
+    end
+end
+
+local function inheritedPreflight(parent, staticParent, state)
+    local categoryID, start
+    if parent == staticParent or parent.categoryID == -1 then
+        categoryID, start = 0, 0
+    else
+        categoryID = parent.categoryID
+        local dynamicID = parent.dynamicID
+        if type(categoryID) ~= "number" or categoryID % 1 ~= 0 or categoryID < 0 or
+            categoryID > LAST_CATEGORY or type(dynamicID) ~= "number" or
+            dynamicID % 1 ~= 0 or dynamicID < 0 or
+            dynamicID > (categoryID == 0 and 4095 or 234) then
+            error(INHERITED_EXHAUSTED, 3)
+        end
+        start = dynamicID + 1
+    end
+    local limit = categoryID == 0 and 4095 or 234
+    if start > limit then error(INHERITED_EXHAUSTED, 3) end
+    for dynamicID = start, limit do
+        if not nativeOccupant(staticParent, state, parent, categoryID, dynamicID) then
+            if reservedAt(state, categoryID, dynamicID) then
+                error(RESERVED_INHERITED, 3)
+            end
+            return
+        end
+    end
+    error(INHERITED_EXHAUSTED, 3)
+end
+
+local function register(component, staticParent, state, policy)
+    Components.setPolicy(component, policy)
+    knownHosts[component] = staticParent
+    local slot = slotOf(component.categoryID, component.dynamicID)
+    if slot then
+        if state.occupied then state.occupied[slot] = true end
+        if state.batch and state.batch.occupied then state.batch.occupied[slot] = true end
+    end
+    if state.batch then
+        local created = state.batch.created
+        created[#created + 1] = component
+    end
+    if policy == "legacy" and not warned and type(log) == "function" then
+        warned = true
+        -- Native log resolves plugin ownership from its Lua caller's _ENV.
+        -- Passing it directly to C pcall leaves no caller environment.
+        pcall(function() log(LEGACY_NOTICE) end)
+    end
+    return component
+end
+
+-- Explicit refresh reconciles deletion/raw changes in the cached occupancy
+-- view. Fresh per-candidate lookups protect construction even without refresh.
 function Components.refresh(parent)
     local staticParent = staticParentOf(parent)
     local state = stateFor(staticParent)
@@ -74,9 +251,8 @@ function Components.useSnapshot(parent, occupied)
     if state.batch then state.batch.occupied = occupied end
 end
 
--- Cache the shared occupancy snapshot across widget batches. Rescanning the
--- entire interface for every AddText/AddList becomes quadratic on reopen.
--- Native constructors cannot be interleaved with another Lua plugin callback.
+-- Cache shared occupancy across widget batches; callback-created raw components
+-- are still checked against the live namespace before construction.
 function Components.withBatch(parent, callback)
     local staticParent = staticParentOf(parent)
     local state = stateFor(staticParent)
@@ -101,29 +277,44 @@ function Components.withBatch(parent, callback)
     return result
 end
 
-function Components.new(nativeType, parent)
+function Components.checkContentParent(parent, options)
+    local staticParent = staticParentOf(parent)
+    loadedInterface(stateFor(staticParent))
+    local policy = Components.policyOf(parent, options)
+    if policy == "auto" and parent ~= staticParent and
+        parent.categoryID ~= -1 and parent.categoryID ~= 0 then
+        error(CONTENT_PARENT_ERROR, 2)
+    end
+    return policy
+end
+
+function Components.newContent(parent, options)
+    local policy = Components.checkContentParent(parent, options)
+    if policy == "legacy" then return Components.new(ui.Layer, parent, options) end
     local staticParent = staticParentOf(parent)
     local state = stateFor(staticParent)
-    -- Explicit IDs on a static host have aborted the BETA client. Let the
-    -- native constructor assign the root ID; descendants can use the shared
-    -- allocator once they have a dynamic parent.
-    if parent == staticParent or parent.categoryID == -1 then
-        local component = nativeType.new(parent)
-        if state.batch then
-            local batch = state.batch
-            batch.created[#batch.created + 1] = component
-            local slot = slotOf(component.categoryID, component.dynamicID)
-            if batch.occupied and slot then batch.occupied[slot] = true end
-        end
-        return component
+    inheritedPreflight(parent, staticParent, state)
+    return register(ui.Layer.new(parent), staticParent, state, policy)
+end
+
+function Components.new(nativeType, parent, options)
+    local staticParent = staticParentOf(parent)
+    local state = stateFor(staticParent)
+    loadedInterface(state)
+    local policy = Components.policyOf(parent, options)
+    -- Native static roots must never receive explicit IDs, including for an
+    -- opted-in auto root. Save its policy for managed descendants.
+    if parent == staticParent or parent.categoryID == -1 or policy == "legacy" then
+        inheritedPreflight(parent, staticParent, state)
+        return register(nativeType.new(parent), staticParent, state, policy)
     end
 
-    local lookup = staticParent.GetChild
     local occupied = state.batch and state.batch.occupied or state.occupied
     local cached = occupied ~= nil
-    if occupied == nil and lookup and staticParent.IterateDynamicComponents then
+    if occupied == nil and staticParent.IterateDynamicComponents then
         occupied = occupiedIDs(staticParent)
         state.occupied = occupied
+        if state.batch then state.batch.occupied = occupied end
     end
     for attempt = 1, cached and 2 or 1 do
         for offset = 0, CAPACITY - 1 do
@@ -134,29 +325,25 @@ function Components.new(nativeType, parent)
                 state.owned[slot] = nil
                 owned = nil
             end
-            if not (occupied and occupied[slot]) and
-                not (lookup and staticParent:GetChild(categoryID, dynamicID)) and
-                owned == nil then
-                local component = nativeType.new(parent, categoryID, dynamicID)
-                -- ID-ignorant test doubles cannot be queried via GetChild; their
-                -- destroyed flag is the only available release signal.
-                if not lookup or not occupied then state.owned[slot] = component end
-                if occupied then occupied[slot] = true end
-                if state.batch then
-                    local created = state.batch.created
-                    created[#created + 1] = component
+            if not (occupied and occupied[slot]) and owned == nil then
+                if Components.isOccupied(parent, categoryID, dynamicID) then
+                    if occupied then occupied[slot] = true end
+                else
+                    local component = nativeType.new(parent, categoryID, dynamicID)
+                    if not occupied then state.owned[slot] = component end
+                    register(component, staticParent, state, policy)
+                    state.cursor = (slot + 1) % CAPACITY
+                    if state.cursor == 0 then
+                        state.occupied = nil
+                        if state.batch then state.batch.occupied = nil end
+                    end
+                    return component
                 end
-                state.cursor = (slot + 1) % CAPACITY
-                if state.cursor == 0 then
-                    state.occupied = nil
-                    if state.batch then state.batch.occupied = nil end
-                end
-                return component
             end
         end
-        -- Previously mounted widgets may have been destroyed since the last
-        -- snapshot. Reconcile once before declaring the namespace exhausted.
-        if attempt == 1 and cached and lookup and staticParent.IterateDynamicComponents then
+        -- Reclaim slots freed since the last snapshot, without discarding live
+        -- category-group reservations.
+        if attempt == 1 and cached and staticParent.IterateDynamicComponents then
             occupied = occupiedIDs(staticParent)
             state.occupied = occupied
             if state.batch then state.batch.occupied = occupied end

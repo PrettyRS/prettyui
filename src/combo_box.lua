@@ -71,7 +71,7 @@ function ComboBox.new(parent, options)
     self._labelsByID = {}
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.ComboField, parent)
+    self.root = Components.new(ui.ComboField, parent, options)
     self.root.stylesheetID = options.stylesheetID or id.StyleSheet.COMBO_DEFAULT
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(

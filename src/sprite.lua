@@ -19,7 +19,7 @@ function Sprite.new(parent, sprite, options)
     local width, height = Sprite.getSize(options)
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Sprite, parent)
+    self.root = Components.new(ui.Sprite, parent, options)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

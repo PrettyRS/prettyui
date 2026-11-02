@@ -305,7 +305,9 @@ local function mountOverlay(menuOverlay, state)
     end
 
     menuOverlay.interfaceID = rootParent.interfaceID
-    local root = Components.new(ui.Layer, rootParent)
+    local root = Components.new(ui.Layer, rootParent, {
+        categoryID = registration.categoryID,
+    })
     menuOverlay.root = root
     root:SetPos(rootX, rootY)
     root:SetSize(width, height)
@@ -663,6 +665,7 @@ function PrettyMiniMenu.AddSubmenu(miniMenu, label, children, options)
     local registration = {
         children = children,
         title = options.title,
+        categoryID = options.categoryID,
     }
     parentsByEntry[entry] = registration
     parentsByText[textKey(parentLabel)] = registration

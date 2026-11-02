@@ -4,7 +4,7 @@ local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 
-local function component(parent)
+local function component(parent, categoryID, dynamicID)
     local value = { parent = parent, x = 0, y = 0, hidden = false, subscriptions = {},
         text = {}, containerSprite = {},
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end }, cursorConfig = {} }
@@ -34,7 +34,7 @@ local function component(parent)
     function value:MoveToFront() end
     function value:MoveToBack() end
     function value:Destroy() self.destroyed = true end
-    return Interfaces.component(value, parent)
+    return Interfaces.component(value, parent, categoryID, dynamicID)
 end
 
 local enum = setmetatable({}, { __index = function(_, key) return key end })

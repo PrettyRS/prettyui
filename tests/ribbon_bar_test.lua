@@ -4,7 +4,7 @@ local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         kind = kind, children = {}, subscriptions = {}, hidden = false,
         x = 0, y = 0, width = 0, height = 0,
@@ -37,11 +37,13 @@ local function component(parent, kind)
         for _, child in ipairs(self.children) do child:Destroy() end
     end
     if parent then table.insert(parent.children, result) end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent) return component(parent, kind) end }
+    return { new = function(parent, categoryID, dynamicID)
+        return component(parent, kind, categoryID, dynamicID)
+    end }
 end
 
 local area
@@ -83,6 +85,8 @@ Event = { Logic = {
 local messages = {}
 local consolePrint = print
 print = function(message) table.insert(messages, message) end
+local categoryNotices = {}
+log = function(message) categoryNotices[#categoryNotices + 1] = message end
 
 local function newArea()
     local result = component(nil, "game-area")
@@ -114,15 +118,31 @@ expect(#messages, 0, "unused ribbon emits no deprecation notice")
 expect(pcall(RibbonBar.Register, {}), false, "registration still requires an ID")
 expect(#messages, 0, "invalid registration emits no deprecation notice")
 
-local first = RibbonBar.Register({ id = "first-plugin", onClick = function() end })
+local first = RibbonBar.Register({
+    id = "first-plugin", categoryID = "auto", onClick = function() end,
+})
 expect(#liveChildren(ribbon(), "layer"), 2, "first plugin exposes its button and settings")
 expect(#messages, 1, "first registration emits a notice")
 assert(messages[1]:find("deprecated", 1, true) and messages[1]:find("first-plugin", 1, true),
     "notice identifies the deprecated API's consumer")
+local firstRibbon = ribbon()
+expect(firstRibbon.categoryID, 0, "the shared ribbon root inherits the static native host category")
+expect(liveChildren(firstRibbon, "sprite")[1].categoryID > 0, true,
+    "an auto-first ribbon frame allocates managed native IDs")
+expect(liveChildren(firstRibbon, "layer")[1].categoryID > 0, true,
+    "an auto-first settings button inherits the ribbon's allocation mode")
+expect(liveChildren(firstRibbon, "layer")[2].categoryID > 0, true,
+    "an auto entry button allocates managed native IDs")
+expect(#categoryNotices, 0, "auto-only ribbon construction emits no category notice")
 expect(RibbonBar.Register({ id = "first-plugin" }), first, "duplicate registration updates the same handle")
 expect(#messages, 1, "updating an existing registration does not repeat the notice")
+expect(firstRibbon, ribbon(), "updating an entry does not relabel or remount the shared ribbon")
+expect(liveChildren(firstRibbon, "layer")[2].categoryID, 0,
+    "updated legacy entry stays native inherited despite an auto shared ribbon")
 local second = RibbonBar.Register({ id = "second-plugin" })
 expect(#messages, 2, "another consumer receives its own notice")
+expect(liveChildren(firstRibbon, "layer")[3].categoryID, 0,
+    "an independent legacy registration is not opted in by the first auto entry")
 first:Destroy()
 expect(#liveChildren(ribbon(), "layer"), 2, "remaining plugin keeps settings available")
 
@@ -158,6 +178,16 @@ area = newArea()
 tick()
 expect(#liveChildren(ribbon(), "layer"), 2, "offline registration mounts on login")
 offline:Destroy()
+local mixedLegacy = RibbonBar.Register({ id = "legacy-first" })
+local legacyRibbon = ribbon()
+expect(liveChildren(legacyRibbon, "sprite")[1].categoryID, 0,
+    "a first legacy entry owns a native-inherited shared ribbon")
+local mixedAuto = RibbonBar.Register({ id = "auto-second", categoryID = "auto" })
+expect(ribbon(), legacyRibbon, "adding auto to a live legacy ribbon does not recreate shared chrome")
+expect(liveChildren(legacyRibbon, "layer")[3].categoryID > 0, true,
+    "an auto entry allocates independently of a legacy shared ribbon")
+mixedAuto:Destroy()
+mixedLegacy:Destroy()
 RibbonBar.Shutdown()
 expect(tick, nil, "shutdown removes logic subscription")
 expect(#liveChildren(area), 0, "shutdown leaves no ribbon surfaces")

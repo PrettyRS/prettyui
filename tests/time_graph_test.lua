@@ -22,14 +22,14 @@ end
 function methods:Destroy() self.destroyed = true end
 function methods:MoveToFront() end
 local function factory(kind)
-    return {new = function(parent)
+    return {new = function(parent, categoryID, dynamicID)
         local component = {parent = parent, kind = kind, children = {}, hooks = {}, x = 0, y = 0, w = 0, h = 0, wa = 0, ha = 0}
         if parent then table.insert(parent.children, component) end
         return Interfaces.component(setmetatable(component, {__index = function(self, key)
             if key == 'width' then return self.w + (self.parent and self.parent.width or 0) * self.wa end
             if key == 'height' then return self.h + (self.parent and self.parent.height or 0) * self.ha end
             return methods[key]
-        end}), parent)
+        end}), parent, categoryID, dynamicID)
     end}
 end
 ui = {

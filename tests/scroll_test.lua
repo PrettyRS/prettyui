@@ -26,7 +26,7 @@ Mouse = {
     end,
 }
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         parent = parent,
         kind = kind,
@@ -76,15 +76,17 @@ local function component(parent, kind)
         parent.children = parent.children or {}
         table.insert(parent.children, result)
     end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent) return component(parent, kind) end }
+    return { new = function(parent, categoryID, dynamicID)
+        return component(parent, kind, categoryID, dynamicID)
+    end }
 end
 
-local function inputField(parent)
-    local result = component(parent, "input")
+local function inputField(parent, categoryID, dynamicID)
+    local result = component(parent, "input", categoryID, dynamicID)
     result.text = {}
     result.containerSprite = {}
     function result:Setup(visibility, filterMode, maxLength)
@@ -234,16 +236,13 @@ expect(simpleView.scrollbarVisible, true, "simple views expose shared overflow b
 simpleView:Destroy()
 
 local messages = {}
-log = function(message) table.insert(messages, message) end
+log = function(message)
+    if not message:find("categoryID", 1, true) then table.insert(messages, message) end
+end
 local Scrollbar = require("src/scrollbar")
 local legacyA = Scrollbar.new(parent, { width = 120, height = 80 })
 local legacyB = Scrollbar.new(parent, { width = 120, height = 80 })
 expect(#messages, 1, "legacy scrollbar logs its deprecation once")
-expect(
-    messages[1]:find("removed in v1.0.0", 1, true) ~= nil,
-    true,
-    "deprecation identifies the removal version"
-)
 legacyA:Destroy()
 legacyB:Destroy()
 

@@ -38,7 +38,7 @@ function SpriteButton.new(parent, spriteName, action, options)
     self.hoverCursor = options.hoverCursor or defaultCursor(normalizedName)
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Sprite, parent)
+    self.root = Components.new(ui.Sprite, parent, options)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

@@ -25,6 +25,8 @@ local function resolve(options)
         modal = options.modal ~= false,
         content = options.content,
         actions = options.actions or {},
+        categoryID = options.categoryID,
+        _categoryPolicy = options._categoryPolicy,
         onDismiss = options.onDismiss,
     }
 end
@@ -57,11 +59,13 @@ local function destroyChrome(parent)
     destroyLayer(existing.dim)
 end
 
-local function ensureChrome(parent)
+local function ensureChrome(parent, firstFrame)
     local existing = chrome[parent]
     if existing ~= nil then return existing.dim, existing.blocker end
 
-    local dim = Components.new(ui.Layer, parent)
+    local dim = Components.new(ui.Layer, parent, {
+        _categoryPolicy = Components.policyOf(firstFrame.window.root),
+    })
     dim:SetPos(0, 0)
     dim:SetSize(0, 0, 1.0, 1.0)
     dim.clickthrough = false
@@ -73,7 +77,9 @@ local function ensureChrome(parent)
     rect:SetSize(0, 0, 1.0, 1.0)
     rect.colour = Vector4.new(0, 0, 0, DIM_ALPHA)
 
-    local blocker = Components.new(ui.Layer, parent)
+    local blocker = Components.new(ui.Layer, parent, {
+        _categoryPolicy = Components.policyOf(firstFrame.window.root),
+    })
     blocker:SetPos(0, 0)
     blocker:SetSize(0, 0, 1.0, 1.0)
     blocker.clickthrough = false
@@ -106,18 +112,18 @@ local function syncChrome(parent)
         return
     end
 
-    local anyModal = false
+    local firstModal
     for _, frame in ipairs(stack) do
         if frame.options.modal then
-            anyModal = true
+            firstModal = frame
             break
         end
     end
 
     local top = stack[#stack]
     local dim, blocker
-    if anyModal then
-        dim, blocker = ensureChrome(parent)
+    if firstModal then
+        dim, blocker = ensureChrome(parent, firstModal)
     else
         destroyChrome(parent)
     end
@@ -235,6 +241,8 @@ function Dialog.new(parent, options)
 
     local width, height = resolveWindowWidth(options), options.height
     local window = Window.new(parent, {
+        categoryID = options.categoryID,
+        _categoryPolicy = options._categoryPolicy,
         title = options.title,
         x = -math.floor(width / 2),
         y = -math.floor(height / 2),

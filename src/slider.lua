@@ -65,7 +65,7 @@ function Slider.new(parent, options)
     self.dragStart = nil
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(options.width or requestedWidth, HEIGHT, options.widthAnchor or 0)
     self.root.clickthrough = false
@@ -115,7 +115,9 @@ function Slider.new(parent, options)
     self.thumb:SetPos(0, math.floor((HEIGHT - THUMB_HEIGHT) / 2))
     self.thumb:SetSize(THUMB_WIDTH, THUMB_HEIGHT)
 
-    self.thumbDrag = Components.new(ui.Layer, self.parent)
+    self.thumbDrag = Components.new(ui.Layer, self.parent, {
+        _categoryPolicy = Components.policyOf(self.root),
+    })
     self.thumbDrag.clickthrough = false
     self.thumbDrag:MoveToFront()
     Wheel.bind(self.thumbDrag, options)

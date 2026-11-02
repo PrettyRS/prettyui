@@ -243,8 +243,9 @@ function Resize.new(parent, root, options)
         onBegin = options.onBegin,
         handles = {},
     }, Resize)
+    local policyOptions = { _categoryPolicy = Components.policyOf(root) }
     for _, key in ipairs(order) do
-        local handle = Components.new(ui.Layer, parent)
+        local handle = Components.new(ui.Layer, parent, policyOptions)
         self.handles[key] = handle
         handle.enabled = false
         handle.clickthrough = true

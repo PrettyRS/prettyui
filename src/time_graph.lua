@@ -129,7 +129,7 @@ function TimeGraph.new(parent, options)
     self.dirty = true
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height, self.widthAnchor, self.heightAnchor)
     self.root.hidden = options.visible == false

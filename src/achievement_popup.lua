@@ -103,7 +103,7 @@ function AchievementPopup.new(parent, options)
     local height = math.max(BORDER_SIZE * 2 + 1, options.height or DEFAULT_HEIGHT)
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(
         options.x or -math.floor(width / 2),
         options.y or DEFAULT_Y,

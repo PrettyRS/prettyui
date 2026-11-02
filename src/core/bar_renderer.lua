@@ -89,7 +89,7 @@ function Renderer.init(self, parent, options)
     self.widthAnchor, self.heightAnchor = options.widthAnchor or 0, options.heightAnchor or 0
     self.bars, self.edges = {}, {}
     self.dirty = true
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.interfaceID = self.root.interfaceID
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height, self.widthAnchor, self.heightAnchor)

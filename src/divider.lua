@@ -31,7 +31,7 @@ function Divider.new(parent, options)
     if widthAnchor == nil then widthAnchor = width <= 0 and 1.0 or 0 end
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Sprite, parent)
+    self.root = Components.new(ui.Sprite, parent, options)
     self.root:SetPos(
         options.x or 0,
         options.y or 0,

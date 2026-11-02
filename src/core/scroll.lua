@@ -86,7 +86,7 @@ local function buildScroll(parent, options)
     self.clipTargets = {}
     self.childScrolls = {}
 
-    self.root = Components.new(ui.Layer, parent)
+    self.root = Components.newContent(parent, options)
     self.interfaceID = self.root.interfaceID
     self.root:SetPos(
         options.x or 0,
@@ -102,11 +102,11 @@ local function buildScroll(parent, options)
     )
     self.root.clickthrough = self.clickthrough
 
-    self.viewport = Components.new(ui.Layer, self.root)
+    self.viewport = Components.newContent(self.root)
     self.viewport.clickthrough = self.clickthrough
     self.viewport.enabled = not self.clickthrough
 
-    self.content = Components.new(ui.Layer, self.viewport)
+    self.content = Components.newContent(self.viewport)
     self.content.clickthrough = self.clickthrough
     self.content.enabled = not self.clickthrough
 
@@ -172,7 +172,9 @@ local function buildScroll(parent, options)
     self.thumbBottom:SetPos(0, -END_SIZE, 0, 1.0)
     self.thumbBottom:SetSize(BAR_WIDTH, END_SIZE)
 
-    self.thumbDrag = Components.new(ui.Layer, self.overlayParent)
+    self.thumbDrag = Components.new(ui.Layer, self.overlayParent, {
+        _categoryPolicy = Components.policyOf(self.root),
+    })
     self.thumbDrag.clickthrough = self.clickthrough
     self.thumbDrag.enabled = not self.clickthrough
     self.thumbDrag:MoveToFront()
