@@ -6,7 +6,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function inputField()
+local function inputField(parent, categoryID, dynamicID)
     local result = {
         text = {},
         containerSprite = {},
@@ -35,14 +35,12 @@ local function inputField()
         self.destroyed = true
     end
 
-    return Interfaces.component(result)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 ui = {
     InputField = {
-        new = function()
-            return inputField()
-        end,
+        new = inputField,
     },
     Margin = {
         new = function(left, top, right, bottom)
@@ -99,14 +97,14 @@ package.path = "prettyui/?.lua;" .. package.path
 package.loaded["src/text_field"] = nil
 local TextField = require("src/text_field")
 
-local standard = TextField.new({}, {})
+local standard = TextField.new(Interfaces.component({}), {})
 expect(standard.root.contentMargin.left, 8, "default left inset")
 expect(standard.root.contentMargin.top, 3, "default vertical correction")
 expect(standard.root.contentMargin.right, 8, "default right inset")
 expect(standard.root.contentMargin.bottom, 0, "default bottom inset")
 
 local customMargin = ui.Margin.new(1, 2, 3, 4)
-local custom = TextField.new({}, {
+local custom = TextField.new(Interfaces.component({}), {
     contentMargin = customMargin,
 })
 expect(custom.root.contentMargin, customMargin, "custom margin remains unchanged")

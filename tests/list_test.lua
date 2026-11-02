@@ -6,7 +6,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         kind = kind,
         x = 0,
@@ -15,7 +15,39 @@ local function component(parent, kind)
         height = 0,
         hidden = false,
         subscriptions = {},
+        children = {},
     }
+    if parent then
+        local static = parent.parentStatic or parent
+        local category = categoryID or (parent.categoryID == -1 and 0 or parent.categoryID)
+        local dynamic = dynamicID or parent.dynamicID + 1
+        local ids = static.registry[category] or {}
+        static.registry[category] = ids
+        if dynamicID == nil then
+            while ids[dynamic] do dynamic = dynamic + 1 end
+        end
+        assert(category >= 0 and category <= 234 and dynamic >= 0 and
+            dynamic <= (category == 0 and 4095 or 234), "native ID capacity exceeded")
+        assert(ids[dynamic] == nil, "native ID collision")
+        result.parentStatic = static
+        result.categoryID, result.dynamicID = category, dynamic
+        ids[dynamic] = result
+        parent.children[#parent.children + 1] = result
+    else
+        result.categoryID, result.dynamicID = -1, -1
+        result.registry = {}
+        function result:GetChild(category, dynamic)
+            for _, child in ipairs(self.children) do
+                if not child.destroyed and child.categoryID == category and
+                    child.dynamicID == dynamic then return child end
+            end
+        end
+    end
+    function result:IterateDynamicComponents(callback)
+        for _, child in ipairs(self.children) do
+            if not child.destroyed and callback(child, not child.hidden) then return end
+        end
+    end
     function result:SetPos(x, y)
         self.x, self.y = x, y
     end
@@ -33,16 +65,21 @@ local function component(parent, kind)
         self.subscriptions[hook] = callback or idOrCallback
     end
     function result:MoveToFront() end
-    function result:Destroy() self.destroyed = true end
-    if parent then
-        parent.children = parent.children or {}
-        table.insert(parent.children, result)
+    function result:Destroy()
+        if self.destroyed then return end
+        for _, child in ipairs(self.children) do child:Destroy() end
+        self.destroyed = true
+        if parent then
+            self.parentStatic.registry[self.categoryID][self.dynamicID] = nil
+        end
     end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent) return component(parent, kind) end }
+    return { new = function(parent, category, dynamic)
+        return component(parent, kind, category, dynamic)
+    end }
 end
 
 ui = {
@@ -136,5 +173,92 @@ expect(list.scrollY, 48, "disabled row labels forward wheel scrolling")
 
 list.viewport.subscriptions[wheel](list.viewport, 1)
 expect(list.scrollY, 50, "the exposed viewport forwards wheel scrolling to the limit")
+
+local neighbor = ui.Layer.new(parent)
+local large = List.new(parent, { categoryID = "auto", width = 240, height = 96 })
+-- The host's direct-child lookup cannot see a raw descendant of the viewport.
+local foreign = ui.Text.new(large.viewport, 1, 230)
+require("src/core/components").refresh(large.viewport)
+local entries = {}
+for index = 1, 1400 do
+    entries[index] = { id = index, label = "Entry " .. index }
+    if index % 10 == 0 then entries[index].icon = 42 end
+end
+large:SetEntries(entries)
+expect(#large.rows, 1400, "large lists mount every requested row")
+expect(foreign.destroyed, nil, "nested foreign category ID remains occupied")
+expect(large.rows[1].root.categoryID, 0, "list rows remain raw-compatible")
+expect(large.rows[1].label.categoryID > 0, true,
+    "row decorations use IDs outside the raw content category")
+local rawExtension = ui.Layer.new(large.rows[1].root)
+expect(rawExtension.categoryID, 0, "raw row extensions inherit category zero")
+large.rows[1400].root.subscriptions[ui.Hook.ONCLICK]()
+expect(large.entriesByID[1400].selected, true, "last row can be selected")
+
+local oldRow = large.rows[2].root
+large:SetEntryIcon(2, 43)
+expect(oldRow.destroyed, true, "rebuild destroys the replaced row")
+expect(large.rows[2].label.x > large.rows[1].label.x, true,
+    "new icon leaves room before the row label")
+large:SetEntryVisible(3, false)
+expect(#large.rows, 1399, "visibility rebuild excludes the hidden row")
+expect(large.rows[3].entry.id, 4, "remaining rows retain their entry order")
+large:Clear()
+expect(#large.rows, 0, "clearing releases every row")
+expect(foreign.destroyed, nil, "clearing leaves foreign viewport components intact")
+expect(neighbor.destroyed, nil, "clearing preserves neighboring widgets")
+
+local retained = {}
+for category = 0, 234 do
+    for dynamic, component_ in pairs(parent.registry[category] or {}) do
+        retained[category .. ":" .. dynamic] = component_
+    end
+end
+
+local originalTextNew = ui.Text.new
+local attempts = 0
+ui.Text.new = function(...)
+    if select(2, ...) ~= nil then
+        attempts = attempts + 1
+        if attempts == 4 then error("injected row text failure") end
+    end
+    return originalTextNew(...)
+end
+local ok, err = pcall(large.SetEntries, large, entries)
+ui.Text.new = originalTextNew
+expect(ok, false, "failed row creation propagates")
+assert(tostring(err):find("injected row text failure", 1, true), "original constructor error survives")
+expect(#large.rows, 0, "failed rebuild rolls back completed rows")
+for category = 0, 234 do
+    for dynamic, component_ in pairs(parent.registry[category] or {}) do
+        local key = category .. ":" .. dynamic
+        expect(component_, retained[key], "failed rebuild preserves only preexisting components")
+        retained[key] = nil
+    end
+end
+expect(next(retained), nil, "failed rebuild retains all preexisting components")
+large:SetEntries(entries)
+expect(#large.rows, 1400, "list remounts after a failed rebuild")
+large:Destroy()
+expect(neighbor.destroyed, nil, "destroying the list preserves neighboring widgets")
+
+local failedEntries = { { id = 1, label = "Row" } }
+local failedHost = component(nil, "failed host")
+local textNew = ui.Text.new
+ui.Text.new = function(...)
+    if select(2, ...) ~= nil then error("constructor failed") end
+    return textNew(...)
+end
+local mounted, mountErr = pcall(List.new, failedHost, {
+    categoryID = "auto",
+    entries = failedEntries,
+})
+ui.Text.new = textNew
+expect(mounted, false, "list constructor propagates a row failure")
+assert(tostring(mountErr):find("constructor failed", 1, true), "mount failure survives")
+expect(failedHost.children[1].destroyed, true, "failed mount releases the list shell")
+for _, ids in pairs(failedHost.registry) do
+    expect(next(ids), nil, "failed mount leaves no native components")
+end
 
 print("list_test: ok")

@@ -6,7 +6,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         kind = kind,
         x = 0,
@@ -36,11 +36,13 @@ local function component(parent, kind)
         parent.children = parent.children or {}
         parent.children[#parent.children + 1] = result
     end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent) return component(parent, kind) end }
+    return { new = function(parent, categoryID, dynamicID)
+        return component(parent, kind, categoryID, dynamicID)
+    end }
 end
 
 ui = {

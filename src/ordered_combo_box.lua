@@ -3,6 +3,7 @@ local Palette = require("src/core/control_palette")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local clamp = require("src/core/math").clamp
+local Components = require("src/core/components")
 
 local OrderedComboBox = {}
 OrderedComboBox.__index = OrderedComboBox
@@ -56,12 +57,12 @@ local function findOwnerWindow(context)
     end
 end
 
-function OrderedComboBox.new(parent, options)
+local function buildOrderedComboBox(parent, options, overlayParent, policy)
     options = options or {}
     local self = setmetatable({}, OrderedComboBox)
     self.parent = parent
     self.context = Tooltip.getContext(parent)
-    self.overlayParent = options.overlayParent or (self.context and self.context.parent) or parent
+    self.overlayParent = overlayParent
     self.ownerWindow = findOwnerWindow(self.context)
     self.onChange = options.onChange
     self.disabled = options.disabled == true
@@ -75,7 +76,7 @@ function OrderedComboBox.new(parent, options)
     self._pendingInputContents = {}
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(
         options.width or DEFAULT_WIDTH,
@@ -86,12 +87,12 @@ function OrderedComboBox.new(parent, options)
     Wheel.bind(self.root, options)
 
     -- Keep the native frame and dropdown-button artwork as the visual shell.
-    self.shell = ui.ComboField.new(self.root)
+    self.shell = Components.new(ui.ComboField, self.root)
     self.shell.stylesheetID = options.stylesheetID or id.StyleSheet.COMBO_DEFAULT
     self.shell:SetSize(0, 0, 1.0, 1.0)
     self.shell.clickthrough = true
 
-    self.input = ui.InputField.new(self.root)
+    self.input = Components.new(ui.InputField, self.root)
     self.input.stylesheetID = options.inputStylesheetID or id.StyleSheet.INPUT_DEFAULT
     self.input:SetSize(-BUTTON_WIDTH, 0, 1.0, 1.0)
     self.input:Setup(
@@ -114,7 +115,7 @@ function OrderedComboBox.new(parent, options)
         or Palette.SELECTED
     self.input.containerSprite.alpha = 0
 
-    self.button = ui.Layer.new(self.root)
+    self.button = Components.new(ui.Layer, self.root)
     self.button:SetPos(-BUTTON_WIDTH, 0, 1.0, 0)
     self.button:SetSize(BUTTON_WIDTH, 0, 0, 1.0)
     self.button.clickthrough = false
@@ -122,6 +123,7 @@ function OrderedComboBox.new(parent, options)
     self.button:MoveToFront()
 
     self.dropdown = List.new(self.overlayParent, {
+        _categoryPolicy = policy,
         width = options.width or DEFAULT_WIDTH,
         height = self.entryHeight + 2,
         entryHeight = self.entryHeight,
@@ -191,6 +193,21 @@ function OrderedComboBox.new(parent, options)
         )
     end
     return self
+end
+
+function OrderedComboBox.new(parent, options)
+    options = options or {}
+    local context = Tooltip.getContext(parent)
+    local overlayParent = options.overlayParent or (context and context.parent) or parent
+    local policy = Components.policyOf(parent, options)
+    if policy == "auto" then
+        Components.checkContentParent(overlayParent, { _categoryPolicy = policy })
+    end
+    return Components.withBatch(parent, function()
+        return Components.withBatch(overlayParent, function()
+            return buildOrderedComboBox(parent, options, overlayParent, policy)
+        end)
+    end)
 end
 
 function OrderedComboBox:_SetInput(value)

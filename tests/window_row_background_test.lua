@@ -6,7 +6,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function component(parent)
+local function component(parent, categoryID, dynamicID)
     local value = { parent = parent, subscriptions = {} }
     function value:SetPos(x, y, xAnchor, yAnchor)
         self.x, self.y = x, y
@@ -20,7 +20,7 @@ local function component(parent)
     function value:MoveToBack() self.movedToBack = true end
     function value:Subscribe(hook, callback) self.subscriptions[hook] = callback end
     function value:Destroy() self.destroyed = true end
-    return Interfaces.component(value, parent)
+    return Interfaces.component(value, parent, categoryID, dynamicID)
 end
 
 local created = {}
@@ -34,8 +34,8 @@ ui = {
     Layer = { new = component },
     Sprite = { new = component },
     Rectangle = {
-        new = function(parent)
-            local rectangle = component(parent)
+        new = function(parent, categoryID, dynamicID)
+            local rectangle = component(parent, categoryID, dynamicID)
             created[#created + 1] = rectangle
             return rectangle
         end,

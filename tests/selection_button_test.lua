@@ -6,7 +6,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         kind = kind,
         x = 0,
@@ -32,11 +32,13 @@ local function component(parent, kind)
         parent.children = parent.children or {}
         parent.children[#parent.children + 1] = result
     end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent) return component(parent, kind) end }
+    return { new = function(parent, categoryID, dynamicID)
+        return component(parent, kind, categoryID, dynamicID)
+    end }
 end
 
 ui = {
@@ -174,6 +176,7 @@ for _, method in ipairs({ "AddCheckboxButton", "AddRadioButton" }) do
     prefix:Destroy()
     checkRow()
     Layout.destroyManaged(owner)
+    expect(controls[1].root, nil, method .. " is destroyed with its flow owner")
 end
 
 print("selection_button_test: ok")

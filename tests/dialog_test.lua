@@ -1,3 +1,5 @@
+local Interfaces = require("tests/interface_fixture")
+
 local function expect(actual, expected, message)
     if actual ~= expected then
         error(message .. ": expected " .. tostring(expected)
@@ -22,7 +24,7 @@ Vector4 = { new = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 local windows = {}
 local layers = {}
 
-local function fakeLayer(parent)
+local function fakeLayer(parent, categoryID, dynamicID)
     local layer = {
         parent = parent,
         clickthrough = false,
@@ -38,18 +40,21 @@ local function fakeLayer(parent)
         self.destroyed = true
     end
     layers[#layers + 1] = layer
-    return layer
+    return Interfaces.component(layer, parent, categoryID, dynamicID)
 end
 
-local function fakeRect(parent)
+local function fakeRect(parent, categoryID, dynamicID)
     local rect = { parent = parent, fill = false, clickthrough = false, colour = nil }
     function rect:SetPos() end
     function rect:SetSize() end
-    return rect
+    return Interfaces.component(rect, parent, categoryID, dynamicID)
 end
 
 local function fakeWindow(parent, options)
+    Interfaces.component(parent)
+    local root = require("src/core/components").new(ui.Layer, parent, options)
     local window = {
+        root = root,
         parent = parent,
         options = options,
         title = options.title,
@@ -82,7 +87,9 @@ local function fakeWindow(parent, options)
         if self.destroyOnClose then self:Destroy() end
     end
     function window:Destroy()
+        if self.destroyed then return end
         self.destroyed = true
+        self.root:Destroy()
     end
     windows[#windows + 1] = window
     return window
@@ -275,5 +282,29 @@ local unknownFailed = pcall(function()
 end)
 expectFalse(unknownFailed, "unknown action raises")
 Dialog.dismissAll(parent)
+
+local staticHost = Interfaces.component({ id = "modal-static" })
+local modalHost = ui.Layer.new(staticHost)
+local nonmodal = Dialog.new(modalHost, { title = "Nonmodal", modal = false })
+local firstModal = Dialog.new(modalHost, {
+    title = "Managed modal",
+    categoryID = "auto",
+    actions = { { label = "Close" } },
+})
+local dim = layers[#layers - 1]
+expectTrue(firstModal.window.root.categoryID > 0, "modal opts into managed allocation")
+expectTrue(dim.categoryID > 0, "dim follows the first modal, not the nonmodal dialog")
+local legacyModal = Dialog.new(modalHost, {
+    title = "Legacy modal",
+    actions = { { label = "Close" } },
+})
+expect(legacyModal.window.root.categoryID, 0,
+    "later modal retains its own native allocation policy")
+button(legacyModal.window, "Close").action()
+expectFalse(dim.destroyed, "shared dim stays until the last modal closes")
+button(firstModal.window, "Close").action()
+expectTrue(dim.destroyed, "last modal releases shared dim while nonmodal stays open")
+expectFalse(nonmodal.window.destroyed, "nonmodal stays open after both modals close")
+Dialog.dismissAll(modalHost)
 
 print("dialog_test: ok")

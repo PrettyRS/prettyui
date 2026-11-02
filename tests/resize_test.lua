@@ -15,7 +15,7 @@ end
 
 -- Native geometry retains anchors when the parent changes size. Subscribing does
 -- not invoke callbacks: constructors must finish before input is dispatched.
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         parent = parent, kind = kind, children = {}, subscriptions = {}, namedSubscriptions = {},
         x = 0, y = 0, width = 0, height = 0, hidden = false,
@@ -102,11 +102,13 @@ local function component(parent, kind)
         SetOpCursor = function(_, operation, cursor) result.operationCursors[operation] = cursor end,
     }
     if parent then table.insert(parent.children, result) end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent) return component(parent, kind) end }
+    return { new = function(parent, categoryID, dynamicID)
+        return component(parent, kind, categoryID, dynamicID)
+    end }
 end
 ui = {
     Layer = factory("layer"), Sprite = factory("sprite"), Rectangle = factory("rectangle"), Text = factory("text"),
@@ -650,6 +652,51 @@ for _, poppedOut in ipairs({ false, true }) do
 end
 switching:Destroy()
 expect(next(logicCallbacks), nil, "destroyed owners leave no logic listeners")
+
+local Components = require("src/core/components")
+local Resize = require("src/core/resize")
+local resizeHost = component(parent, "shared-resize-host")
+resizeHost:SetSize(360, 220)
+local autoOwner = Components.new(ui.Layer, resizeHost, { categoryID = "auto" })
+autoOwner:SetSize(90, 65)
+local autoResize = Resize.new(resizeHost, autoOwner, {
+    setRect = function(x, y, width, height)
+        autoOwner:SetPos(x, y)
+        autoOwner:SetSize(width, height)
+    end,
+    isVisible = function() return true end,
+})
+expect(autoResize.handles.se_v.categoryID > 0, true,
+    "auto owner's sibling resize handles use managed native IDs")
+local autoHandle = begin(autoResize, "se_v", autoOwner)
+expect(autoResize.feedback.active.categoryID > 0, true,
+    "deferred resize feedback follows the auto owner's policy")
+finish(autoResize, autoHandle)
+autoResize:Destroy()
+
+local autoPhysicalHost = Components.new(ui.Layer, overlayParent, { categoryID = "auto" })
+autoPhysicalHost:SetSize(360, 220)
+local legacyOwner = Components.new(ui.Layer, autoPhysicalHost, {
+    _categoryPolicy = "legacy",
+})
+legacyOwner:SetSize(90, 65)
+local legacyResize = Resize.new(autoPhysicalHost, legacyOwner, {
+    setRect = function(x, y, width, height)
+        legacyOwner:SetPos(x, y)
+        legacyOwner:SetSize(width, height)
+    end,
+    isVisible = function() return true end,
+})
+expect(legacyResize.handles.se_v.categoryID, autoPhysicalHost.categoryID,
+    "legacy resize handles override their auto physical host")
+local legacyHandle = begin(legacyResize, "se_v", legacyOwner)
+expect(legacyResize.feedback.active.categoryID, autoPhysicalHost.categoryID,
+    "deferred resize feedback also follows the legacy owner")
+finish(legacyResize, legacyHandle)
+legacyResize:Destroy()
+autoOwner:Destroy()
+legacyOwner:Destroy()
+autoPhysicalHost:Destroy()
 
 -- A vanished native interface must be detected before touching any stale handle.
 local unloadedWindow, unloadedRoot, unloadedResize = createSurface("titled", parent)

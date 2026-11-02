@@ -6,7 +6,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function component(parent)
+local function component(parent, categoryID, dynamicID)
     local result = { x = 0, y = 0, children = {} }
     function result:SetSize(width, height)
         self.width, self.height = width, height
@@ -19,7 +19,7 @@ local function component(parent)
         for _, child in ipairs(self.children) do child:Destroy() end
     end
     if parent then table.insert(parent.children, result) end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local subscriptions = {}
@@ -45,7 +45,11 @@ id = {
 }
 local parent = component()
 parent:SetSize(500, 400)
-ui.Interfaces.GetComponent = function() return parent end
+local namespaceLookup = ui.Interfaces.GetComponent
+ui.Interfaces.GetComponent = function(api, componentID, staticID, categoryID, dynamicID)
+    if staticID == nil then return parent end
+    return namespaceLookup(api, componentID, staticID, categoryID, dynamicID)
+end
 Vector3 = {
     new = function(x, y, z) return { x = x, y = y, z = z } end,
 }

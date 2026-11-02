@@ -1,4 +1,5 @@
 local Cursor = require("src/core/cursor")
+local Components = require("src/core/components")
 local DragFeedback = require("src/core/drag_feedback")
 local InterfaceMouse = require("src/core/mouse")
 local clamp = require("src/core/math").clamp
@@ -242,8 +243,9 @@ function Resize.new(parent, root, options)
         onBegin = options.onBegin,
         handles = {},
     }, Resize)
+    local policyOptions = { _categoryPolicy = Components.policyOf(root) }
     for _, key in ipairs(order) do
-        local handle = ui.Layer.new(parent)
+        local handle = Components.new(ui.Layer, parent, policyOptions)
         self.handles[key] = handle
         handle.enabled = false
         handle.clickthrough = true

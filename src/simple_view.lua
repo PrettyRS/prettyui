@@ -14,6 +14,8 @@ function SimpleView.new(parent, options)
     local tooltipParent = parentContext and parentContext.parent or parent
     local ownerWindow = Scroll.findOwnerWindow(parentContext)
     local controller = Scroll.new(parent, {
+        categoryID = options.categoryID,
+        _categoryPolicy = options._categoryPolicy,
         x = options.x,
         y = options.y,
         xAnchor = options.xAnchor,

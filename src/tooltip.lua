@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
 
@@ -15,7 +16,7 @@ local HOOK_ID = "prettyui_tooltip"
 local contexts = setmetatable({}, { __mode = "k" })
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -184,10 +185,9 @@ function Tooltip.unbind(owner, field)
     return true
 end
 
-local function build(self)
+local function buildParts(self)
     local parts = {}
-    self._parts = parts
-    parts.root = ui.Layer.new(self.parent)
+    parts.root = Components.newContent(self.parent, { _categoryPolicy = self._categoryPolicy })
     parts.root:SetSize(self.width, self.height)
     parts.root.hidden = true
     parts.root.clickthrough = true
@@ -234,7 +234,7 @@ local function build(self)
     parts.bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
     parts.bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
 
-    parts.label = ui.Text.new(parts.root)
+    parts.label = Components.new(ui.Text, parts.root)
     parts.label:SetPos(PADDING_X, PADDING_Y)
     parts.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
     parts.label.content = tostring(self.options.text or "")
@@ -242,6 +242,13 @@ local function build(self)
     parts.label.rgba = TEXT_COLOUR
     parts.label.maxLines = 0
     parts.label.clickthrough = true
+    self._parts = parts
+end
+
+local function build(self)
+    return Components.withBatch(self.parent, function()
+        buildParts(self)
+    end)
 end
 
 local function release(self)
@@ -265,7 +272,7 @@ function Tooltip:__index(key)
     return self._parts[key]
 end
 
-function Tooltip.attach(target, parent, value, hoverHandlers)
+local function buildTooltip(target, parent, value, hoverHandlers)
     if value == nil then return nil end
     local options = normalize(value)
     local width, height = measure(tostring(options.text or ""), options)
@@ -282,6 +289,9 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
     self.parent = options.parent or (self.context and self.context.parent) or parent
     self.interfaceID = self.parent.interfaceID
 
+    self._categoryPolicy = Components.checkContentParent(self.parent, {
+        _categoryPolicy = Components.policyOf(target, options, parent),
+    })
     -- callers with their own leave handling reuse one tooltip across hovers so only the rest release on hide
     self.keepBuilt = hoverHandlers ~= nil and hoverHandlers.onMouseLeave ~= nil
 
@@ -319,6 +329,16 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
     if self.context then table.insert(self.context.tooltips, self) end
 
     return self
+end
+
+function Tooltip.attach(target, parent, value, hoverHandlers)
+    if value == nil then return nil end
+    local options = normalize(value)
+    local context = options.parent == nil and contexts[parent] or nil
+    local attachmentParent = options.parent or (context and context.parent) or parent
+    return Components.withBatch(attachmentParent, function()
+        return buildTooltip(target, parent, value, hoverHandlers)
+    end)
 end
 
 function Tooltip:Show()
