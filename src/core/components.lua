@@ -3,12 +3,12 @@ local Components = {}
 local IDS_PER_CATEGORY = 235
 local LAST_CATEGORY = 234
 local CAPACITY = LAST_CATEGORY * IDS_PER_CATEGORY
-local EXHAUSTED = "PrettyUI: no dynamic component IDs available on this static parent; page or reuse components"
-local INHERITED_EXHAUSTED = "PrettyUI: inherited category has no safe dynamic component IDs remaining; use a category-zero content host or PrettyUI.NewComponent"
-local RESERVED_INHERITED = 'PrettyUI: inherited allocation overlaps an active category-group reservation; use PrettyUI.NewComponent with categoryID = "auto"'
-local CONTENT_PARENT_ERROR = "PrettyUI: raw-compatible content requires a category-zero parent; mount on a PrettyUI content host or a native category-zero layer"
-local UNLOADED = "PrettyUI: component interface is not loaded; remount the UI"
-local UNVERIFIABLE = "PrettyUI: cannot verify component IDs on this static parent"
+local EXHAUSTED = "PrettyUI: this UI has reached its control limit. Show fewer controls at once, split long lists into pages, or reuse existing controls."
+local INHERITED_EXHAUSTED = 'PrettyUI: this container has reached its control limit. Set categoryID = "auto" on your root UI, or show fewer controls at once.'
+local RESERVED_INHERITED = 'PrettyUI: a control group is still being built. Create additional controls with PrettyUI.NewComponent(..., { categoryID = "auto" }) to avoid conflicts.'
+local CONTENT_PARENT_ERROR = "PrettyUI: this parent cannot host a content container. Use window.content, view.content, or a UI layer supplied by the client as its parent."
+local UNLOADED = "PrettyUI: the parent UI is no longer available. Recreate your controls when it is available again."
+local UNVERIFIABLE = "PrettyUI: cannot check for existing controls in this parent. Use window.content, view.content, or a UI layer supplied by the client."
 local LEGACY_NOTICE = 'PrettyUI: legacy category allocation will be deprecated in v2. Add { categoryID = "auto" } to your root UI options to enable automatic category management'
 local states = setmetatable({}, { __mode = "k" })
 local policies = setmetatable({}, { __mode = "k" })

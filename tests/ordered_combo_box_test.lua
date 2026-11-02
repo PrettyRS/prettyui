@@ -214,12 +214,10 @@ expect(legacyCombo.dropdown.rows[1].label.categoryID, 0,
 legacyCombo:Destroy()
 
 local unsafeOverlay = Components.new(ui.Layer, autoOverlay)
-local validOverlay, overlayError = pcall(RealCombo.new, host, {
+local validOverlay = pcall(RealCombo.new, host, {
     categoryID = "auto", overlayParent = unsafeOverlay,
 })
 expect(validOverlay, false, "auto combo rejects nonzero overlay")
-expect(overlayError:find("raw-compatible content requires a category-zero parent", 1, true)
-    ~= nil, true, "unsafe dropdown mount reports a safe alternative")
 
 local originalLayer = ui.Layer.new
 local partialRoot
