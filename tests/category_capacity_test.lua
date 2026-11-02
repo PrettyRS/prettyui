@@ -148,7 +148,6 @@ config.Font.CINZEL_13PT_BOLD = config.Font.MUSEO_SANS_15PT_REGULAR
 Plugin = { resources = {} }
 Keyboard = { IsAvailable = function() return false end }
 Event = { Logic = { Subscribe = function() end, Unsubscribe = function() end } }
-package.loaded["src/ribbon_bar"] = { Start = function() end, Shutdown = function() end }
 package.loaded["src/minimenu"] = { Start = function() end, Shutdown = function() end }
 
 local prettyui = require("main")

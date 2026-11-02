@@ -9,7 +9,7 @@ local RESERVED_INHERITED = 'PrettyUI: inherited allocation overlaps an active ca
 local CONTENT_PARENT_ERROR = "PrettyUI: raw-compatible content requires a category-zero parent; mount on a PrettyUI content host or a native category-zero layer"
 local UNLOADED = "PrettyUI: component interface is not loaded; remount the UI"
 local UNVERIFIABLE = "PrettyUI: cannot verify component IDs on this static parent"
-local LEGACY_NOTICE = 'PrettyUI: omitting categoryID uses legacy parent-category inheritance and will be deprecated in a future version; use { categoryID = "auto" } on a root window/view/component for higher-capacity allocation. Legacy calls continue to work.'
+local LEGACY_NOTICE = 'PrettyUI: legacy category allocation will be deprecated in v2. Add { categoryID = "auto" } to your root UI options to enable automatic category management'
 local states = setmetatable({}, { __mode = "k" })
 local policies = setmetatable({}, { __mode = "k" })
 local knownHosts = setmetatable({}, { __mode = "k" })

@@ -1,6 +1,5 @@
 local TextField = require("src/text_field")
 local KeybindField = require("src/keybind_field")
-local RibbonBar = require("src/ribbon_bar")
 local BuffBar = require("src/buff_bar")
 local TimeGraph = require("src/time_graph")
 local BarChart = require("src/bar_chart")
@@ -44,7 +43,6 @@ local PrettyUI = {
     OverheadBar = OverheadBar,
     Sprites = require("src/core/sprites"),
     RibbonButton = require("src/ribbon_button"),
-    RibbonBar = RibbonBar,
     RadioButton = SelectionButtons.RadioButton,
     SimpleButton = require("src/simple_button"),
     Slider = require("src/slider"),
@@ -56,21 +54,18 @@ local PrettyUI = {
     TextField = TextField,
     Tooltip = require("src/tooltip"),
     Window = require("src/window"),
-    Scrollbar = require("src/scrollbar"),
     SimpleView = require("src/simple_view"),
     BuffBar = BuffBar,
 }
 
 PrettyUI.version = "1.3.0-beta.2"
 
-RibbonBar.Start()
 PrettyMiniMenu.Start()
 
 function PluginShutdown()
     KeybindField.Shutdown()
     PrettyMiniMenu.Shutdown()
     Dialog.Shutdown()
-    RibbonBar.Shutdown()
     BuffBar.Shutdown()
     TimeGraph.Shutdown()
     BarChart.Shutdown()

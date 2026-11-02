@@ -235,17 +235,6 @@ simpleView:SetContentHeight(120)
 expect(simpleView.scrollbarVisible, true, "simple views expose shared overflow behavior")
 simpleView:Destroy()
 
-local messages = {}
-log = function(message)
-    if message:find("deprecated", 1, true) then messages[#messages + 1] = message end
-end
-local Scrollbar = require("src/scrollbar")
-local legacyA = Scrollbar.new(parent, { width = 120, height = 80 })
-local legacyB = Scrollbar.new(parent, { width = 120, height = 80 })
-expect(#messages, 1, "legacy scrollbar logs its deprecation once")
-legacyA:Destroy()
-legacyB:Destroy()
-
 local Window = require("src/window")
 local window = Window.new(parent, { width = 300, height = 150 })
 expect(window.scrollable, true, "window content defaults to scrollable")

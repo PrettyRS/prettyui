@@ -97,7 +97,6 @@ local function namespace()
 end
 id = namespace()
 config = namespace()
-package.loaded["src/ribbon_bar"] = { Start = function() end }
 package.loaded["src/minimenu"] = { Start = function() end }
 local prettyui = require("main")
 local build = prettyui.BuildCategoryGroup
