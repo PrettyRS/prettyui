@@ -25,18 +25,40 @@ hero:
 ### Added
 
 - Added [overhead bars](index.html#overhead-bar-api) API that can be used to attach health-bar-like overlays to NPCs, players, or Locs.
-- Added [automatic component IDs](index.html#component-ids) with the root option `categoryID = "auto"`; managed children inherit the choice.
+- Added optional `onPositionChange(window, x, y)` and `onPositionChange(panel, x, y, poppedOut)` callbacks to be used for persisting component positions. These callbacks fire once the user stops their drag action on the targeted component.
+- Added [automatic component IDs](index.html#component-ids) with the root option `categoryID = "auto"`.
 - Added `NewComponent`, `RefreshComponentIDs`, `BuildCategoryGroup`, and `WithCategoryBatch` for custom native construction.
 
-### Deprecated
+### Changed
+- Dialog Component: Dialog footer actions can now be set to `Disabled`
+- Tooltip UI objects (`root`, `label`, frame sprites) are now built on first `Show()` or first access, not in `Tooltip.attach`.
+- `Tooltip:Hide()` releases those objects, and the next `Show()` rebuilds them. Tooltips with a custom `onMouseLeave` handler stay built.
+- `Tooltip.__index` is now a function, not the `Tooltip` table.
+- Hovering over edges of resizable surfaces now shows a feedback cursor when a resize action can be performed.
+-  The drag area for corners on rsizable surfaces has been widened to make it easier to grab onto them.
 
-- Omitting `categoryID` retains native inheritance but now emits one migration notice. Removal is not scheduled.
+### Deprecated
+- Omitting `categoryID` will emit a warning. In PrettyUI version 2 `categoryID = auto` behavior will become the default and this may break existing library consumers so it is important to migrate and test auto-allocated categoryIDs before the switch.
+
+
+### Removed
+- Removed previously deprecated  `RibbonBar` API
+- Removed previously deprecated `ScrollBar` API
+
+## Other
+- We now ship a LuaLS addon along with our GitHub releases that can be used for language server integration for PrettyUI in your IDE of choice
 
 ## 1.2.0 - 2026-10-12 {#v1-2-0}
 
 ### Added
 
-- Added [MiniMenu submenus](index.html#minimenu-submenu-api) this mimicks the OSRS submenu behavior with fold-out submenus that appear when hovering a parent entry.
+- Added [MiniMenu submenus](index.html#minimenu-submenu-api) this mimicks the OSRS submenu behavior with fold-out submenus that appear when hovering a parent entry.  
+
+## Fixed
+* Minimenu API: Optimized to reduce the amount of reads of `miniMenu.entries` and fixed misalignment issues when multiple plugins are using the API simultaneously.
+* `Tabs:SetActive` now hides tooltips on pages it deactivates, so they no longer stay visible after a tab switch.
+* Fixed an alignment issue on the close button for the window component.
+
 
 ## 1.1.0 - 2026-10-12 {#v1-1-0}
 
