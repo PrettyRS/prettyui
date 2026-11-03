@@ -16,43 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name }}
-      TARGET_BRANCH: ${{ github.event.release.target_commitish }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
-
-      - name: Synchronize versions on the release branch
-        shell: bash
-        run: |
-          git check-ref-format --branch "$TARGET_BRANCH"
-          if ! git show-ref --verify --quiet "refs/remotes/origin/$TARGET_BRANCH"; then
-            echo "Release target_commitish must name an existing branch: $TARGET_BRANCH" >&2
-            exit 1
-          fi
-          tag_commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
-          git checkout -B "$TARGET_BRANCH" "refs/remotes/origin/$TARGET_BRANCH"
-          if ! git merge-base --is-ancestor "$tag_commit" HEAD; then
-            echo "Release tag is not on the selected branch: $TARGET_BRANCH" >&2
-            exit 1
-          fi
-
-          python3 .github/scripts/package_release.py "$RELEASE_TAG"
-          if ! git diff --quiet -- plugin.json main.lua; then
-            if [[ $(git rev-parse HEAD) != "$tag_commit" ]]; then
-              echo "Branch advanced past the tag; refusing to commit an older release version" >&2
-              exit 1
-            fi
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -- plugin.json main.lua
-            git commit -m "Set PrettyUI version for $RELEASE_TAG"
-            git push origin "HEAD:refs/heads/$TARGET_BRANCH"
-          fi
-
-          # Package from the tag, not newer commits on the branch (or the sync commit).
-          git checkout --detach "$tag_commit"
 
       - name: Build and attach plugin ZIP
         shell: bash
