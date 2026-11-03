@@ -121,6 +121,9 @@ local function buildList(parent, options)
     self.viewport:SetPos(1, 1)
     self.viewport:SetSize(-2, -2, 1.0, 1.0)
     self.viewport.clickthrough = false
+    -- The managed background can sort above the category-zero viewport even
+    -- though it was constructed first; keep the viewport and its rows visible.
+    self.background:MoveToBack()
     self.frame = {
         frameEdge(self.root, 0, 0, 0, 1, 0, 0, 1.0, 0),
         frameEdge(self.root, 0, self.root.height - 1, 0, 1, 0, 0, 1.0, 0),
@@ -398,6 +401,10 @@ local function buildRows(self)
             label:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
                 return self:_OnScrollWheel(component, delta)
             end)
+            -- Native category ordering can paint a managed background above
+            -- later labels at category boundaries. Keep row artwork behind
+            -- its text and icon regardless of allocated category IDs.
+            rowBackground:MoveToBack()
             row:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
                 return self:_OnScrollWheel(component, delta)
             end)

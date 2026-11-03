@@ -16,6 +16,15 @@ local DEFAULT_TEXT_COLOUR = Palette.TEXT
 local BUTTON_WIDTH = 24
 local CONTENT_TOP_INSET = 3
 
+local function anchorVisible(root)
+    if root.visibleGlobal == false then return false end
+    while root do
+        if root.hidden == true then return false end
+        root = root.parent
+    end
+    return true
+end
+
 local function entryParts(entry, fallbackID)
     if type(entry) == "table" then
         return tostring(entry.label or entry.text or ""), entry.id or entry.value or fallbackID
@@ -65,6 +74,7 @@ local function buildOrderedComboBox(parent, options, overlayParent, policy)
     self.overlayParent = overlayParent
     self.ownerWindow = findOwnerWindow(self.context)
     self.onChange = options.onChange
+    self._scrollController = options._scrollController
     self.disabled = options.disabled == true
     self.open = false
     self.entryHeight = options.entryHeight or DEFAULT_ENTRY_HEIGHT
@@ -188,10 +198,11 @@ local function buildOrderedComboBox(parent, options, overlayParent, policy)
     if self.ownerWindow then
         self.ownerWindow:_RegisterOverlay(
             self.dropdown.root,
-            function() return self.open end,
-            function() self:_LayoutDropdown() end
+            function() return self.open and not self._clipped and anchorVisible(self.root) end,
+            function() if self.open then self:_LayoutDropdown() end end
         )
     end
+    if self._scrollController then self._scrollController:RegisterClipTarget(self) end
     return self
 end
 
@@ -235,7 +246,6 @@ function OrderedComboBox:_LayoutDropdown()
     end
     self.dropdown.root:SetPos(x, dropdownY)
     self.dropdown:SetSize(width, height)
-    self.dropdown:SetScrollPosition(0)
 end
 
 function OrderedComboBox:_FirstVisibleEntry()
@@ -255,11 +265,12 @@ function OrderedComboBox:_Filter(value)
         and self.entriesByID[self.selectedID].visible then
         self.dropdown:SetSelected(self.selectedID, true, false)
     end
+    self.dropdown:SetScrollPosition(0)
     self:_LayoutDropdown()
 end
 
 function OrderedComboBox:_Open(clearInput)
-    if self.disabled then return end
+    if self.disabled or self._clipped or not anchorVisible(self.root) then return end
     self.open = true
     if clearInput ~= false then self:_SetInput("") end
     self:_Filter(self.input.content)
@@ -346,6 +357,11 @@ function OrderedComboBox:GetSelectedLabel()
     return self.selectedLabel
 end
 
+function OrderedComboBox:_SetContentClipped(clipped)
+    self._clipped = clipped or not anchorVisible(self.root)
+    if self._clipped and self.open then self:_Close() end
+end
+
 function OrderedComboBox:SetDisabled(disabled)
     self.disabled = disabled == true
     self.shell.enabled = not self.disabled
@@ -362,6 +378,10 @@ function OrderedComboBox:SetTooltip(value)
 end
 
 function OrderedComboBox:Destroy()
+    if self._scrollController then
+        self._scrollController:UnregisterClipTarget(self)
+        self._scrollController = nil
+    end
     Tooltip.unbind(self)
     if self.ownerWindow and self.dropdown and self.dropdown.root then
         self.ownerWindow:_UnregisterOverlay(self.dropdown.root)

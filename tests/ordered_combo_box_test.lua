@@ -22,6 +22,7 @@ local function component(parent, categoryID, dynamicID)
     function result:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
     function result:Subscribe(hook, callback) self.hooks[hook] = callback end
     function result:MoveToFront() self.movedToFront = true end
+    function result:MoveToBack() self.movedToFront = false end
     function result:Destroy()
         if self.destroyed then return end
         self.destroyed = true
@@ -111,8 +112,9 @@ package.loaded["src/core/control_palette"] = {
     SELECTED = 4,
 }
 package.loaded["src/core/wheel"] = { bind = function() end }
+local contexts = setmetatable({}, { __mode = "k" })
 package.loaded["src/tooltip"] = {
-    getContext = function() return nil end,
+    getContext = function(parent) return contexts[parent] end,
     bind = function() end,
     set = function() return true end,
     unbind = function() end,
@@ -180,11 +182,136 @@ expect(orderError:find("must be an integer", 1, true) ~= nil, true,
 combo:Destroy()
 expect(combo.root, nil, "destroy releases root")
 
+-- Clip refresh uses native scroll ancestry, even when a dropdown is detached.
+package.loaded["src/core/sprites"] = setmetatable({}, {
+    __index = function(_, key) return key end,
+})
+local Scroll = require("src/core/scroll")
+local viewRoot = component()
+local outerContent = component(viewRoot)
+local function clipScroll(content, height, parentScroll)
+    local controller = setmetatable({
+        content = content, height = height, scrollY = 0,
+        clipTargets = {}, childScrolls = {}, parentScroll = parentScroll,
+    }, Scroll)
+    if parentScroll then parentScroll.childScrolls[controller] = true end
+    return controller
+end
+local outerScroll = clipScroll(outerContent, 80)
+local standalone = OrderedComboBox.new(outerContent, {
+    y = 50, height = 30, _scrollController = outerScroll,
+    entries = { { label = "First", id = 1 }, { label = "Second", id = 2 } },
+})
+expect(outerScroll.clipTargets[1], standalone, "combo registers with its scroll viewport")
+standalone:_Open()
+expect(standalone.dropdown.root.hidden, false, "no-window dropdown opens inside the viewport")
+outerScroll.scrollY = 1
+outerScroll:_RefreshClipTargets()
+expect(standalone.open, true, "anchor fully inside its viewport keeps the dropdown open")
+outerScroll.scrollY = 51
+outerScroll:_RefreshClipTargets()
+expect(standalone.open, false, "partially clipped upper edge closes detached dropdown")
+expect(standalone.dropdown.root.hidden, true, "clipped dropdown disappears without a window")
+outerScroll.scrollY = 0
+outerScroll:_RefreshClipTargets()
+expect(standalone.open, false, "scrolling back does not reopen a dismissed dropdown")
+standalone:_Open()
+expect(standalone.dropdown.root.hidden, false, "visible anchor can open again")
+standalone.root:SetPos(0, 51)
+outerScroll:_RefreshClipTargets()
+expect(standalone.open, false, "partially clipped lower edge also closes dropdown")
+standalone.root:SetPos(0, 50)
+outerScroll:_RefreshClipTargets()
+standalone:Destroy()
+expect(#outerScroll.clipTargets, 0, "destroy unregisters the dropdown clip target")
+
+local nestedContent = component(outerContent)
+nestedContent:SetPos(0, 40)
+local nestedScroll = clipScroll(nestedContent, 60, outerScroll)
+local nestedCombo = OrderedComboBox.new(nestedContent, {
+    y = 5, height = 30, _scrollController = nestedScroll,
+    entries = { { label = "Nested", id = 3 } },
+})
+nestedCombo:_Open()
+outerScroll.scrollY = 46
+outerScroll:_RefreshClipTargets()
+expect(nestedCombo.open, false, "parent viewport clips nested combo dropdown")
+outerScroll.scrollY = 0
+outerScroll:_RefreshClipTargets()
+nestedCombo:_Open()
+nestedScroll.scrollY = 6
+outerScroll:_RefreshClipTargets()
+expect(nestedCombo.open, false, "child viewport also clips nested combo dropdown")
+nestedScroll.scrollY = 0
+nestedContent.hidden = true
+outerScroll:_RefreshClipTargets()
+nestedCombo:_Open()
+expect(nestedCombo.open, false, "hidden ancestor cannot reopen a detached dropdown")
+nestedContent.hidden = false
+outerScroll:_RefreshClipTargets()
+nestedCombo:_Open()
+expect(nestedCombo.open, true, "restored ancestor permits normal dropdown interaction")
+nestedCombo:Destroy()
+expect(#nestedScroll.clipTargets, 0, "nested target unregisters on destruction")
+
+local ownerWindow = { root = viewRoot, overlays = {} }
+function ownerWindow:_RegisterOverlay(root, isVisible, layout)
+    self.overlays[root] = { isVisible = isVisible, layout = layout }
+end
+function ownerWindow:_UnregisterOverlay(root) self.overlays[root] = nil end
+function ownerWindow:_SyncOverlays(hidden)
+    for root, overlay in pairs(self.overlays) do
+        if not hidden then overlay.layout() end
+        root.hidden = hidden or not overlay.isVisible()
+    end
+end
+local overlayParent = component()
+contexts[outerContent] = {
+    active = true, parent = overlayParent, ownerWindow = ownerWindow,
+    position = function(root) return root.x or 0, (root.y or 0) - outerScroll.scrollY end,
+}
+local windowCombo = OrderedComboBox.new(outerContent, {
+    y = 30, height = 30, overlayParent = overlayParent,
+    _scrollController = outerScroll,
+    entries = { { label = "Visible", id = 4 }, { label = "Clickable", id = 5 } },
+})
+windowCombo:_Open()
+windowCombo.dropdown:SetScrollPosition(12)
+outerScroll.scrollY = 1
+outerScroll:_RefreshClipTargets()
+ownerWindow:_SyncOverlays(false)
+expect(windowCombo.open, true, "scrolling a fully visible anchor retains its open state")
+expect(windowCombo.dropdown.scrollY, 12, "overlay repositioning preserves dropdown scroll")
+expect(windowCombo.dropdown.root.y, 59, "detached dropdown follows a visible anchor")
+viewRoot.hidden = true
+ownerWindow:_SyncOverlays(true)
+expect(windowCombo.dropdown.root.hidden, true, "window hide conceals detached dropdown")
+viewRoot.hidden = false
+ownerWindow:_SyncOverlays(false)
+expect(windowCombo.dropdown.root.hidden, false, "window show restores visible anchor dropdown")
+outerScroll.scrollY = 31
+outerScroll:_RefreshClipTargets()
+ownerWindow:_SyncOverlays(false)
+expect(windowCombo.open, false, "window scrolling closes clipped anchor dropdown")
+expect(windowCombo.dropdown.root.hidden, true, "overlay sync cannot resurrect a clipped dropdown")
+outerScroll.scrollY = 1
+outerScroll:_RefreshClipTargets()
+ownerWindow:_SyncOverlays(false)
+expect(windowCombo.dropdown.root.hidden, true, "returning anchor to view does not reopen it")
+windowCombo:_Open()
+windowCombo.dropdown:Click(5)
+expect(windowCombo:GetSelectedID(), 5, "restored dropdown remains interactive")
+expect(windowCombo.open, false, "row selection closes restored dropdown")
+local windowOverlay = windowCombo.dropdown.root
+windowCombo:Destroy()
+expect(ownerWindow.overlays[windowOverlay], nil, "destroy unregisters detached overlay")
+expect(#outerScroll.clipTargets, 0, "destroy removes owner-window clip target")
+contexts[outerContent] = nil
+
 -- Exercise the detached dropdown with the real List.
 package.loaded["src/list"] = nil
 package.loaded["src/ordered_combo_box"] = nil
 package.loaded["src/core/cursor"] = { apply = function() end }
-package.loaded["src/core/sprites"] = setmetatable({}, { __index = function(_, key) return key end })
 config = { Cursor = { CURSOR_TICK = 1 } }
 local RealCombo = require("src/ordered_combo_box")
 local Components = require("src/core/components")
