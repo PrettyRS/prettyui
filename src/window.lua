@@ -12,6 +12,7 @@ local DragFeedback = require("src/core/drag_feedback")
 local DragBounds = require("src/core/drag_bounds")
 local Cursor = require("src/core/cursor")
 local Resize = require("src/core/resize")
+local NativeInterfaceSettings = require("src/core/native_interface_settings")
 
 local Window = {}
 Window.__index = Window
@@ -49,6 +50,9 @@ local function buildWindow(parent, options)
     self.minHeight = options.minHeight or MIN_HEIGHT
     self.maxWidth = options.maxWidth
     self.maxHeight = options.maxHeight
+    self.useNativeTransparency = options.useNativeTransparency == true
+    self.respectInterfaceLock = options.respectInterfaceLock ~= false
+    self.locked = false
     self.overlays = {}
     self.rowBackgroundColours = options.rowBackgroundColours
         or options.rowBackgroundColors
@@ -168,7 +172,7 @@ local function buildWindow(parent, options)
         local function stopDrag(notify)
             local drag = dragStart
             dragStart = nil
-            if self.resize then self.resize:SetEnabled(true) end
+            if self.resize then self.resize:SetEnabled(not self.locked) end
             captureExpanded = false
             if self.dragFeedback then
                 self.dragFeedback:Destroy()
@@ -220,6 +224,12 @@ local function buildWindow(parent, options)
         end
 
         self.titleDrag:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
+            -- A locked interface still raises the window on a title click; it just stays put.
+            if self.locked then
+                self.root:MoveToFront()
+                self.titleDrag:MoveToFront()
+                return false
+            end
             if self.resize then self.resize:SetEnabled(false) end
             InterfaceMouse.BeginScreenCapture(component, x, y)
             local mouse = InterfaceMouse.GetPosition(component, x, y)
@@ -351,8 +361,56 @@ local function buildWindow(parent, options)
             end,
         })
     end
+    self:_WatchNativeTransparency()
+    self:_WatchNativeLock()
 
     return self
+end
+
+function Window:_WatchNativeTransparency()
+    if self.useNativeTransparency then
+        NativeInterfaceSettings.watchTransparency(self, function(transparency)
+            self:_SetBackgroundTransparency(transparency)
+        end)
+    else
+        NativeInterfaceSettings.unwatchTransparency(self)
+    end
+end
+
+function Window:_SetBackgroundTransparency(transparency)
+    if ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    self.background.alpha = 1 - transparency
+end
+
+function Window:_WatchNativeLock()
+    if self.respectInterfaceLock then
+        NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
+    else
+        NativeInterfaceSettings.unwatchLock(self)
+    end
+end
+
+function Window:_SetLocked(locked)
+    if self.locked == locked or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    self.locked = locked
+    if locked then
+        if self._stopDrag then self._stopDrag() end
+        if self.resize then self.resize:Cancel() end
+    end
+    if self.resize then self.resize:SetEnabled(not locked) end
+    if self.titleDrag then Cursor.apply(self.titleDrag, config.Cursor.TOPLEVEL_V2_MOVE, not locked) end
+end
+
+function Window:SetUseNativeTransparency(enabled)
+    self.useNativeTransparency = enabled == true
+    self:_WatchNativeTransparency()
+    if not self.useNativeTransparency then self:_SetBackgroundTransparency(0) end
+end
+
+function Window:SetRespectInterfaceLock(enabled)
+    self.respectInterfaceLock = enabled == true
+    self:_WatchNativeLock()
+    if not self.respectInterfaceLock then self:_SetLocked(false) end
 end
 
 function Window.new(parent, options)
@@ -457,6 +515,8 @@ function Window:Close()
 end
 
 function Window:Destroy()
+    NativeInterfaceSettings.unwatchTransparency(self)
+    NativeInterfaceSettings.unwatchLock(self)
     if self.resize then
         self.resize:Destroy()
         self.resize = nil

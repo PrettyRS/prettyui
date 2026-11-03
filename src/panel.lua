@@ -18,6 +18,7 @@ local clamp = require("src/core/math").clamp
 local DragFeedback = require("src/core/drag_feedback")
 local DragBounds = require("src/core/drag_bounds")
 local Resize = require("src/core/resize")
+local NativeInterfaceSettings = require("src/core/native_interface_settings")
 
 local Panel = {}
 Panel.__index = Panel
@@ -374,7 +375,12 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.maxWidth = options.maxWidth
     self.maxHeight = options.maxHeight
     self.popoutClickthrough = options.popoutClickthrough == true
+    self.backgroundAlpha = clampAlpha(options.backgroundAlpha)
     self.popoutBackgroundAlpha = clampAlpha(options.popoutBackgroundAlpha or options.backgroundAlpha)
+    self.useNativeTransparency = options.useNativeTransparency == true
+    self.respectInterfaceLock = options.respectInterfaceLock ~= false
+    self.transparencyScale = 1
+    self.locked = false
     self.onPopoutChange = options.onPopoutChange
     self.onPositionChange = options.onPositionChange
     self.rowBackgroundColours = options.rowBackgroundColours
@@ -512,7 +518,60 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
         end
         self:_UpdateResizeEnabled()
     end
+    self:_WatchNativeTransparency()
+    self:_WatchNativeLock()
     return self
+end
+
+function Panel:_WatchNativeTransparency()
+    if self.useNativeTransparency then
+        NativeInterfaceSettings.watchTransparency(self, function(transparency)
+            self:_SetBackgroundTransparency(transparency)
+        end)
+    else
+        NativeInterfaceSettings.unwatchTransparency(self)
+    end
+end
+
+function Panel:_SetBackgroundTransparency(transparency)
+    self.transparencyScale = 1 - transparency
+    if ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil then
+        self.dock.background.alpha = self.backgroundAlpha * self.transparencyScale
+    end
+    if ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil then
+        self.overlay.background.alpha = self.popoutBackgroundAlpha * self.transparencyScale
+    end
+end
+
+function Panel:_WatchNativeLock()
+    if self.respectInterfaceLock then
+        NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
+    else
+        NativeInterfaceSettings.unwatchLock(self)
+    end
+end
+
+function Panel:_SetLocked(locked)
+    if self.locked == locked then return end
+    self.locked = locked
+    if locked then
+        self:_StopDrag()
+        if self.dockResize then self.dockResize:Cancel() end
+        if self.overlayResize then self.overlayResize:Cancel() end
+    end
+    self:_SetAltDragActive(isAltDown())
+end
+
+function Panel:SetUseNativeTransparency(enabled)
+    self.useNativeTransparency = enabled == true
+    self:_WatchNativeTransparency()
+    if not self.useNativeTransparency then self:_SetBackgroundTransparency(0) end
+end
+
+function Panel:SetRespectInterfaceLock(enabled)
+    self.respectInterfaceLock = enabled == true
+    self:_WatchNativeLock()
+    if not self.respectInterfaceLock then self:_SetLocked(false) end
 end
 
 function Panel.new(parent, options, flowManaged)
@@ -533,7 +592,7 @@ function Panel.new(parent, options, flowManaged)
 end
 
 function Panel:_UpdateResizeEnabled()
-    local enabled = self.dragState == nil
+    local enabled = self.dragState == nil and not self.locked
     if self.dockResize then self.dockResize:SetEnabled(enabled) end
     if self.overlayResize then
         self.overlayResize:SetEnabled(enabled and (not self.popoutClickthrough or isAltDown()))
@@ -542,7 +601,7 @@ end
 
 function Panel:_SetAltDragActive(active, notify)
     local activeSurface
-    if active == true then
+    if active == true and not self.locked then
         if self.poppedOut and self._canPopout then
             activeSurface = self.overlay
         elseif self._dockDraggable then
@@ -728,7 +787,7 @@ end
 
 function Panel:SetPopoutBackgroundAlpha(alpha)
     self.popoutBackgroundAlpha = clampAlpha(alpha)
-    self.overlay.background.alpha = self.popoutBackgroundAlpha
+    self.overlay.background.alpha = self.popoutBackgroundAlpha * self.transparencyScale
 end
 
 function Panel:SetSize(width, height)
@@ -1077,6 +1136,8 @@ function Panel:AddSlider(options)
 end
 
 function Panel:Destroy()
+    NativeInterfaceSettings.unwatchTransparency(self)
+    NativeInterfaceSettings.unwatchLock(self)
     if self.dockResize then self.dockResize:Destroy(); self.dockResize = nil end
     if self.overlayResize then self.overlayResize:Destroy(); self.overlayResize = nil end
     if self.dockBounds then self.dockBounds:Destroy(); self.dockBounds = nil end

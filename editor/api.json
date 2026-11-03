@@ -56,6 +56,8 @@
         "rowBackgroundEdgeToEdge": "boolean",
         "onClose": "fun(window: PrettyUI.Window)",
         "destroyOnClose": "boolean",
+        "useNativeTransparency": "boolean",
+        "respectInterfaceLock": "boolean",
         "layout": "PrettyUI.LayoutOptions",
         "textLayout": "PrettyUI.LayoutOptions"
       },
@@ -120,6 +122,16 @@
         },
         "Show": {
           "params": {}
+        },
+        "SetUseNativeTransparency": {
+          "params": {
+            "enabled": "boolean"
+          }
+        },
+        "SetRespectInterfaceLock": {
+          "params": {
+            "enabled": "boolean"
+          }
         },
         "Close": {
           "params": {}
@@ -250,6 +262,8 @@
         "rowBackgroundColours": "number[]",
         "rowBackgroundColors": "number[]",
         "rowBackgroundEdgeToEdge": "boolean",
+        "useNativeTransparency": "boolean",
+        "respectInterfaceLock": "boolean",
         "onPopoutChange": "fun(panel: PrettyUI.Panel, poppedOut: boolean)",
         "tooltip": "string|PrettyUI.TooltipOptions",
         "layout": "PrettyUI.LayoutOptions",
@@ -281,6 +295,16 @@
         },
         "TogglePopout": {
           "params": {}
+        },
+        "SetUseNativeTransparency": {
+          "params": {
+            "enabled": "boolean"
+          }
+        },
+        "SetRespectInterfaceLock": {
+          "params": {
+            "enabled": "boolean"
+          }
         },
         "SetPopoutClickthrough": {
           "params": {

@@ -29,9 +29,11 @@ hero:
 - Added [automatic component IDs](index.html#component-ids) with the root option `categoryID = "auto"`.
 - Added `NewComponent`, `RefreshComponentIDs`, `BuildCategoryGroup`, and `WithCategoryBatch` for custom native construction.
 - Added `hideCloseButton` as a option to windows and dialogs. 
+- Added a `useNativeTransparency` option to [windows](index.html#window-api) and [panels](index.html#panel-api), with a matching `SetUseNativeTransparency(enabled)` method, which when enabled makes them follow the player's native interface transparency setting.
 
 ### Changed
 - Dialog Component: Dialog footer actions can now be set to `Disabled`
+- [Windows](index.html#window-api) and [panels](index.html#panel-api) can no longer be moved or resized while the player's interface is locked. To keep a component movable, set `respectInterfaceLock = false` or call `SetRespectInterfaceLock(false)`.
 - Tooltip UI objects (`root`, `label`, frame sprites) are now built on first `Show()` or first access, not in `Tooltip.attach`.
 - `Tooltip:Hide()` releases those objects, and the next `Show()` rebuilds them. Tooltips with a custom `onMouseLeave` handler stay built.
 - `Tooltip.__index` is now a function, not the `Tooltip` table.
