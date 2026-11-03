@@ -37,6 +37,10 @@ hero:
 - Hovering over edges of resizable surfaces now shows a feedback cursor when a resize action can be performed.
 -  The drag area for corners on rsizable surfaces has been widened to make it easier to grab onto them.
 
+### Fixed
+
+- Corrected the default rotation direction of `Spinner` and `BigSpinner`; `degreesPerLogicUpdate` now defaults to -6. Explicit signed speeds are unchanged.
+
 ### Deprecated
 - Omitting `categoryID` will emit a warning. In PrettyUI version 2 `categoryID = auto` behavior will become the default and this may break existing library consumers so it is important to migrate and test auto-allocated categoryIDs before the switch.
 
