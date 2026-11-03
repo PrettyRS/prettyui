@@ -11,10 +11,10 @@ Animated loading indicator with controllable speed and playback.
 
 ```lua
 local spinner = window:AddSpinner({
-    degreesPerLogicUpdate = 6,
+    degreesPerLogicUpdate = -6,
 })
 
-spinner:SetDegreesPerLogicUpdate(4)
+spinner:SetDegreesPerLogicUpdate(-4)
 spinner:SetRotation(180)
 spinner:Stop()
 spinner:Start()
@@ -39,7 +39,7 @@ Spinner.new(parent, options)
 : Initial foreground angle in degrees.
 
 `degreesPerLogicUpdate`
-: Foreground rotation added per logic update; defaults to 6.
+: Foreground rotation added per logic update; defaults to -6. Positive values reverse the default direction.
 
 `BigSpinner`, `AddBigSpinner(options)`
 : Aliases for `Spinner` and `AddSpinner(options)`.

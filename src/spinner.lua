@@ -7,7 +7,7 @@ local Spinner = {}
 Spinner.__index = Spinner
 
 local DEFAULT_SIZE = 72
-local DEFAULT_DEGREES_PER_LOGIC_UPDATE = 6
+local DEFAULT_DEGREES_PER_LOGIC_UPDATE = -6
 local nextInstanceID = 0
 
 local function rotation(value)
