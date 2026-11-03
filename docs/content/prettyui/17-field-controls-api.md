@@ -87,6 +87,13 @@ local filters = window:AddList({
 `entries`
 : An array of labels or **{ label, id }** records. IDs must be unique.
 
+Ordered combo boxes
+: Give an entry an integer **order** to use the searchable ordered combo box.
+  Entries with **order** appear first, sorted by order and then label; entries
+  without **order** follow alphabetically. Supply ordered entries at construction.
+  An open dropdown closes when its field is partially or fully clipped by a
+  scrolling container. Scrolling the field back into view does not reopen it.
+
 `selectedID`
 : Selects the initial combo-box entry.
 
