@@ -54,7 +54,7 @@ hero:
 
 - Added [MiniMenu submenus](index.html#minimenu-submenu-api) this mimicks the OSRS submenu behavior with fold-out submenus that appear when hovering a parent entry.  
 
-## Fixed
+### Fixed
 * Minimenu API: Optimized to reduce the amount of reads of `miniMenu.entries` and fixed misalignment issues when multiple plugins are using the API simultaneously.
 * `Tabs:SetActive` now hides tooltips on pages it deactivates, so they no longer stay visible after a tab switch.
 * Fixed an alignment issue on the close button for the window component.
