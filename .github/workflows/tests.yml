@@ -1,0 +1,37 @@
+name: PR tests
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y lua5.4
+
+      - name: Run Lua regression tests
+        shell: bash
+        run: |
+          for test in tests/*_test.lua; do
+            echo "::group::$test"
+            lua5.4 "$test"
+            echo "::endgroup::"
+          done
+
+      - name: Run Python tooling tests
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
