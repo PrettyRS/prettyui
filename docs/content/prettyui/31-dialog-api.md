@@ -37,6 +37,10 @@ Dialog.new(parent, options)
 `onDismiss()`
 : Called by the window close button, not by footer actions or `Destroy()`. Its return value does not prevent closing.
 
+`hideCloseButton`
+: Allows a dialog to be created without a **Close Button**. Ensure you provide an
+  alternative way to close the dialog `Close()` will work. 
+
 {{% /api-card %}}
 
 {{% api-card %}}

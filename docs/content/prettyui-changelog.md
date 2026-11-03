@@ -28,6 +28,7 @@ hero:
 - Added optional `onPositionChange(window, x, y)` and `onPositionChange(panel, x, y, poppedOut)` callbacks to be used for persisting component positions. These callbacks fire once the user stops their drag action on the targeted component.
 - Added [automatic component IDs](index.html#component-ids) with the root option `categoryID = "auto"`.
 - Added `NewComponent`, `RefreshComponentIDs`, `BuildCategoryGroup`, and `WithCategoryBatch` for custom native construction.
+- Added `hideCloseButton` as a option to windows and dialogs. 
 
 ### Changed
 - Dialog Component: Dialog footer actions can now be set to `Disabled`
