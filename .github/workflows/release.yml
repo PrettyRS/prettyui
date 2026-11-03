@@ -3,57 +3,53 @@ name: Release plugin
 on:
   release:
     types: [published]
+  pull_request_target:
+    branches: [main]
+    types: [closed]
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ github.event.pull_request.head.ref || github.event.release.tag_name || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   release:
+    # Only execute merged PR code after it has entered the trusted main branch.
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      (github.event.pull_request.merged && startsWith(github.event.pull_request.head.ref, 'release/'))
     runs-on: ubuntu-latest
     env:
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
-      TARGET_BRANCH: ${{ github.event.release.target_commitish }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+      RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
+      RELEASE_COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.event.release.tag_name || github.ref_name }}
           fetch-depth: 0
 
-      - name: Synchronize versions on the release branch
-        if: ${{ !github.event.release.prerelease }}
+      - name: Prepare release metadata
         shell: bash
         run: |
-          git check-ref-format --branch "$TARGET_BRANCH"
-          if ! git show-ref --verify --quiet "refs/remotes/origin/$TARGET_BRANCH"; then
-            echo "Release target_commitish must name an existing branch: $TARGET_BRANCH" >&2
-            exit 1
-          fi
-          tag_commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
-          git checkout -B "$TARGET_BRANCH" "refs/remotes/origin/$TARGET_BRANCH"
-          if ! git merge-base --is-ancestor "$tag_commit" HEAD; then
-            echo "Release tag is not on the selected branch: $TARGET_BRANCH" >&2
-            exit 1
-          fi
-
-          python3 .github/scripts/package_release.py "$RELEASE_TAG"
-          if ! git diff --quiet -- plugin.json main.lua; then
-            if [[ $(git rev-parse HEAD) != "$tag_commit" ]]; then
-              echo "Branch advanced past the tag; refusing to commit an older release version" >&2
-              exit 1
+          if [[ "$EVENT_NAME" == pull_request_target ]]; then
+            tag=$(python3 .github/scripts/validate_release.py "$RELEASE_BRANCH")
+            python3 -c 'import json, os; from pathlib import Path; event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text()); Path(os.environ["RUNNER_TEMP"], "release-notes.md").write_text(event["pull_request"]["body"] or "", encoding="utf-8")'
+            existing_tag=$(git ls-remote origin "refs/tags/$tag")
+            if [[ -n "$existing_tag" ]]; then
+              git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag"
+              if [[ $(git rev-parse "refs/tags/$tag^{commit}") != "$RELEASE_COMMIT" ]]; then
+                echo "Tag $tag already exists at a different commit; refusing to publish." >&2
+                exit 1
+              fi
             fi
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -- plugin.json main.lua
-            git commit -m "Set PrettyUI version for $RELEASE_TAG"
-            git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          else
+            tag="$EVENT_TAG"
           fi
-
-          # Package from the tag, not newer commits on the branch (or the sync commit).
-          git checkout --detach "$tag_commit"
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
 
       - name: Build and attach plugin ZIP
         shell: bash
@@ -62,4 +58,18 @@ jobs:
         run: |
           asset="PrettyUI-${RELEASE_TAG}.zip"
           python3 .github/scripts/package_release.py "$RELEASE_TAG" --output "$asset"
+          flags=()
+          version="${RELEASE_TAG#v}"
+          if [[ "${version%%+*}" == *-* ]]; then
+            flags+=(--prerelease)
+          fi
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if [[ "$EVENT_NAME" == pull_request_target ]]; then
+              gh release create "$RELEASE_TAG" --target "$RELEASE_COMMIT" --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${flags[@]}"
+            else
+              gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes "${flags[@]}"
+            fi
+          elif [[ "$EVENT_NAME" == pull_request_target ]]; then
+            gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
           gh release upload "$RELEASE_TAG" "$asset" --clobber
