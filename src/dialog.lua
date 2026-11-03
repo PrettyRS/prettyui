@@ -28,6 +28,7 @@ local function resolve(options)
         categoryID = options.categoryID,
         _categoryPolicy = options._categoryPolicy,
         onDismiss = options.onDismiss,
+        hideCloseButton = options.hideCloseButton == true,
     }
 end
 
@@ -260,6 +261,7 @@ function Dialog.new(parent, options)
             if options.onDismiss ~= nil then options.onDismiss() end
             pop(self, true)
         end,
+        hideCloseButton = options.hideCloseButton == true,
     })
 
     self.window = window
