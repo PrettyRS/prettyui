@@ -378,7 +378,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.backgroundAlpha = clampAlpha(options.backgroundAlpha)
     self.popoutBackgroundAlpha = clampAlpha(options.popoutBackgroundAlpha or options.backgroundAlpha)
     self.useNativeTransparency = options.useNativeTransparency == true
-    self.respectInterfaceLock = options.respectInterfaceLock == true
+    self.respectInterfaceLock = options.respectInterfaceLock ~= false
     self.transparencyScale = 1
     self.locked = false
     self.onPopoutChange = options.onPopoutChange
@@ -535,8 +535,12 @@ end
 
 function Panel:_SetBackgroundTransparency(transparency)
     self.transparencyScale = 1 - transparency
-    self.dock.background.alpha = self.backgroundAlpha * self.transparencyScale
-    self.overlay.background.alpha = self.popoutBackgroundAlpha * self.transparencyScale
+    if ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil then
+        self.dock.background.alpha = self.backgroundAlpha * self.transparencyScale
+    end
+    if ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil then
+        self.overlay.background.alpha = self.popoutBackgroundAlpha * self.transparencyScale
+    end
 end
 
 function Panel:_WatchNativeLock()

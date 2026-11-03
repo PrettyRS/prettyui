@@ -111,6 +111,14 @@ Interactive resizing is opt-in with `resizable = true`.
 `destroyOnClose`
 : Destroy instead of hide when true.
 
+`useNativeTransparency`
+: Makes the window match the player's native interface transparency setting.
+  Defaults to false.
+
+`respectInterfaceLock`
+: Stops the window from being moved or resized while the player's interface is
+  locked. Defaults to true.
+
 `scrollable`
 : Enables automatic vertical scrolling. Defaults to true.
 
@@ -169,6 +177,12 @@ Interactive resizing is opt-in with `resizable = true`.
 
 `SetTitle(title)`
 : Updates an existing title label.
+
+`SetUseNativeTransparency(enabled)`
+: Changes **useNativeTransparency**. Turning it off makes the background opaque.
+
+`SetRespectInterfaceLock(enabled)`
+: Changes **respectInterfaceLock**. Turning it off unlocks the window.
 
 `Show()`
 : Shows and raises the window.

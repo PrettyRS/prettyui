@@ -4,9 +4,13 @@ local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 
+-- Set while creating a root component that belongs to another interface.
+local rootInterfaceID
+
 -- Resolve native size anchors on access, including after an ancestor changes size.
 local function component(parent)
-    local value = { parent = parent, x = 0, y = 0, hidden = false, subscriptions = {},
+    local value = { parent = parent, interfaceID = parent == nil and rootInterfaceID or nil,
+        x = 0, y = 0, hidden = false, subscriptions = {},
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end }, cursorConfig = {} }
     setmetatable(value, { __index = function(self, key)
         if key == "width" then return (self.w or 0) + (parent and parent.width or 0) * (self.wa or 0) end
@@ -108,10 +112,11 @@ NativeInterfaceSettings.unwatchTransparency("b")
 expect(listening(), 0, "the last watcher stops listening")
 lockValue, transparencyValue = 0, 0
 
--- A window following both settings fades its background and freezes its frame.
+-- A window following both settings fades its background and freezes its frame. The lock
+-- is followed by default.
 local window = Window.new(parent, {
     title = "Settings", width = 400, height = 300, resizable = true,
-    useNativeTransparency = true, respectInterfaceLock = true,
+    useNativeTransparency = true,
 })
 expect(window.background.alpha, 1, "opaque while the slider is at zero")
 expect(window.resize.enabled, true, "resizable while unlocked")
@@ -140,21 +145,39 @@ expect(listening(), 1, "turning an option on listens again")
 window:Destroy()
 expect(listening(), 0, "destroying the window stops listening")
 
--- A window without the options ignores both settings entirely.
+-- A window without the options follows the lock but not the transparency slider.
 lockValue, transparencyValue = 1, 255
 local plain = Window.new(parent, { title = "Plain", width = 300, height = 200, resizable = true })
-expect(listening(), 0, "a plain window does not listen")
+expect(listening(), 1, "a plain window listens for the lock")
 expect(plain.background.alpha, nil, "a plain window never touches its background alpha")
-expect(plain.resize.enabled, true, "a plain window stays resizable")
+expect(plain.resize.enabled, false, "a plain window locks with the interface")
 plain:Destroy()
+expect(listening(), 0, "destroying a plain window stops listening")
+
+-- A window that opts out of the lock ignores both settings entirely.
+local unlocked = Window.new(parent, {
+    title = "Unlocked", width = 300, height = 200, resizable = true, respectInterfaceLock = false,
+})
+expect(listening(), 0, "an opted-out window does not listen")
+expect(unlocked.background.alpha, nil, "an opted-out window never touches its background alpha")
+expect(unlocked.resize.enabled, true, "an opted-out window stays resizable")
+expect(unlocked.titleDrag.cursorConfig.mouseOverCursor, 194, "an opted-out window keeps the move cursor")
+unlocked:Destroy()
 lockValue, transparencyValue = 0, 0
+
+-- A panel added through a window stops listening when the window is destroyed.
+local host = Window.new(parent, { title = "Host", width = 300, height = 200, respectInterfaceLock = false })
+host:AddPanel({ height = 90 })
+expect(listening(), 1, "a nested panel listens for the lock")
+host:Destroy()
+expect(listening(), 0, "destroying the window releases its nested panel")
 
 -- A panel scales both surfaces' own alpha by the slider and refuses Alt dragging
 -- and resizing while locked.
 local panel = Panel.new(parent, {
     width = 300, height = 200, resizable = true, backgroundAlpha = 0.5,
     popout = true, popoutBackgroundAlpha = 0.8, overlayParent = parent,
-    useNativeTransparency = true, respectInterfaceLock = true,
+    useNativeTransparency = true,
 })
 expect(panel.dock.background.alpha, 0.5, "dock keeps its own alpha at zero transparency")
 expect(panel.overlay.background.alpha, 0.8, "popout keeps its own alpha at zero transparency")
@@ -183,12 +206,29 @@ altDown = false
 panel:Destroy()
 expect(listening(), 0, "destroying the panel stops listening")
 
+-- A panel that opts out of the lock can still be moved and resized.
+lockValue = 1
+local unlockedPanel = Panel.new(parent, {
+    width = 300, height = 200, resizable = true, respectInterfaceLock = false,
+})
+expect(listening(), 0, "an opted-out panel does not listen")
+expect(unlockedPanel.dockResize.enabled, true, "an opted-out panel stays resizable")
+altDown = true
+unlockedPanel:_SetAltDragActive(true)
+expect(unlockedPanel.altDragSurface, unlockedPanel.dock, "an opted-out panel can be Alt-dragged")
+altDown = false
+unlockedPanel:Destroy()
+lockValue = 0
+
 -- A variable the client does not know leaves its setting unwatched: no listening, no
 -- callback, and the component keeps its own behaviour. The other setting still works.
 id.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = nil
-for _, name in ipairs({ "src/core/native_interface_settings", "src/window" }) do package.loaded[name] = nil end
+for _, name in ipairs({ "src/core/native_interface_settings", "src/window", "src/panel" }) do
+    package.loaded[name] = nil
+end
 local MissingSettings = require("src/core/native_interface_settings")
 local MissingWindow = require("src/window")
+local MissingPanel = require("src/panel")
 local called = false
 MissingSettings.watchTransparency("c", function() called = true end)
 expect(listening(), 0, "an unknown variable is not listened for")
@@ -196,11 +236,49 @@ expect(called, false, "an unknown variable never calls back")
 transparencyValue, lockValue = 255, 1
 local unaffected = MissingWindow.new(parent, {
     title = "Missing", width = 300, height = 200, resizable = true,
-    useNativeTransparency = true, respectInterfaceLock = true,
+    useNativeTransparency = true,
 })
 expect(unaffected.background.alpha, nil, "without the transparency variable the background alpha is untouched")
 expect(unaffected.resize.enabled, false, "the lock still applies")
 unaffected:Destroy()
 expect(listening(), 0, "destroying it stops listening")
+
+-- A setting change after the interface has unloaded must not touch the dead components,
+-- while a popout in an interface that is still loaded keeps following the slider.
+id.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = 13
+for _, name in ipairs({ "src/core/native_interface_settings", "src/window", "src/panel" }) do
+    package.loaded[name] = nil
+end
+local LiveWindow = require("src/window")
+local LivePanel = require("src/panel")
+lockValue, transparencyValue = 0, 0
+rootInterfaceID = 2
+local otherInterface = component()
+rootInterfaceID = nil
+otherInterface:SetSize(1000, 800)
+local orphanWindow = LiveWindow.new(parent, {
+    title = "Orphan", width = 300, height = 200, resizable = true, useNativeTransparency = true,
+})
+local orphanPanel = LivePanel.new(parent, {
+    width = 300, height = 200, resizable = true, useNativeTransparency = true,
+})
+local splitPanel = LivePanel.new(parent, {
+    width = 300, height = 200, popout = true, overlayParent = otherInterface, useNativeTransparency = true,
+})
+local splitOverlay = LivePanel.new(otherInterface, {
+    width = 300, height = 200, popout = true, overlayParent = parent, useNativeTransparency = true,
+})
+Interfaces.unload(parent.interfaceID)
+transparencyValue = 102
+transmit(13)
+expect(splitPanel.overlay.background.alpha, 0.6, "a popout in a loaded interface follows the slider")
+expect(splitOverlay.dock.background.alpha, 0.6, "a dock in a loaded interface follows the slider")
+lockValue = 1
+transmit(12)
+orphanWindow:Destroy()
+orphanPanel:Destroy()
+splitPanel:Destroy()
+splitOverlay:Destroy()
+expect(listening(), 0, "destroying orphaned components stops listening")
 
 print("native_interface_settings_test: module, window and panel passed")

@@ -171,6 +171,28 @@ Panel.new(parent, options)
 
 {{% /api-card %}}
 
+{{% api-card %}}
+
+### Player interface settings
+
+`useNativeTransparency`
+: Makes the panel match the player's native interface transparency setting.
+  Changes to the native interface transparency setting scale **backgroundAlpha**
+  and **popoutBackgroundAlpha**, so both still apply. Defaults to false.
+
+`respectInterfaceLock`
+: Stops the panel from being moved or resized while the player's interface is
+  locked. Defaults to true. 
+
+`SetUseNativeTransparency(enabled)`
+: Changes **useNativeTransparency**. Turning it off restores the panel's own
+  alpha values.
+
+`SetRespectInterfaceLock(enabled)`
+: Changes **respectInterfaceLock**. Turning it off unlocks the panel.
+
+{{% /api-card %}}
+
 
 {{% /api-grid %}}
 

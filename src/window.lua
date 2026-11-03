@@ -50,7 +50,7 @@ local function buildWindow(parent, options)
     self.maxWidth = options.maxWidth
     self.maxHeight = options.maxHeight
     self.useNativeTransparency = options.useNativeTransparency == true
-    self.respectInterfaceLock = options.respectInterfaceLock == true
+    self.respectInterfaceLock = options.respectInterfaceLock ~= false
     self.locked = false
     self.overlays = {}
     self.rowBackgroundColours = options.rowBackgroundColours
@@ -357,6 +357,7 @@ function Window:_WatchNativeTransparency()
 end
 
 function Window:_SetBackgroundTransparency(transparency)
+    if ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     self.background.alpha = 1 - transparency
 end
 
@@ -369,7 +370,7 @@ function Window:_WatchNativeLock()
 end
 
 function Window:_SetLocked(locked)
-    if self.locked == locked then return end
+    if self.locked == locked or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     self.locked = locked
     if locked then
         if self._stopDrag then self._stopDrag() end
