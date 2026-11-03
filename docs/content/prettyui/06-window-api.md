@@ -102,6 +102,10 @@ Interactive resizing is opt-in with `resizable = true`.
 `onClose`
 : Callback receiving the window object.
 
+`hideCloseButton`
+: Allows a window to be created without a **Close Button**. Ensure you provide an
+  alternative way to close the window `Close()` will work. 
+
 `onPositionChange`
 : Receives **(window, x, y)** once after a completed drag changes position.
   Coordinates are parent-relative interface units. Programmatic moves and

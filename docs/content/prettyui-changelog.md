@@ -28,6 +28,7 @@ hero:
 - Added optional `onPositionChange(window, x, y)` and `onPositionChange(panel, x, y, poppedOut)` callbacks to be used for persisting component positions. These callbacks fire once the user stops their drag action on the targeted component.
 - Added [automatic component IDs](index.html#component-ids) with the root option `categoryID = "auto"`.
 - Added `NewComponent`, `RefreshComponentIDs`, `BuildCategoryGroup`, and `WithCategoryBatch` for custom native construction.
+- Added `hideCloseButton` as a option to windows and dialogs. 
 - Added a `useNativeTransparency` option to [windows](index.html#window-api) and [panels](index.html#panel-api), with a matching `SetUseNativeTransparency(enabled)` method, which when enabled makes them follow the player's native interface transparency setting.
 
 ### Changed
@@ -39,9 +40,13 @@ hero:
 - Hovering over edges of resizable surfaces now shows a feedback cursor when a resize action can be performed.
 -  The drag area for corners on rsizable surfaces has been widened to make it easier to grab onto them.
 
-### Fixed
 
-- Corrected the default rotation direction of `Spinner` and `BigSpinner`; `degreesPerLogicUpdate` now defaults to -6. Explicit signed speeds are unchanged.
+### Fixed
+* Minimenu API: Optimized to reduce the amount of reads of `miniMenu.entries` and fixed misalignment issues when multiple plugins are using the API simultaneously.
+* `Tabs:SetActive` now hides tooltips on pages it deactivates, so they no longer stay visible after a tab switch.
+* Fixed an alignment issue on the close button for the window component.
+
+- Corrected the default rotation direction of the `Spinner` component.
 
 ### Deprecated
 - Omitting `categoryID` will emit a warning. In PrettyUI version 2 `categoryID = auto` behavior will become the default and this may break existing library consumers so it is important to migrate and test auto-allocated categoryIDs before the switch.
@@ -58,13 +63,7 @@ hero:
 
 ### Added
 
-- Added [MiniMenu submenus](index.html#minimenu-submenu-api) this mimicks the OSRS submenu behavior with fold-out submenus that appear when hovering a parent entry.  
-
-### Fixed
-* Minimenu API: Optimized to reduce the amount of reads of `miniMenu.entries` and fixed misalignment issues when multiple plugins are using the API simultaneously.
-* `Tabs:SetActive` now hides tooltips on pages it deactivates, so they no longer stay visible after a tab switch.
-* Fixed an alignment issue on the close button for the window component.
-
+- Added [MiniMenu submenus](index.html#minimenu-submenu-api) this mimicks the OSRS submenu behavior with fold-out submenus that appear when hovering a parent entry.
 
 ## 1.1.0 - 2026-10-12 {#v1-1-0}
 
