@@ -59,8 +59,16 @@ hero:
 - Removed previously deprecated  `RibbonBar` API
 - Removed previously deprecated `ScrollBar` API
 
-## Other
+### Other
 - We now ship a LuaLS addon along with our GitHub releases that can be used for language server integration for PrettyUI in your IDE of choice
+
+### Credits
+This version of PrettyUI contains changes from multiple community developers, a big thank you to:
+- [Adam Keenan](https://github.com/adamk33n3r)
+- [ash (sereselene)](https://github.com/CodeNameAshley)
+- [CJ Fritz](https://github.com/cjfritz9)
+- [Psymansayz](https://github.com/Psymansayz)
+- [Keensta](https://github.com/keensta)
 
 ## 1.2.0 - 2026-10-12 {#v1-2-0}
 
