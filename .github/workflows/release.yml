@@ -60,6 +60,7 @@ jobs:
           python3 .github/scripts/package_editor.py "$RELEASE_TAG" --output developer-assets
 
       - name: Publish release assets
+        id: package
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -81,3 +82,26 @@ jobs:
             gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
           gh release upload "$RELEASE_TAG" "$asset" --clobber
+          echo "prerelease=$(gh release view "$RELEASE_TAG" --json isPrerelease --jq '.isPrerelease')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish plugin ZIP to mod.io
+        if: steps.package.outputs.prerelease == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODIO_ACCESS_TOKEN: ${{ secrets.MODIO_ACCESS_TOKEN }}
+          MODIO_GAME_ID: ${{ vars.MODIO_GAME_ID }}
+        run: |
+          : "${MODIO_ACCESS_TOKEN:?Set the MODIO_ACCESS_TOKEN repository secret}"
+          : "${MODIO_GAME_ID:?Set the MODIO_GAME_ID repository variable to the numeric game ID for RuneScape}"
+          gh release view "$RELEASE_TAG" --json body --jq '.body' > "$RUNNER_TEMP/modio-release-notes.md"
+          curl --fail-with-body --silent --show-error \
+            --header "Authorization: Bearer $MODIO_ACCESS_TOKEN" \
+            --form "filedata=@PrettyUI-${RELEASE_TAG}.zip;type=application/zip" \
+            --form-string "version=${RELEASE_TAG#v}" \
+            --form "changelog=<$RUNNER_TEMP/modio-release-notes.md" \
+            --form-string "platforms[]=windows" \
+            --form-string "platforms[]=mac" \
+            --form-string "platforms[]=linux" \
+            --form-string "active=true" \
+            "https://api.mod.io/v1/games/${MODIO_GAME_ID}/mods/6398181/files"
