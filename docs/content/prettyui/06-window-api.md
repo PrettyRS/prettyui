@@ -102,6 +102,10 @@ Interactive resizing is opt-in with `resizable = true`.
 `onClose`
 : Callback receiving the window object.
 
+`hideCloseButton`
+: Allows a window to be created without a **Close Button**. Ensure you provide an
+  alternative way to close the window `Close()` will work. 
+
 `onPositionChange`
 : Receives **(window, x, y)** once after a completed drag changes position.
   Coordinates are parent-relative interface units. Programmatic moves and
@@ -110,6 +114,14 @@ Interactive resizing is opt-in with `resizable = true`.
 
 `destroyOnClose`
 : Destroy instead of hide when true.
+
+`useNativeTransparency`
+: Makes the window match the player's native interface transparency setting.
+  Defaults to false.
+
+`respectInterfaceLock`
+: Stops the window from being moved or resized while the player's interface is
+  locked. Defaults to true.
 
 `scrollable`
 : Enables automatic vertical scrolling. Defaults to true.
@@ -169,6 +181,12 @@ Interactive resizing is opt-in with `resizable = true`.
 
 `SetTitle(title)`
 : Updates an existing title label.
+
+`SetUseNativeTransparency(enabled)`
+: Changes **useNativeTransparency**. Turning it off makes the background opaque.
+
+`SetRespectInterfaceLock(enabled)`
+: Changes **respectInterfaceLock**. Turning it off unlocks the window.
 
 `Show()`
 : Shows and raises the window.

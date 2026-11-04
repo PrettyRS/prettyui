@@ -1,5 +1,6 @@
 local Window = require("src/window")
 local FancyButton = require("src/fancy_button")
+local Components = require("src/core/components")
 
 local Dialog = {}
 Dialog.__index = Dialog
@@ -24,7 +25,10 @@ local function resolve(options)
         modal = options.modal ~= false,
         content = options.content,
         actions = options.actions or {},
+        categoryID = options.categoryID,
+        _categoryPolicy = options._categoryPolicy,
         onDismiss = options.onDismiss,
+        hideCloseButton = options.hideCloseButton == true,
     }
 end
 
@@ -56,28 +60,32 @@ local function destroyChrome(parent)
     destroyLayer(existing.dim)
 end
 
-local function ensureChrome(parent)
+local function ensureChrome(parent, firstFrame)
     local existing = chrome[parent]
     if existing ~= nil then return existing.dim, existing.blocker end
 
-    local dim = ui.Layer.new(parent)
+    local dim = Components.new(ui.Layer, parent, {
+        _categoryPolicy = Components.policyOf(firstFrame.window.root),
+    })
     dim:SetPos(0, 0)
     dim:SetSize(0, 0, 1.0, 1.0)
     dim.clickthrough = false
 
-    local rect = ui.Rectangle.new(dim)
+    local rect = Components.new(ui.Rectangle, dim)
     rect.fill = true
     rect.clickthrough = false
     rect:SetPos(0, 0)
     rect:SetSize(0, 0, 1.0, 1.0)
     rect.colour = Vector4.new(0, 0, 0, DIM_ALPHA)
 
-    local blocker = ui.Layer.new(parent)
+    local blocker = Components.new(ui.Layer, parent, {
+        _categoryPolicy = Components.policyOf(firstFrame.window.root),
+    })
     blocker:SetPos(0, 0)
     blocker:SetSize(0, 0, 1.0, 1.0)
     blocker.clickthrough = false
 
-    local hit = ui.Rectangle.new(blocker)
+    local hit = Components.new(ui.Rectangle, blocker)
     hit.fill = true
     hit.clickthrough = false
     hit:SetPos(0, 0)
@@ -105,18 +113,18 @@ local function syncChrome(parent)
         return
     end
 
-    local anyModal = false
+    local firstModal
     for _, frame in ipairs(stack) do
         if frame.options.modal then
-            anyModal = true
+            firstModal = frame
             break
         end
     end
 
     local top = stack[#stack]
     local dim, blocker
-    if anyModal then
-        dim, blocker = ensureChrome(parent)
+    if firstModal then
+        dim, blocker = ensureChrome(parent, firstModal)
     else
         destroyChrome(parent)
     end
@@ -185,25 +193,32 @@ local function resolveWindowWidth(options)
     return math.max(options.width, footer)
 end
 
-local function bindAction(frame, action)
+local function bindAction(frame, slot)
     return function()
-        if frame.closed or action.disabled then return end
-        if action.onClick == nil or action.onClick() == true then
+        if frame.closed or slot.disabled then return end
+        if slot.action.onClick == nil or slot.action.onClick() == true then
             pop(frame, false)
         end
     end
 end
 
 local function mountActions(window, frame, actions)
+    local slots = {}
+    frame.actionSlots = slots
     local x = -ACTION_PAD
     for index = #actions, 1, -1 do
         local action = actions[index]
         local label = action.label or ""
         local width = FancyButton.getSize(label)
         x = x - width
-        window:AddFancyButton(label, bindAction(frame, action), {
+        local slot = {
+            action = action,
+            disabled = action.disabled == true,
+        }
+        slots[action] = slot
+        slot.button = window:AddFancyButton(label, bindAction(frame, slot), {
             variant = action.variant or "neutral",
-            disabled = action.disabled,
+            disabled = slot.disabled,
             tooltip = action.tooltip,
             xAnchor = 1,
             yAnchor = 1,
@@ -227,6 +242,8 @@ function Dialog.new(parent, options)
 
     local width, height = resolveWindowWidth(options), options.height
     local window = Window.new(parent, {
+        categoryID = options.categoryID,
+        _categoryPolicy = options._categoryPolicy,
         title = options.title,
         x = -math.floor(width / 2),
         y = -math.floor(height / 2),
@@ -244,6 +261,7 @@ function Dialog.new(parent, options)
             if options.onDismiss ~= nil then options.onDismiss() end
             pop(self, true)
         end,
+        hideCloseButton = options.hideCloseButton == true,
     })
 
     self.window = window
@@ -262,6 +280,16 @@ function Dialog.new(parent, options)
     mountActions(window, self, options.actions)
     syncChrome(parent)
     return self
+end
+
+function Dialog:SetActionDisabled(action, disabled)
+    local slot = self.actionSlots[action]
+    if slot == nil then error("Dialog:SetActionDisabled: unknown action") end
+    slot.disabled = disabled == true
+    local button = slot.button
+    if button ~= nil and button.SetDisabled ~= nil then
+        button:SetDisabled(slot.disabled)
+    end
 end
 
 function Dialog:Destroy()

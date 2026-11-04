@@ -5,6 +5,7 @@ local InterfaceMouse = require("src/core/mouse")
 local SimpleButton = require("src/simple_button")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
+local Components = require("src/core/components")
 
 local ColourPicker = {}
 ColourPicker.__index = ColourPicker
@@ -13,7 +14,7 @@ local BUTTON_SIZE = 24
 local SWATCH_PROPORTION = 0.65
 local DEFAULT_COLOUR = 0xFFFFFFFF
 local WINDOW_WIDTH = 220
-local WINDOW_HEIGHT = 312
+local WINDOW_HEIGHT = 340
 local POPUP_GAP = 6
 local FIELD_SIZE = 128
 local FIELD_X = 16
@@ -29,9 +30,12 @@ local ALPHA_LAYOUT_OFFSET = ALPHA_HEIGHT + 12
 local ALPHA_CHECKER_SIZE = 8
 local PREVIEW_BUTTON_SIZE = 64
 local PREVIEW_SWATCH_SIZE = math.floor(PREVIEW_BUTTON_SIZE * SWATCH_PROPORTION)
-local PREVIEW_X = 70
-local PREVIEW_Y = 152
-local ACCEPT_Y = 224
+local PREVIEW_Y = 148
+local VALUE_Y = 220
+local VALUE_WIDTH = 128
+local VALUE_HEIGHT = 24
+local VALUE_TEXT_COLOUR = 0xB8AEA0FF
+local ACCEPT_Y = 252
 local MARKER_SIZE = 9
 local WHITE = 0xFFFFFFFF
 local BLACK = 0x000000FF
@@ -103,13 +107,24 @@ local function hsvColour(hue, saturation, value, alpha)
 end
 
 local function rectangle(parent, x, y, width, height, colour, fill)
-    local component = ui.Rectangle.new(parent)
+    local component = Components.new(ui.Rectangle, parent)
     component:SetPos(x, y)
     component:SetSize(width, height)
     component.fill = fill ~= false
     component.rgba = colour
     component.clickthrough = true
     return component
+end
+
+local function formatValue(colour)
+    return string.format("#%08X", colour)
+end
+
+local function parseValue(text, alpha)
+    local digits = text:match("^#?(%x+)$")
+    if digits == nil then return nil end
+    if #digits == 6 then return tonumber(digits, 16) * 0x100 + alpha end
+    if #digits == 8 then return tonumber(digits, 16) end
 end
 
 function ColourPicker.getSize(options)
@@ -275,7 +290,7 @@ function ColourPicker:_DrawAlphaSpectrum()
     )
 end
 
-function ColourPicker:_UpdatePickerVisuals(redrawField)
+function ColourPicker:_UpdatePickerVisuals(redrawField, preserveText)
     self.pendingColour = hsvColour(
         self.pendingHue, self.pendingSaturation, self.pendingValue, self.pendingAlpha
     )
@@ -306,14 +321,118 @@ function ColourPicker:_UpdatePickerVisuals(redrawField)
         self.alphaMarker:SetX(ALPHA_X + alphaX - 1)
     end
     self.preview.rgba = self.pendingColour
+    if self.valueField and not preserveText then
+        self.valueField:SetText(formatValue(self.pendingColour), false)
+        self.acceptButton:SetDisabled(false)
+    end
+    if self.valueField then self:_LayoutValueCaption() end
 end
 
-function ColourPicker:_SetPendingColour(colour)
+function ColourPicker:_SetPendingColour(colour, preserveText)
     local red, green, blue, alpha = unpackColour(colour)
     self.pendingHue, self.pendingSaturation, self.pendingValue =
         rgbToHsv(red, green, blue)
     self.pendingAlpha = alpha
-    self:_UpdatePickerVisuals(true)
+    self:_UpdatePickerVisuals(true, preserveText)
+end
+
+function ColourPicker:_BeginValueEdit()
+    if self.valueEditing then return end
+    self.valueEditing = true
+    self.valueStartColour = self.pendingColour
+    self:_UpdateValueAppearance()
+end
+
+function ColourPicker:_LayoutValueCaption()
+    local root = self.valueField.root
+    local textWidth = config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(
+        self.valueField:GetText(), false)
+    -- Native inputs use their content margin rather than horizontal text alignment.
+    local inset = math.max(8, math.floor((root.width - textWidth) / 2))
+    root.contentMargin = ui.Margin.new(inset, 3, 8, 0)
+    self.valueUnderline:SetPos(root.x + inset, root.y + root.height - 4)
+    self.valueUnderline:SetSize(math.min(textWidth, root.width - 16), 1)
+end
+
+function ColourPicker:_UpdateValueAppearance()
+    local root = self.valueField.root
+    self:_LayoutValueCaption()
+    root.containerSprite.rgba = self.valueEditing and WHITE or 0
+    root.text.rgba = self.valueEditing and WHITE or VALUE_TEXT_COLOUR
+    root.caretRGBA = self.valueEditing and WHITE or 0
+    root.selectionHighlightRGBA = self.valueEditing and 0x465A66FF or 0
+    self.valueUnderline.hidden = self.valueEditing or not self.valueHovered
+end
+
+function ColourPicker:_FinishValueEdit(cancel)
+    if not self.valueEditing then return end
+    local startColour = self.valueStartColour
+    self.valueEditing = false
+    self.valueStartColour = nil
+    if cancel then self:_SetPendingColour(startColour) end
+    self.valueField:SetText(formatValue(self.pendingColour), false)
+    self.acceptButton:SetDisabled(false)
+    self:_UpdateValueAppearance()
+end
+
+function ColourPicker:_AddValueCaption(picker, y)
+    self.valueEditing = false
+    self.valueHovered = false
+    local x = math.floor((picker.content.width - VALUE_WIDTH) / 2)
+    self.valueField = picker:AddTextField({
+        absolute = true,
+        x = x,
+        y = y,
+        width = VALUE_WIDTH,
+        height = VALUE_HEIGHT,
+        maxLength = 9,
+        text = formatValue(self.colour),
+        shadowed = false,
+        onChange = function(field, reason, text)
+            if self.valueField ~= field then return end
+            -- Native content notifications can arrive after a newer assignment.
+            if text ~= field:GetText() then return end
+            if not self.valueEditing then
+                if reason ~= ui.InputFieldActionResult.CONTENT_CHANGE or
+                    text == formatValue(self.pendingColour) then return end
+                self:_BeginValueEdit()
+            end
+            if reason == ui.InputFieldActionResult.SUBMIT_ON_ESCAPE then
+                self:_FinishValueEdit(true)
+                return
+            end
+            local colour = parseValue(text, self.pendingAlpha)
+            self.acceptButton:SetDisabled(colour == nil)
+            if colour ~= nil then
+                self:_SetPendingColour(colour, true)
+            else
+                self:_LayoutValueCaption()
+            end
+            if reason == ui.InputFieldActionResult.SUBMIT or
+                reason == ui.InputFieldActionResult.SUBMIT_ON_FOCUS_LOSS then
+                self:_FinishValueEdit()
+            end
+        end,
+    })
+    local root = self.valueField.root
+    root.text.alignHorizontal = ui.AlignMode.TOPLEFT
+    root.text.alignVertical = ui.AlignMode.CENTRE
+    self.valueUnderline = rectangle(picker.content, x, y, 0, 1, VALUE_TEXT_COLOUR)
+    root:Subscribe(ui.Hook.ONMOUSEOVER, function()
+        self.valueHovered = true
+        self:_UpdateValueAppearance()
+        return true
+    end)
+    root:Subscribe(ui.Hook.ONMOUSELEAVE, function()
+        self.valueHovered = false
+        self:_UpdateValueAppearance()
+        return true
+    end)
+    root:Subscribe(ui.Hook.ONCLICK, function()
+        self:_BeginValueEdit()
+        return true
+    end)
+    self:_UpdateValueAppearance()
 end
 
 function ColourPicker:_PickerContentPosition()
@@ -365,6 +484,7 @@ function ColourPicker:_UpdateAlphaFromMouse(layer, x, y)
 end
 
 function ColourPicker:_BeginPickerDrag(kind, layer, x, y)
+    self:_FinishValueEdit()
     self.dragTarget = kind
     self.dragCaptureExpanded = false
     layer = layer or (kind == "hue" and self.hueHit) or
@@ -454,6 +574,11 @@ function ColourPicker:_ClearPickerReferences()
     self.previewButton = nil
     self.preview = nil
     self.acceptButton = nil
+    self.valueField = nil
+    self.valueUnderline = nil
+    self.valueEditing = nil
+    self.valueHovered = nil
+    self.valueStartColour = nil
 end
 
 function ColourPicker:Open()
@@ -467,7 +592,9 @@ function ColourPicker:Open()
     local pickerX, pickerY, pickerWidth, pickerHeight = self:_PickerWindowBounds()
     local pickerYOffset = self:_PickerYOffset()
     local picker
+    local policy = Components.policyOf(self.root)
     picker = Window.new(self.windowParent, {
+        _categoryPolicy = policy,
         title = self.options.windowTitle or self.options.title or "Colour picker",
         x = pickerX,
         y = pickerY,
@@ -482,25 +609,25 @@ function ColourPicker:Open()
     })
     self.pickerWindow = picker
 
-    self.fieldCanvas = ui.Canvas.new(picker.content)
+    self.fieldCanvas = Components.new(ui.Canvas, picker.content)
     self.fieldCanvas:SetPos(FIELD_X, FIELD_Y)
     self.fieldCanvas:SetSize(FIELD_SIZE, FIELD_SIZE)
     self.fieldCanvas.clickthrough = true
 
-    self.hueCanvas = ui.Canvas.new(picker.content)
+    self.hueCanvas = Components.new(ui.Canvas, picker.content)
     self.hueCanvas:SetPos(HUE_X, HUE_Y)
     self.hueCanvas:SetSize(HUE_WIDTH, FIELD_SIZE)
     self.hueCanvas.clickthrough = true
     self:_DrawHueSpectrum()
 
     if self.alphaSlider then
-        self.alphaCheckerCanvas = ui.Canvas.new(picker.content)
+        self.alphaCheckerCanvas = Components.new(ui.Canvas, picker.content)
         self.alphaCheckerCanvas:SetPos(ALPHA_X, ALPHA_Y)
         self.alphaCheckerCanvas:SetSize(ALPHA_WIDTH, ALPHA_HEIGHT)
         self.alphaCheckerCanvas.clickthrough = true
         self:_DrawAlphaCheckerboard()
 
-        self.alphaCanvas = ui.Canvas.new(picker.content)
+        self.alphaCanvas = Components.new(ui.Canvas, picker.content)
         self.alphaCanvas:SetPos(ALPHA_X, ALPHA_Y)
         self.alphaCanvas:SetSize(ALPHA_WIDTH, ALPHA_HEIGHT)
         self.alphaCanvas.clickthrough = true
@@ -545,13 +672,44 @@ function ColourPicker:Open()
         )
     end
 
+    self:_AddPreview(picker, PREVIEW_Y + pickerYOffset)
+
+    self.fieldHit = Components.new(ui.Layer, picker.content)
+    self.fieldHit:SetPos(FIELD_X, FIELD_Y)
+    self.fieldHit:SetSize(FIELD_SIZE, FIELD_SIZE)
+    self.fieldHit.clickthrough = false
+    self.hueHit = Components.new(ui.Layer, picker.content)
+    self.hueHit:SetPos(HUE_X, HUE_Y)
+    self.hueHit:SetSize(HUE_WIDTH, FIELD_SIZE)
+    self.hueHit.clickthrough = false
+    if self.alphaSlider then
+        self.alphaHit = Components.new(ui.Layer, picker.content)
+        self.alphaHit:SetPos(ALPHA_X, ALPHA_Y)
+        self.alphaHit:SetSize(ALPHA_WIDTH, ALPHA_HEIGHT)
+        self.alphaHit.clickthrough = false
+    end
+    self:_BindPickerDrag(self.fieldHit, "field")
+    self:_BindPickerDrag(self.hueHit, "hue")
+    if self.alphaHit then self:_BindPickerDrag(self.alphaHit, "alpha") end
+
+    self:_AddAcceptButton(picker, ACCEPT_Y + pickerYOffset)
+    self:_AddValueCaption(picker, VALUE_Y + pickerYOffset)
+
+    self:_SetPendingColour(self.colour)
+    self.fieldHit:MoveToFront()
+    self.hueHit:MoveToFront()
+    if self.alphaHit then self.alphaHit:MoveToFront() end
+    return true
+end
+
+function ColourPicker:_AddPreview(picker, y)
     self.previewButton = picker:AddSimpleButton(
         Sprites.CLOSE,
         nil,
         {
             absolute = true,
-            x = PREVIEW_X,
-            y = PREVIEW_Y + pickerYOffset,
+            x = math.floor((picker.content.width - PREVIEW_BUTTON_SIZE) / 2),
+            y = y,
             width = PREVIEW_BUTTON_SIZE,
             height = PREVIEW_BUTTON_SIZE,
         }
@@ -573,45 +731,26 @@ function ColourPicker:Open()
     self.previewButton.root:Unsubscribe(ui.Hook.ONCLICK)
     self.previewButton.root:Unsubscribe(ui.Hook.ONRELEASE)
     self.previewButton.root.clickthrough = true
+end
 
-    self.fieldHit = ui.Layer.new(picker.content)
-    self.fieldHit:SetPos(FIELD_X, FIELD_Y)
-    self.fieldHit:SetSize(FIELD_SIZE, FIELD_SIZE)
-    self.fieldHit.clickthrough = false
-    self.hueHit = ui.Layer.new(picker.content)
-    self.hueHit:SetPos(HUE_X, HUE_Y)
-    self.hueHit:SetSize(HUE_WIDTH, FIELD_SIZE)
-    self.hueHit.clickthrough = false
-    if self.alphaSlider then
-        self.alphaHit = ui.Layer.new(picker.content)
-        self.alphaHit:SetPos(ALPHA_X, ALPHA_Y)
-        self.alphaHit:SetSize(ALPHA_WIDTH, ALPHA_HEIGHT)
-        self.alphaHit.clickthrough = false
-    end
-    self:_BindPickerDrag(self.fieldHit, "field")
-    self:_BindPickerDrag(self.hueHit, "hue")
-    if self.alphaHit then self:_BindPickerDrag(self.alphaHit, "alpha") end
-
+function ColourPicker:_AddAcceptButton(picker, y)
     local acceptText = self.options.acceptText or "Accept"
     local acceptWidth = FancyButton.getSize(acceptText, {
         width = self.options.acceptWidth or 126,
     })
     self.acceptButton = picker:AddFancyButton(acceptText, function()
+        if self.valueEditing and parseValue(self.valueField:GetText(), self.pendingAlpha) == nil then
+            return
+        end
         self:SetValue(self.pendingColour)
         if self.pickerWindow == picker then picker:Close() end
     end, {
         absolute = true,
         x = math.floor((picker.content.width - acceptWidth) / 2),
-        y = ACCEPT_Y + pickerYOffset,
+        y = y,
         width = acceptWidth,
         variant = self.options.acceptVariant or "positive",
     })
-
-    self:_SetPendingColour(self.colour)
-    self.fieldHit:MoveToFront()
-    self.hueHit:MoveToFront()
-    if self.alphaHit then self.alphaHit:MoveToFront() end
-    return true
 end
 
 function ColourPicker:GetValue()
@@ -627,7 +766,10 @@ function ColourPicker:SetValue(colour, notify)
         self.swatch.rgba = colour
         self.swatch:MoveToFront()
     end
-    if self.pickerWindow and self.pickerWindow.root then self:_SetPendingColour(colour) end
+    if self.pickerWindow and self.pickerWindow.root then
+        self:_FinishValueEdit()
+        self:_SetPendingColour(colour)
+    end
     if changed and notify ~= false and self.onChange then self.onChange(self, colour) end
     return changed
 end

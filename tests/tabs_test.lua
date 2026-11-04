@@ -6,7 +6,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         kind = kind,
         hidden = false,
@@ -31,16 +31,22 @@ local function component(parent, kind)
     end
     function result:Subscribe() end
     function result:MoveToFront() end
-    function result:Destroy() self.destroyed = true end
+    function result:Destroy()
+        if self.destroyed then return end
+        self.destroyed = true
+        for _, child in ipairs(self.children or {}) do child:Destroy() end
+    end
     if parent then
         parent.children = parent.children or {}
         table.insert(parent.children, result)
     end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function componentFactory(kind)
-    return { new = function(parent) return component(parent, kind) end }
+    return { new = function(parent, categoryID, dynamicID)
+        return component(parent, kind, categoryID, dynamicID)
+    end }
 end
 
 ui = {
@@ -106,6 +112,7 @@ package.loaded["src/core/sprites"] = {
         disabled = { left = 12, middle = 13, right = 14 },
     },
 }
+hiddenTooltipContexts = {}
 package.loaded["src/tooltip"] = {
     getContext = function() return nil end,
     registerContext = function() return {} end,
@@ -113,6 +120,7 @@ package.loaded["src/tooltip"] = {
     set = function() return true end,
     unbind = function() return true end,
     unregisterContext = function() end,
+    hideContextTooltips = function(collection) hiddenTooltipContexts[collection] = true end,
 }
 package.loaded["src/core/wheel"] = {
     bind = function() end,
@@ -140,4 +148,40 @@ expect(tab.middle.width, -60, "the middle strip is anchored between both caps")
 tabs:SetDisabled(1, true)
 expect(tab.width, 90, "disabled styling preserves the safe minimum width")
 
+local tooltipTabs = Tabs.new(parent, { { text = "One" }, { text = "Two" } }, { height = 100 })
+hiddenTooltipContexts = {}
+tooltipTabs:SetActive(2)
+expect(hiddenTooltipContexts[tooltipTabs:GetPage(1).content], true, "leaving a tab hides its tooltips")
+expect(hiddenTooltipContexts[tooltipTabs:GetPage(2).content], nil, "the new tab's tooltips are left alone")
+
+local Components = require("src/core/components")
+local autoTabs = Tabs.new(parent, { "Auto" }, { categoryID = "auto" })
+local autoPage = autoTabs:GetPage(1)
+expect(autoTabs:GetTab(1).visual.categoryID > 0, true,
+    "auto tab visuals use managed categories")
+expect(ui.Layer.new(autoPage.content).categoryID, 0,
+    "raw page extension inherits category zero")
+
+local badMount = Components.new(ui.Layer, autoTabs.root)
+local validMount = pcall(Tabs.new, badMount, { "Rejected" },
+    { categoryID = "auto" })
+expect(validMount, false, "auto tabs reject a nonzero parent")
+
+local originalLayer = ui.Layer.new
+local partialRoot
+local zeroLayers = 0
+ui.Layer.new = function(owner, categoryID, dynamicID)
+    if categoryID == nil and owner and owner.categoryID == 0 then
+        zeroLayers = zeroLayers + 1
+        if zeroLayers == 4 then error("late page scroll failure") end
+    end
+    local layer = originalLayer(owner, categoryID, dynamicID)
+    if owner == parent then partialRoot = layer end
+    return layer
+end
+local validBatch = pcall(Tabs.new, parent, { "One" },
+    { categoryID = "auto" })
+ui.Layer.new = originalLayer
+expect(validBatch, false, "late page scroll failure propagates")
+expect(partialRoot.destroyed, true, "failed tabs construction destroys its partial root")
 print("tabs_test: ok")

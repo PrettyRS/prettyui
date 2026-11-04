@@ -19,6 +19,8 @@ local function resolve(options)
         height = options.height,
         modal = options.modal ~= false,
         onConfirm = options.onConfirm,
+        categoryID = options.categoryID,
+        _categoryPolicy = options._categoryPolicy,
         onCancel = options.onCancel,
     }
 end
@@ -27,6 +29,8 @@ function Confirm.new(parent, options)
     options = resolve(options)
     local body = options.body
     return Dialog.new(parent, {
+        categoryID = options.categoryID,
+        _categoryPolicy = options._categoryPolicy,
         title = options.title,
         width = options.width,
         height = options.height,

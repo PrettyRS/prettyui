@@ -4,12 +4,12 @@ local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 
-local function component(parent)
+local function component(parent, categoryID, dynamicID)
     local value = {}
     function value:SetPos(x, y) self.x, self.y = x, y end
     function value:SetSize(width, height) self.width, self.height = width, height end
     function value:Destroy() self.destroyed = true end
-    return Interfaces.component(value, parent)
+    return Interfaces.component(value, parent, categoryID, dynamicID)
 end
 
 ui = { Sprite = { new = component }, Layer = { new = component } }
@@ -73,9 +73,15 @@ expect(getmetatable(canonical), Spinner, "AddSpinner constructs Spinner")
 expect(getmetatable(alias), Spinner, "AddBigSpinner aliases AddSpinner")
 expect(canonical.root.width, 72, "AddSpinner reserves the large spinner width")
 expect(alias.root.height, 72, "AddBigSpinner reserves the large spinner height")
+canonical:SetRotation(3)
+canonical:Start()
 alias:Start()
 advance(1)
-expect(alias.rotating.rotationDegrees, 6, "default spinner advances in the intended direction")
+expect(canonical.rotating.rotationDegrees, 357, "default rotation decreases and wraps below zero")
+expect(alias.rotating.rotationDegrees, 354, "BigSpinner uses the same default direction")
+advance(1)
+expect(canonical.rotating.rotationDegrees, 351, "default rotation continues in the corrected direction")
+canonical:Stop()
 alias:Stop()
 canonical:Destroy()
 alias:Destroy()

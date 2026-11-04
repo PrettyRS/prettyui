@@ -1,3 +1,5 @@
+local Cursor = require("src/core/cursor")
+local Components = require("src/core/components")
 local DragFeedback = require("src/core/drag_feedback")
 local InterfaceMouse = require("src/core/mouse")
 local clamp = require("src/core/math").clamp
@@ -7,18 +9,30 @@ Resize.__index = Resize
 
 local EVENT_ID = "prettyui_resize"
 local controllers = {}
-local order = { "n", "s", "e", "w", "nw", "ne", "sw", "se" }
+
+-- Each corner extends along the adjacent edges up to a maximum distance.
+-- This makes it easier to grab corners, and matches native behaviour.
+local VERTICAL_CURSOR = "TOPLEVEL_V2_SCALE_VERT"
+local HORIZONTAL_CURSOR = "TOPLEVEL_V2_SCALE_HORZ"
+local DIAGONAL_CURSOR_1 = "TOPLEVEL_V2_SCALE_DIAG_1"
+local DIAGONAL_CURSOR_2 = "TOPLEVEL_V2_SCALE_DIAG_2"
+local order = { "n", "s", "e", "w", "nw_v", "nw_h", "ne_v", "ne_h", "sw_v", "sw_h", "se_v", "se_h" }
 local edges = {
-    n = { north = true },
-    s = { south = true },
-    e = { east = true },
-    w = { west = true },
-    nw = { north = true, west = true },
-    ne = { north = true, east = true },
-    sw = { south = true, west = true },
-    se = { south = true, east = true },
+    n = { north = true, horizontal = true, cursor = VERTICAL_CURSOR },
+    s = { south = true, horizontal = true, cursor = VERTICAL_CURSOR },
+    e = { east = true, cursor = HORIZONTAL_CURSOR },
+    w = { west = true, cursor = HORIZONTAL_CURSOR },
+    nw_v = { north = true, west = true, cursor = DIAGONAL_CURSOR_1 },
+    nw_h = { north = true, west = true, horizontal = true, cursor = DIAGONAL_CURSOR_1 },
+    ne_v = { north = true, east = true, cursor = DIAGONAL_CURSOR_2 },
+    ne_h = { north = true, east = true, horizontal = true, cursor = DIAGONAL_CURSOR_2 },
+    sw_v = { south = true, west = true, cursor = DIAGONAL_CURSOR_2 },
+    sw_h = { south = true, west = true, horizontal = true, cursor = DIAGONAL_CURSOR_2 },
+    se_v = { south = true, east = true, cursor = DIAGONAL_CURSOR_1 },
+    se_h = { south = true, east = true, horizontal = true, cursor = DIAGONAL_CURSOR_1 },
 }
 local BORDER = 5
+local CORNER = 35
 
 local function loaded(self)
     return self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
@@ -46,6 +60,23 @@ local function resizeAxis(position, size, delta, leading, trailing, extent, mini
     return position, size
 end
 
+-- The rectangle of one handle around a root at x, y of the given size. Corner arms
+-- reach this far along each edge from the outer corner; the straight edges fill the rest.
+local function borderRectangle(edge, x, y, width, height, reachX, reachY)
+    local thickness = BORDER * 2
+    local left, top = x - BORDER, y - BORDER
+    local right, bottom = x + width + BORDER, y + height + BORDER
+    local corner = (edge.north or edge.south) and (edge.west or edge.east)
+    if edge.horizontal then
+        local start = corner and (edge.west and left + thickness or right - reachX) or left + reachX
+        local length = corner and reachX - thickness or width + thickness - reachX * 2
+        return start, edge.north and top or bottom - thickness, length, thickness
+    end
+    local start = corner and (edge.north and top or bottom - reachY) or top + reachY
+    local length = corner and reachY or height + thickness - reachY * 2
+    return edge.west and left or right - thickness, start, thickness, length
+end
+
 local function place(self, key, x, y, width, height, visible, raise)
     local handle = self.handles[key]
     local enabled = visible and width > 0 and height > 0
@@ -53,6 +84,7 @@ local function place(self, key, x, y, width, height, visible, raise)
     if handle.enabled ~= enabled then
         handle.enabled = enabled
         handle.clickthrough = not enabled
+        Cursor.apply(handle, config.Cursor[edges[key].cursor], enabled)
     end
     if self.restoreHandle == handle or handle.x ~= x or handle.y ~= y then
         handle:SetPos(x, y)
@@ -89,19 +121,14 @@ function Resize:_Refresh(raise)
     local drag = self.dragState
     local expanded = drag and drag.captureExpanded
     local localVisible = visible and not expanded
-    local b = BORDER
-    local horizontal = math.max(0, width - b * 2)
-    local vertical = math.max(0, height - b * 2)
-
     -- Ten-unit hit areas straddle the edge, leaving the header and controls
     -- available outside the five-unit inner strip.
+    -- limit the size of the corner handles to half the size of the root, so they don't overlap each other
+    local reachX = math.min(CORNER, (width + BORDER * 2) // 2)
+    local reachY = math.min(CORNER, (height + BORDER * 2) // 2)
     for _, key in ipairs(order) do
         if not expanded or key ~= drag.edge then
-            local edge = edges[key]
-            local hx = edge.west and x - b or edge.east and x + width - b or x + b
-            local hy = edge.north and y - b or edge.south and y + height - b or y + b
-            local hw = (edge.west or edge.east) and b * 2 or horizontal
-            local hh = (edge.north or edge.south) and b * 2 or vertical
+            local hx, hy, hw, hh = borderRectangle(edges[key], x, y, width, height, reachX, reachY)
             place(self, key, hx, hy, hw, hh, localVisible, raise)
         end
     end
@@ -216,8 +243,9 @@ function Resize.new(parent, root, options)
         onBegin = options.onBegin,
         handles = {},
     }, Resize)
+    local policyOptions = { _categoryPolicy = Components.policyOf(root) }
     for _, key in ipairs(order) do
-        local handle = ui.Layer.new(parent)
+        local handle = Components.new(ui.Layer, parent, policyOptions)
         self.handles[key] = handle
         handle.enabled = false
         handle.clickthrough = true

@@ -80,7 +80,7 @@ end
 local buffLayer = newLayer()
 local debuffLayer = newLayer(100, 200)
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     nextDynamicID = nextDynamicID + 1
     local result = {
         dynamicID = nextDynamicID,
@@ -120,12 +120,14 @@ local function component(parent, kind)
         self.movedToFront = true
     end
     table.insert(parent.dynamicComponents, result)
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function componentFactory(kind)
     return {
-        new = function(parent) return component(parent, kind) end,
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, kind, categoryID, dynamicID)
+        end,
     }
 end
 
@@ -154,6 +156,11 @@ ui = {
         GROUP_BOX = 8,
     },
 }
+local staticHost = Interfaces.component({ kind = "native-static-host" })
+buffLayer.parent = staticHost
+debuffLayer.parent = staticHost
+Interfaces.component(buffLayer, staticHost, 0, 0)
+Interfaces.component(debuffLayer, staticHost, 0, 1)
 id = {
     Component = {
         BUFF_BAR__BUFF_RENDER_LAYER = BUFF_LAYER_ID,
@@ -182,6 +189,7 @@ Event = {
         Unsubscribe = function() logicHandler = nil end,
     },
 }
+
 log = function() end
 
 local BuffBar = require("src/buff_bar")
@@ -210,6 +218,21 @@ local function captureEntry(layer, addEntry, hasTooltip)
         tooltipLabel = components[6] and components[6].dynamicComponents[10],
     }
 end
+
+local autoHandle, autoEntry = captureEntry(buffLayer, function()
+    return BuffBar.addBuff({
+        spriteID = 17, tooltip = "Auto native buff", categoryID = "auto",
+    })
+end, true)
+expect(autoEntry.sprite.categoryID > 0, true, "opted-in native buffs use managed IDs")
+expect(autoEntry.tooltipRoot.categoryID, 0,
+    "the raw-compatible auto tooltip root inherits the render layer's zero category")
+autoHandle:SetTooltip(nil)
+autoHandle:SetTooltip({ text = "Reopened tooltip" })
+local replacementTarget = buffLayer.dynamicComponents[#buffLayer.dynamicComponents - 1]
+expect(replacementTarget.categoryID > 0, true,
+    "later tooltip targets inherit their original auto entry policy")
+BuffBar.removeBuff(autoHandle)
 
 local firstHandle, first = captureEntry(buffLayer, function()
     return BuffBar.addBuff({
@@ -255,7 +278,7 @@ buffLayer.slots.trailing.iteratorVisible = nil
 logicHandler({ logicTick = 3 })
 expect(first.sprite.x, 32, "an expired native buff releases space on the next tick")
 
-local foreignComponent = component(buffLayer, "sprite")
+local foreignComponent = component(buffLayer, "sprite", 1, first.sprite.dynamicID)
 foreignComponent:SetSize(28, 28)
 foreignComponent:SetPos(70, 0)
 foreignComponent.hidden = true

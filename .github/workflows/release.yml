@@ -1,6 +1,8 @@
 name: Release plugin
 
 on:
+  push:
+    tags: ['v*', '[0-9]*']
   release:
     types: [published]
   pull_request_target:
@@ -51,7 +53,13 @@ jobs:
           fi
           echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
 
-      - name: Build and attach plugin ZIP
+      - name: Build plugin and developer assets
+        shell: bash
+        run: |
+          python3 .github/scripts/package_release.py "$RELEASE_TAG" --output "PrettyUI-${RELEASE_TAG}.zip"
+          python3 .github/scripts/package_editor.py "$RELEASE_TAG" --output developer-assets
+
+      - name: Publish release assets
         id: package
         shell: bash
         env:

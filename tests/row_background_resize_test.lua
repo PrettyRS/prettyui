@@ -6,8 +6,8 @@ local function expect(actual, expected, message)
     end
 end
 
-local function component(x, y, width, height)
-    local value = { x = x, y = y, width = width, height = height }
+local function component(x, y, width, height, parent, categoryID, dynamicID)
+    local value = { parent = parent, x = x, y = y, width = width, height = height }
     function value:SetPos(nextX, nextY)
         self.x, self.y = nextX, nextY
     end
@@ -19,15 +19,13 @@ local function component(x, y, width, height)
     function value:SetY(nextY) self.y = nextY end
     function value:MoveToBack() self.movedToBack = true end
     function value:Destroy() self.destroyed = true end
-    return Interfaces.component(value)
+    return Interfaces.component(value, parent, categoryID, dynamicID)
 end
 
 ui = {
     Rectangle = {
-        new = function(parent)
-            local value = component(0, 0, 0, 0)
-            value.parent = parent
-            return value
+        new = function(parent, categoryID, dynamicID)
+            return component(0, 0, 0, 0, parent, categoryID, dynamicID)
         end,
     },
 }

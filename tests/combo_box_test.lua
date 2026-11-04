@@ -7,7 +7,7 @@ local function expect(actual, expected, message)
     end
 end
 
-local function comboField()
+local function comboField(parent, categoryID, dynamicID)
     local result = {
         entries = {},
         entryLabels = {},
@@ -86,7 +86,7 @@ local function comboField()
         return true
     end
     function result:Destroy() end
-    return Interfaces.component(result)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 ui = {
@@ -121,7 +121,7 @@ package.loaded["src/combo_box"] = nil
 
 local ComboBox = require("src/combo_box")
 
-local combo = ComboBox.new({}, {
+local combo = ComboBox.new(Interfaces.component({}), {
     entries = {
         { label = "Small", id = 1 },
         { label = "Medium", id = 2 },
@@ -138,7 +138,7 @@ expect(combo:GetSelectedLabel(), "Medium", "programmatic selection updates label
 expect(combo.root.lastSelectTriggerEvents, false, "silent selection does not emit native events")
 expect(combo.root.bulkSetEntriesCalls, 2, "large selection uses sorted-position fallback")
 
-local smallCombo = ComboBox.new({}, {
+local smallCombo = ComboBox.new(Interfaces.component({}), {
     entries = {
         { label = "Small", id = 1 },
         { label = "Medium", id = 2 },
@@ -150,7 +150,7 @@ expect(smallCombo:GetSelectedID(), 1, "sorted-position fallback restores small I
 expect(smallCombo:GetSelectedLabel(), "Small", "sorted-position fallback restores small header")
 expect(smallCombo.root.bulkSetEntriesCalls, 2, "small selection uses sorted-position fallback")
 
-local orderedCombo = ComboBox.new({}, {
+local orderedCombo = ComboBox.new(Interfaces.component({}), {
     entries = {
         { label = "Zulu", id = 10 },
         { label = "Beta", id = 20, order = 2 },
@@ -163,7 +163,7 @@ expect(orderedCombo.ordered, true, "ordered entries use the custom combobox")
 expect(orderedCombo.options.selectedID, 20, "custom combobox receives constructor options")
 
 local validOrder, orderError = pcall(function()
-    ComboBox.new({}, { entries = { { label = "Invalid", order = 1.5 } } })
+    ComboBox.new(Interfaces.component({}), { entries = { { label = "Invalid", order = 1.5 } } })
 end)
 expect(validOrder, false, "fractional entry order is rejected")
 expect(orderError:find("must be an integer", 1, true) ~= nil, true,

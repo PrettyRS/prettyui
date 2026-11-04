@@ -4,8 +4,17 @@ local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 
+local function moveInRenderOrder(component, front)
+    local siblings = component.parent and component.parent.renderOrder
+    if not siblings then return end
+    for index, sibling in ipairs(siblings) do
+        if sibling == component then table.remove(siblings, index); break end
+    end
+    table.insert(siblings, front and #siblings + 1 or 1, component)
+end
+
 -- Resolve native size anchors on access, including after an ancestor changes size.
-local function component(parent)
+local function component(parent, categoryID, dynamicID)
     local value = { parent = parent, x = 0, y = 0, hidden = false, subscriptions = {},
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end }, cursorConfig = {} }
     setmetatable(value, { __index = function(self, key)
@@ -21,10 +30,26 @@ local function component(parent)
     function value:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
     function value:Subscribe(hook, name, callback) self.subscriptions[hook] = callback or name end
     function value:Unsubscribe(hook) self.subscriptions[hook] = nil end
-    function value:MoveToFront() end
-    function value:MoveToBack() end
+    function value:MoveToFront() moveInRenderOrder(self, true) end
+    function value:MoveToBack() moveInRenderOrder(self, false) end
     function value:Destroy() self.destroyed = true end
-    return Interfaces.component(value, parent)
+    Interfaces.component(value, parent, categoryID, dynamicID)
+    if parent then
+        -- Exercise a native default order where category-zero content precedes
+        -- nonzero artwork, rather than assuming construction order wins.
+        local siblings = parent.renderOrder or {}
+        parent.renderOrder = siblings
+        local position = #siblings + 1
+        for index, sibling in ipairs(siblings) do
+            if sibling.categoryID > value.categoryID or
+                (sibling.categoryID == value.categoryID and sibling.dynamicID > value.dynamicID) then
+                position = index
+                break
+            end
+        end
+        table.insert(siblings, position, value)
+    end
+    return value
 end
 
 local enum = setmetatable({}, { __index = function(_, key) return key end })
@@ -161,6 +186,83 @@ tabSection:Toggle()
 expect(tabs.root.height, tabHeight - 94, "closing resizes the tab container")
 expect(afterTabs.y, afterY - 94, "resizing tabs reflows their following sibling")
 expect(window.root.height, outerHeight, "resizing the immediate host leaves ancestors fixed")
+
+local Components = require("src/core/components")
+local autoWindow = Window.new(parent, { title = "Auto", categoryID = "auto" })
+expect(ui.Layer.new(autoWindow.content).categoryID, 0,
+    "raw window child inherits category zero")
+local autoSection = autoWindow:AddCollapseButton("Auto section")
+expect(ui.Layer.new(autoSection.content).categoryID, 0,
+    "raw collapse extension inherits zero")
+
+local autoView = SimpleView.new(parent, { categoryID = "auto" })
+expect(ui.Layer.new(autoView.content).categoryID, 0,
+    "raw SimpleView content accepts native children")
+expect(autoView.upArrow.categoryID > 0, true,
+    "auto SimpleView controls use managed categories")
+local autoPanel = Panel.new(parent, { categoryID = "auto", popout = true })
+expect(ui.Layer.new(autoPanel.content).categoryID, 0, "raw dock child inherits zero")
+expect(ui.Layer.new(autoPanel.overlayContent).categoryID, 0,
+    "raw popout child inherits zero")
+local function expectPanelForeground(panel_, pairedLabel)
+    local surface = panel_.poppedOut and panel_.overlay or panel_.dock
+    local label = panel_.poppedOut and pairedLabel.overlay or pairedLabel.dock
+    local painted = {}
+    local function paint(component_)
+        if component_.hidden or component_.destroyed then return end
+        painted[#painted + 1] = component_
+        for _, child in ipairs(component_.renderOrder or {}) do paint(child) end
+    end
+    paint(surface.root)
+    local backgroundIndex, labelIndex
+    for index, component_ in ipairs(painted) do
+        if component_ == surface.background then backgroundIndex = index end
+        if component_ == label then labelIndex = index end
+    end
+    assert(backgroundIndex and labelIndex, "visible Panel paints both its background and content")
+    assert(backgroundIndex < labelIndex, "Panel content must paint above its background across categories")
+end
+
+local panelLabel = autoPanel:AddText("Foreground content")
+expectPanelForeground(autoPanel, panelLabel)
+autoPanel:SetPoppedOut(true)
+expectPanelForeground(autoPanel, panelLabel)
+
+local legacyOrderPanel = Panel.new(parent, { popout = true })
+local legacyLabel = legacyOrderPanel:AddText("Legacy foreground")
+expectPanelForeground(legacyOrderPanel, legacyLabel)
+legacyOrderPanel:SetPoppedOut(true)
+expectPanelForeground(legacyOrderPanel, legacyLabel)
+legacyOrderPanel:Destroy()
+local managedParent = Components.new(ui.Layer, autoWindow.root)
+local mountedWindow = pcall(Window.new, managedParent, { categoryID = "auto" })
+local mountedPanel = pcall(Panel.new, parent, {
+    categoryID = "auto", overlayParent = managedParent, popout = true,
+})
+expect(mountedWindow, false, "auto Window rejects a nonzero dynamic parent")
+expect(mountedPanel, false, "auto Panel rejects a nonzero overlay parent")
+local originalLayer = ui.Layer.new
+local partialCollapse
+ui.Layer.new = function(owner, categoryID, dynamicID)
+    if owner == partialCollapse and categoryID == nil then
+        error("late collapse content failure")
+    end
+    local layer = originalLayer(owner, categoryID, dynamicID)
+    if owner == parent then partialCollapse = layer end
+    return layer
+end
+local collapseBuilt, collapseError = pcall(
+    require("src/collapse_button").new, parent, "Failure", { categoryID = "auto" })
+ui.Layer.new = originalLayer
+expect(collapseBuilt, false, "late collapse content failure propagates")
+expect(collapseError:find("late collapse content failure", 1, true) ~= nil,
+    true, "collapse failure retains the original constructor error")
+expect(partialCollapse.destroyed, true,
+    "failed direct CollapseButton construction destroys its partial root")
+
+autoPanel:Destroy()
+autoView:Destroy()
+autoWindow:Destroy()
 
 window:Destroy()
 fixed:Destroy()

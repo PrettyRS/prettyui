@@ -1,3 +1,5 @@
+local Interfaces = require("tests/interface_fixture")
+
 local function expect(actual, expected, message)
     if actual ~= expected then
         error(message .. ": expected " .. tostring(expected)
@@ -22,7 +24,7 @@ Vector4 = { new = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 local windows = {}
 local layers = {}
 
-local function fakeLayer(parent)
+local function fakeLayer(parent, categoryID, dynamicID)
     local layer = {
         parent = parent,
         clickthrough = false,
@@ -38,18 +40,21 @@ local function fakeLayer(parent)
         self.destroyed = true
     end
     layers[#layers + 1] = layer
-    return layer
+    return Interfaces.component(layer, parent, categoryID, dynamicID)
 end
 
-local function fakeRect(parent)
+local function fakeRect(parent, categoryID, dynamicID)
     local rect = { parent = parent, fill = false, clickthrough = false, colour = nil }
     function rect:SetPos() end
     function rect:SetSize() end
-    return rect
+    return Interfaces.component(rect, parent, categoryID, dynamicID)
 end
 
 local function fakeWindow(parent, options)
+    Interfaces.component(parent)
+    local root = require("src/core/components").new(ui.Layer, parent, options)
     local window = {
+        root = root,
         parent = parent,
         options = options,
         title = options.title,
@@ -65,7 +70,11 @@ local function fakeWindow(parent, options)
         self.texts[#self.texts + 1] = text
     end
     function window:AddFancyButton(label, action, opts)
-        local button = { label = label, action = action, opts = opts or {} }
+        opts = opts or {}
+        local button = { label = label, action = action, opts = opts, disabled = opts.disabled == true }
+        function button:SetDisabled(disabled)
+            self.disabled = disabled == true
+        end
         self.buttons[#self.buttons + 1] = button
         return button
     end
@@ -78,7 +87,9 @@ local function fakeWindow(parent, options)
         if self.destroyOnClose then self:Destroy() end
     end
     function window:Destroy()
+        if self.destroyed then return end
         self.destroyed = true
+        self.root:Destroy()
     end
     windows[#windows + 1] = window
     return window
@@ -235,5 +246,65 @@ expect(Dialog.depth(other), 1, "other stack isolated")
 Dialog.dismissAll(other)
 expect(Dialog.depth(parent), 1, "dismissAll other leaves parent")
 Dialog.dismissAll(parent)
+
+resetHost()
+Dialog.dismissAll(parent)
+local save = { label = "Save", disabled = true, onClick = function() return true end }
+dialog = Dialog.new(parent, { actions = { save } })
+expect(save.button, nil, "action has no button field")
+expect(save.setDisabled, nil, "action has no setDisabled field")
+local saveButton = button(dialog.window, "Save")
+expectTrue(saveButton.disabled, "starts disabled")
+saveButton.action()
+expect(Dialog.depth(parent), 1, "disabled click stays")
+dialog:SetActionDisabled(save, false)
+expectFalse(saveButton.disabled, "SetActionDisabled(false) enables the button")
+expectTrue(save.disabled, "SetActionDisabled does not write action.disabled")
+saveButton.action()
+expect(Dialog.depth(parent), 0, "enabled click pops")
+
+resetHost()
+Dialog.dismissAll(parent)
+local go = { label = "Go", onClick = function() return true end }
+dialog = Dialog.new(parent, { actions = { go } })
+local goButton = button(dialog.window, "Go")
+dialog:SetActionDisabled(go, true)
+expectTrue(goButton.disabled, "SetActionDisabled(true) disables the button")
+goButton.action()
+expect(Dialog.depth(parent), 1, "disabled after enable does not pop")
+Dialog.dismissAll(parent)
+
+resetHost()
+Dialog.dismissAll(parent)
+dialog = Dialog.new(parent, { actions = { { label = "Close" } } })
+local unknownFailed = pcall(function()
+    dialog:SetActionDisabled({ label = "Nope" }, true)
+end)
+expectFalse(unknownFailed, "unknown action raises")
+Dialog.dismissAll(parent)
+
+local staticHost = Interfaces.component({ id = "modal-static" })
+local modalHost = ui.Layer.new(staticHost)
+local nonmodal = Dialog.new(modalHost, { title = "Nonmodal", modal = false })
+local firstModal = Dialog.new(modalHost, {
+    title = "Managed modal",
+    categoryID = "auto",
+    actions = { { label = "Close" } },
+})
+local dim = layers[#layers - 1]
+expectTrue(firstModal.window.root.categoryID > 0, "modal opts into managed allocation")
+expectTrue(dim.categoryID > 0, "dim follows the first modal, not the nonmodal dialog")
+local legacyModal = Dialog.new(modalHost, {
+    title = "Legacy modal",
+    actions = { { label = "Close" } },
+})
+expect(legacyModal.window.root.categoryID, 0,
+    "later modal retains its own native allocation policy")
+button(legacyModal.window, "Close").action()
+expectFalse(dim.destroyed, "shared dim stays until the last modal closes")
+button(firstModal.window, "Close").action()
+expectTrue(dim.destroyed, "last modal releases shared dim while nonmodal stays open")
+expectFalse(nonmodal.window.destroyed, "nonmodal stays open after both modals close")
+Dialog.dismissAll(modalHost)
 
 print("dialog_test: ok")

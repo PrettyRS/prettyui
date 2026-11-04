@@ -20,7 +20,7 @@ local function updateLayout(component)
 end
 
 local liveComponents = 0
-local function component(parent, kind, interfaceID)
+local function component(parent, kind, interfaceID, categoryID, dynamicID)
     local result = {
         position = { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
         size = { width = 0, height = 0, widthParentPc = 0, heightParentPc = 0 },
@@ -64,7 +64,8 @@ local function component(parent, kind, interfaceID)
     updateLayout(result)
     liveComponents = liveComponents + 1
     if parent then table.insert(parent.children, result) end
-    return Interfaces.component(result, interfaceID and { interfaceID = interfaceID } or parent)
+    if interfaceID ~= nil then result.interfaceID = interfaceID end
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local root = component(nil, "Layer")
@@ -89,10 +90,18 @@ id = {
 ui = {
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
     Hook = { ONMOUSEOVER = 1, ONMOUSEREPEAT = 2, ONMOUSELEAVE = 3, ONCLICK = 4, ONSCROLLWHEEL = 5 },
-    Layer = { new = function(parent) return component(parent, "Layer") end },
-    Rectangle = { new = function(parent) return component(parent, "Rectangle") end },
-    Sprite = { new = function(parent) return component(parent, "Sprite") end },
-    Text = { new = function(parent) return component(parent, "Text") end },
+    Layer = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "Layer", nil, categoryID, dynamicID)
+    end },
+    Rectangle = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "Rectangle", nil, categoryID, dynamicID)
+    end },
+    Sprite = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "Sprite", nil, categoryID, dynamicID)
+    end },
+    Text = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "Text", nil, categoryID, dynamicID)
+    end },
     Interfaces = {
         GetComponent = function(_, componentID)
             if componentID == id.Component.TOPLEVEL_V2__ROOT
@@ -270,6 +279,60 @@ for _, case in ipairs({ { "top", 4 }, { "bottom", 2 }, { 3, 3 }, { 99, 2 } }) do
     expect(menu.entries[1].fullText, "Cancel", "placement preserves Cancel")
     expect(menu.entries[#menu.entries].fullText, "Walk here", "placement preserves the default action")
 end
+
+-- mocks the client mini menu and adds new entries at the start and end
+local function clientMenu(labels, addAtEnd)
+    local stored = {}
+    for index, label in ipairs(labels) do stored[index] = { fullText = label } end
+    local menu = { reads = 0 }
+    function menu:Add(label, action)
+        table.insert(stored, addAtEnd and #stored + 1 or 1, { overrideText = label, callback = action })
+    end
+    function menu:Swap(a, b)
+        stored[a], stored[b] = stored[b], stored[a]
+    end
+    return setmetatable(menu, { __index = function(self, key)
+        if key ~= "entries" then return nil end
+        self.reads = self.reads + 1
+        local entries = {}
+        for index, entry in ipairs(stored) do
+            entries[index] = { fullText = entry.fullText, overrideText = entry.overrideText, callback = entry.callback }
+        end
+        return entries
+    end })
+end
+local function entryLabels(menu)
+    local labels = {}
+    for index, entry in ipairs(menu.entries) do labels[index] = entry.overrideText or entry.fullText end
+    return table.concat(labels, ", ")
+end
+local function clientSubmenu(menu, label, position)
+    local reads = menu.reads
+    local result = PrettyMiniMenu.AddSubmenu(menu, label, children(), { position = position, arrow = false })
+    expect(menu.reads - reads, 2, "AddSubmenu reads client entries once on each side of Add")
+    return result
+end
+for _, addAtEnd in ipairs({ false, true }) do
+    for _, case in ipairs({
+        { "top", "Cancel, Examine, Trade, Client, Walk here" },
+        { "bottom", "Cancel, Client, Examine, Trade, Walk here" },
+        { 3, "Cancel, Examine, Client, Trade, Walk here" },
+        { 99, "Cancel, Client, Examine, Trade, Walk here" },
+    }) do
+        local menu = clientMenu({ "Cancel", "Examine", "Trade", "Walk here" }, addAtEnd)
+        emit("MiniMenuReady", { miniMenu = menu })
+        local parent = clientSubmenu(menu, "Client", case[1])
+        expect(parent.overrideText, "Client", "client placement returns the new parent entry")
+        expect(entryLabels(menu), case[2], "client placement moves only the new parent")
+    end
+    local menu = clientMenu({ "Cancel", "Examine", "Trade", "Walk here" }, addAtEnd)
+    emit("MiniMenuReady", { miniMenu = menu })
+    clientSubmenu(menu, "First", "top")
+    clientSubmenu(menu, "Second", "bottom")
+    expect(entryLabels(menu), "Cancel, Second, Examine, Trade, First, Walk here",
+        "repeated client submenus keep native entries in order")
+end
+
 readyMenu(function(menu)
     local count = #menu.entries
     local accepted = pcall(PrettyMiniMenu.AddSubmenu, menu, "Invalid", children(), { position = 1 })
@@ -592,6 +655,25 @@ openMenu(menu, true)
 click(rows(assert(hoverParent(menu, parent)))[1])
 expect(selected, "remounted", "restart and native interface reload allow a fresh submenu action")
 closeMenu()
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Opted-in submenu", children(),
+        { categoryID = "auto" })
+end)
+openMenu(menu)
+local autoOverlay = assert(hoverParent(menu, parent))
+expect(autoOverlay.parent, nativeHitbox, "managed submenu stays on the native menu host")
+expect(autoOverlay.categoryID > 0, true, "managed submenu allocates its own category")
+closeMenu()
+
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Existing submenu", children())
+end)
+openMenu(menu)
+local legacyOverlay = assert(hoverParent(menu, parent))
+expect(legacyOverlay.categoryID, nativeHitbox.categoryID,
+    "legacy submenu retains native allocation on the same host")
+closeMenu()
+
 PrettyMiniMenu.Shutdown()
 
 print("minimenu_test: ok")

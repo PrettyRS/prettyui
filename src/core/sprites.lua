@@ -242,4 +242,22 @@ Sprites.SPRITE_BUTTON_NAMES = {
     "LOCK", "TRASH"
 }
 
+Sprites.OVERHEAD_BARS = {
+    { name = "health.default", label = "Health / default", kind = "health", background = id.Sprite.HITBAR_DEFAULT_S_0, fill = id.Sprite.HITBAR_DEFAULT_S_1, width = 56, height = 7 },
+    { name = "health.medium", label = "Health / medium", kind = "health", background = id.Sprite.HITBAR_MED_S_0, fill = id.Sprite.HITBAR_MED_S_1, width = 73, height = 7 },
+    { name = "health.long", label = "Health / 90px", kind = "health", background = id.Sprite.HITBAR_90_S_0, fill = id.Sprite.HITBAR_90_S_1, width = 90, height = 7 },
+    { name = "health.large", label = "Health / 120px", kind = "health", background = id.Sprite.HITBAR_120_S_0, fill = id.Sprite.HITBAR_120_S_1, width = 120, height = 7 },
+    { name = "health.magicShield", label = "Health / magic shield", kind = "health", background = id.Sprite.HITBAR_MAGICSHIELD_S_0, fill = id.Sprite.HITBAR_MAGICSHIELD_S_1, width = 56, height = 7 },
+    { name = "health.penguin", label = "Health / penguin", kind = "health", background = id.Sprite.HITBAR_PENGUIN_S_0, fill = id.Sprite.HITBAR_PENGUIN_S_1, width = 56, height = 7 },
+    { name = "health.blueGrey", label = "Health / blue-grey", kind = "health", background = id.Sprite.HITBAR_BLUE_GREY_0, fill = id.Sprite.HITBAR_BLUE_GREY_1, width = 56, height = 7 },
+    { name = "health.blueRed", label = "Health / blue-red 120px", kind = "health", background = id.Sprite.BLUE_RED_120_0, fill = id.Sprite.BLUE_RED_120_1, width = 120, height = 7 },
+    { name = "adrenaline.default", label = "Adrenaline / default", kind = "adrenaline", background = id.Sprite.ADRENALINE_DEFAULT_S_0, fill = id.Sprite.ADRENALINE_DEFAULT_S_1, width = 56, height = 6 },
+    { name = "adrenaline.large", label = "Adrenaline / 120px", kind = "adrenaline", background = id.Sprite.ADRENALINE_120_S_0, fill = id.Sprite.ADRENALINE_120_S_1, width = 120, height = 6 },
+    { name = "progress.default", label = "Progress / default", kind = "progress", background = id.Sprite.PROGRESS_DEFAULT_S_0, fill = id.Sprite.PROGRESS_DEFAULT_S_1, width = 56, height = 5 },
+    { name = "progress.large", label = "Progress / 120px", kind = "progress", background = id.Sprite.PROGRESS_120_S_0, fill = id.Sprite.PROGRESS_120_S_1, width = 120, height = 5 },
+    { name = "progress.green", label = "Progress / green", kind = "progress", background = id.Sprite.PROGRESS_DEFAULT_S_0, fill = id.Sprite.PROGRESS_GREEN_S_1, width = 56, height = 5 },
+    { name = "timer.default", label = "Timer / default", kind = "timer", background = id.Sprite.TIMERBAR_DEFAULT_S_0, fill = id.Sprite.TIMERBAR_DEFAULT_S_1, width = 56, height = 7 },
+    { name = "timer.large", label = "Timer / 120px", kind = "timer", background = id.Sprite.TIMERBAR_120_S_0, fill = id.Sprite.TIMERBAR_120_S_1, width = 120, height = 7 },
+}
+
 return Sprites

@@ -1,0 +1,2653 @@
+{
+  "classes": {
+    "TooltipOptions": {
+      "fields": {
+        "text": "string?",
+        "maxWidth": "number?",
+        "width": "number?",
+        "height": "number?",
+        "parent": "any?",
+        "placement": "'left'|'right'|'above'|'below'?",
+        "x": "number?",
+        "y": "number?",
+        "boundsMargin": "number?",
+        "constrainToParent": "boolean?"
+      }
+    },
+    "FlowOptions": {
+      "fields": {
+        "inline": "boolean?",
+        "offsetY": "number?",
+        "marginTop": "number?",
+        "marginBottom": "number?",
+        "columnGap": "number?",
+        "absolute": "boolean?",
+        "rowBackground": "boolean?",
+        "rowBackgroundGroup": "any?",
+        "x": "number?",
+        "y": "number?",
+        "xAnchor": "number?",
+        "yAnchor": "number?",
+        "width": "number?",
+        "height": "number?",
+        "widthAnchor": "number?",
+        "heightAnchor": "number?"
+      }
+    },
+    "Window": {
+      "options": {
+        "title": "string",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "resizable": "boolean",
+        "minWidth": "number",
+        "minHeight": "number",
+        "maxWidth": "number",
+        "maxHeight": "number",
+        "scrollable": "boolean",
+        "scrollStep": "number",
+        "contentHeight": "number",
+        "rowBackgroundColours": "number[]",
+        "rowBackgroundColors": "number[]",
+        "rowBackgroundEdgeToEdge": "boolean",
+        "onClose": "fun(window: PrettyUI.Window)",
+        "destroyOnClose": "boolean",
+        "useNativeTransparency": "boolean",
+        "respectInterfaceLock": "boolean",
+        "layout": "PrettyUI.LayoutOptions",
+        "textLayout": "PrettyUI.LayoutOptions"
+      },
+      "fields": {
+        "root": "any",
+        "content": "any",
+        "viewport": "any",
+        "scrollbarVisible": "boolean",
+        "scrollY": "number",
+        "contentHeight": "number",
+        "contentWidth": "number"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.WindowOptions?"
+          },
+          "returns": [
+            "PrettyUI.Window"
+          ]
+        },
+        "SetTitle": {
+          "params": {
+            "title": "string"
+          }
+        },
+        "SetSize": {
+          "params": {
+            "width": "number",
+            "height": "number"
+          }
+        },
+        "SetScrollable": {
+          "params": {
+            "value": "boolean"
+          }
+        },
+        "SetScrollPosition": {
+          "params": {
+            "y": "number"
+          }
+        },
+        "ScrollBy": {
+          "params": {
+            "delta": "number"
+          }
+        },
+        "ScrollToChild": {
+          "params": {
+            "child": "any",
+            "topOffset": "number?"
+          }
+        },
+        "SetContentHeight": {
+          "params": {
+            "height": "number"
+          }
+        },
+        "RefreshRowBackgrounds": {
+          "params": {}
+        },
+        "Show": {
+          "params": {}
+        },
+        "SetUseNativeTransparency": {
+          "params": {
+            "enabled": "boolean"
+          }
+        },
+        "SetRespectInterfaceLock": {
+          "params": {
+            "enabled": "boolean"
+          }
+        },
+        "Close": {
+          "params": {}
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    },
+    "SimpleView": {
+      "options": {
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "scrollable": "boolean",
+        "scrollStep": "number",
+        "contentHeight": "number",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "layout": "PrettyUI.LayoutOptions",
+        "textLayout": "PrettyUI.LayoutOptions"
+      },
+      "fields": {
+        "root": "any",
+        "content": "any",
+        "viewport": "any",
+        "scrollbarVisible": "boolean",
+        "scrollY": "number",
+        "contentHeight": "number",
+        "contentWidth": "number"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.SimpleViewOptions?"
+          },
+          "returns": [
+            "PrettyUI.SimpleView"
+          ]
+        },
+        "SetSize": {
+          "params": {
+            "width": "number",
+            "height": "number"
+          }
+        },
+        "SetScrollable": {
+          "params": {
+            "value": "boolean"
+          }
+        },
+        "SetScrollPosition": {
+          "params": {
+            "y": "number"
+          }
+        },
+        "ScrollBy": {
+          "params": {
+            "delta": "number"
+          }
+        },
+        "ScrollToChild": {
+          "params": {
+            "child": "any",
+            "topOffset": "number?"
+          }
+        },
+        "SetContentHeight": {
+          "params": {
+            "height": "number"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    },
+    "Panel": {
+      "options": {
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "popout": "boolean",
+        "poppedOut": "boolean",
+        "popoutX": "number",
+        "popoutY": "number",
+        "popoutWidth": "number",
+        "popoutHeight": "number",
+        "popoutBackgroundAlpha": "number",
+        "backgroundAlpha": "number",
+        "popoutClickthrough": "boolean",
+        "clickthrough": "boolean",
+        "overlayParent": "any",
+        "resizable": "boolean",
+        "minWidth": "number",
+        "minHeight": "number",
+        "maxWidth": "number",
+        "maxHeight": "number",
+        "scrollable": "boolean",
+        "scrollStep": "number",
+        "contentHeight": "number",
+        "rowBackgroundColours": "number[]",
+        "rowBackgroundColors": "number[]",
+        "rowBackgroundEdgeToEdge": "boolean",
+        "useNativeTransparency": "boolean",
+        "respectInterfaceLock": "boolean",
+        "onPopoutChange": "fun(panel: PrettyUI.Panel, poppedOut: boolean)",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "layout": "PrettyUI.LayoutOptions",
+        "textLayout": "PrettyUI.LayoutOptions"
+      },
+      "fields": {
+        "root": "any",
+        "content": "any",
+        "overlayContent": "any",
+        "poppedOut": "boolean",
+        "contentWidth": "number",
+        "contentHeight": "number"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.PanelOptions?"
+          },
+          "returns": [
+            "PrettyUI.Panel"
+          ]
+        },
+        "SetPoppedOut": {
+          "params": {
+            "value": "boolean",
+            "notify": "boolean?"
+          }
+        },
+        "TogglePopout": {
+          "params": {}
+        },
+        "SetUseNativeTransparency": {
+          "params": {
+            "enabled": "boolean"
+          }
+        },
+        "SetRespectInterfaceLock": {
+          "params": {
+            "enabled": "boolean"
+          }
+        },
+        "SetPopoutClickthrough": {
+          "params": {
+            "value": "boolean"
+          }
+        },
+        "SetPopoutBackgroundAlpha": {
+          "params": {
+            "alpha": "number"
+          }
+        },
+        "SetSize": {
+          "params": {
+            "width": "number",
+            "height": "number"
+          }
+        },
+        "SetScrollable": {
+          "params": {
+            "value": "boolean"
+          }
+        },
+        "ScrollToChild": {
+          "params": {
+            "child": "any",
+            "topOffset": "number?"
+          }
+        },
+        "RefreshRowBackgrounds": {
+          "params": {}
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    },
+    "TabEntry": {
+      "fields": {
+        "kind": "'text'|'icon'?",
+        "type": "'text'|'icon'?",
+        "text": "string?",
+        "label": "string?",
+        "icon": "number?",
+        "spriteID": "number?",
+        "value": "any?",
+        "disabled": "boolean?",
+        "tooltip": "string|PrettyUI.TooltipOptions|nil",
+        "width": "number?",
+        "iconSize": "number?",
+        "scrollable": "boolean?",
+        "contentHeight": "number?",
+        "rowBackgroundColours": "number[]?",
+        "rowBackgroundColors": "number[]?",
+        "rowBackgroundEdgeToEdge": "boolean?"
+      }
+    },
+    "TabPage": {
+      "fields": {
+        "root": "any",
+        "content": "any",
+        "viewport": "any",
+        "scrollbarVisible": "boolean",
+        "scrollY": "number",
+        "contentHeight": "number",
+        "contentWidth": "number"
+      },
+      "methods": {
+        "SetScrollable": {
+          "params": {
+            "value": "boolean"
+          }
+        },
+        "SetScrollPosition": {
+          "params": {
+            "y": "number"
+          }
+        },
+        "ScrollBy": {
+          "params": {
+            "delta": "number"
+          }
+        },
+        "ScrollToChild": {
+          "params": {
+            "child": "any",
+            "topOffset": "number?"
+          }
+        },
+        "SetContentHeight": {
+          "params": {
+            "height": "number"
+          }
+        },
+        "RefreshRowBackgrounds": {
+          "params": {}
+        }
+      }
+    },
+    "Tabs": {
+      "options": {
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "activeIndex": "integer",
+        "onChange": "fun(group: PrettyUI.Tabs, index: integer, value: any, page: PrettyUI.TabPage)",
+        "tabGap": "number",
+        "tabInset": "number",
+        "iconSize": "number",
+        "scrollable": "boolean",
+        "scrollStep": "number",
+        "contentHeight": "number",
+        "contentLayout": "PrettyUI.LayoutOptions",
+        "rowBackgroundColours": "number[]",
+        "rowBackgroundColors": "number[]",
+        "rowBackgroundEdgeToEdge": "boolean",
+        "tooltip": "string|PrettyUI.TooltipOptions"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "values": "(string|number|PrettyUI.TabEntry)[]",
+            "options": "PrettyUI.TabsOptions?"
+          },
+          "returns": [
+            "PrettyUI.Tabs"
+          ]
+        },
+        "GetPage": {
+          "params": {
+            "index": "integer"
+          },
+          "returns": [
+            "PrettyUI.TabPage|nil"
+          ]
+        },
+        "GetTab": {
+          "params": {
+            "index": "integer"
+          },
+          "returns": [
+            "PrettyUI.TabEntry|nil"
+          ]
+        },
+        "SetActive": {
+          "params": {
+            "index": "integer",
+            "notify": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "GetActiveIndex": {
+          "params": {},
+          "returns": [
+            "integer|nil"
+          ]
+        },
+        "SetDisabled": {
+          "params": {
+            "index": "integer",
+            "disabled": "boolean"
+          }
+        },
+        "SetScrollable": {
+          "params": {
+            "value": "boolean"
+          }
+        },
+        "SetTabTooltip": {
+          "params": {
+            "index": "integer",
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    },
+    "BuffHandle": {
+      "methods": {
+        "SetLabel": {
+          "params": {
+            "text": "string",
+            "rgba": "number?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetObject": {
+          "params": {
+            "objId": "any?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetSprite": {
+          "params": {
+            "spriteID": "number?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetVisible": {
+          "params": {
+            "visible": "boolean"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "BuffBar": {
+      "options": {
+        "objId": "any",
+        "spriteID": "number",
+        "label": "string",
+        "labelRgba": "number",
+        "font": "number",
+        "backgroundRgba": "number",
+        "borderRgba": "number",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "visible": "boolean",
+        "duration": "number"
+      },
+      "methods": {
+        "addBuff": {
+          "static": true,
+          "params": {
+            "options": "PrettyUI.BuffBarOptions?"
+          },
+          "returns": [
+            "PrettyUI.BuffHandle|nil"
+          ]
+        },
+        "addDebuff": {
+          "static": true,
+          "params": {
+            "options": "PrettyUI.BuffBarOptions?"
+          },
+          "returns": [
+            "PrettyUI.BuffHandle|nil"
+          ]
+        },
+        "removeBuff": {
+          "static": true,
+          "params": {
+            "handle": "PrettyUI.BuffHandle"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "removeDebuff": {
+          "static": true,
+          "params": {
+            "handle": "PrettyUI.BuffHandle"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "MiniMenuChild": {
+      "fields": {
+        "label": "string",
+        "action": "fun(...: any)",
+        "arguments": "any[]?",
+        "args": "any[]?"
+      }
+    },
+    "MiniMenuOptions": {
+      "fields": {
+        "title": "string?",
+        "parentAction": "fun()?",
+        "arrow": "boolean?",
+        "position": "'top'|'bottom'|integer?"
+      }
+    },
+    "MiniMenu": {
+      "methods": {
+        "AddSubmenu": {
+          "static": true,
+          "params": {
+            "miniMenu": "any",
+            "label": "string",
+            "children": "PrettyUI.MiniMenuChild[]",
+            "options": "PrettyUI.MiniMenuOptions?"
+          },
+          "returns": [
+            "any"
+          ]
+        }
+      }
+    },
+    "TimeMetric": {
+      "fields": {
+        "id": "string",
+        "label": "string?",
+        "spriteID": "number?",
+        "rgba": "number?"
+      }
+    },
+    "TimeUpdate": {
+      "fields": {
+        "metric": "string",
+        "value": "number"
+      }
+    },
+    "TimeUpdateEvent": {
+      "fields": {
+        "Publish": "fun(payload: PrettyUI.TimeUpdate): boolean, string?",
+        "Subscribe": "fun(callback: fun(payload: PrettyUI.TimeUpdate)): boolean, string?",
+        "Unsubscribe": "fun(callback: fun(payload: PrettyUI.TimeUpdate)): boolean"
+      }
+    },
+    "TimeEventBus": {
+      "fields": {
+        "Update": "PrettyUI.TimeUpdateEvent"
+      }
+    },
+    "TimeBucket": {
+      "fields": {
+        "value": "number",
+        "startSeconds": "number",
+        "endSeconds": "number",
+        "complete": "boolean"
+      }
+    },
+    "TimeSnapshot": {
+      "fields": {
+        "metric": "string",
+        "interval": "number",
+        "capacity": "integer",
+        "total": "number",
+        "elapsedSeconds": "number",
+        "buckets": "PrettyUI.TimeBucket[]"
+      }
+    },
+    "TimeGraph": {
+      "options": {
+        "metric": "PrettyUI.TimeMetric",
+        "interval": "number",
+        "capacity": "integer",
+        "zoom": "number",
+        "zoomable": "boolean",
+        "onZoom": "fun(graph: PrettyUI.TimeGraph, zoom: number)",
+        "bus": "PrettyUI.TimeEventBus",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "visible": "boolean"
+      },
+      "fields": {
+        "root": "any",
+        "bus": "PrettyUI.TimeEventBus"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.TimeGraphOptions"
+          },
+          "returns": [
+            "PrettyUI.TimeGraph"
+          ]
+        },
+        "CreateEventBus": {
+          "static": true,
+          "params": {},
+          "returns": [
+            "PrettyUI.TimeEventBus"
+          ]
+        },
+        "SetZoom": {
+          "params": {
+            "zoom": "number",
+            "notify": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "GetZoom": {
+          "params": {},
+          "returns": [
+            "number"
+          ]
+        },
+        "ZoomIn": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "ZoomOut": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "GetSnapshot": {
+          "params": {},
+          "returns": [
+            "PrettyUI.TimeSnapshot"
+          ]
+        },
+        "Reset": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetVisible": {
+          "params": {
+            "visible": "boolean"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetSize": {
+          "params": {
+            "width": "number",
+            "height": "number"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    },
+    "BarRow": {
+      "fields": {
+        "id": "string",
+        "label": "string",
+        "value": "number",
+        "rgba": "number?"
+      }
+    },
+    "BarSnapshot": {
+      "fields": {
+        "label": "string",
+        "data": "PrettyUI.BarRow[]"
+      }
+    },
+    "BarChart": {
+      "options": {
+        "label": "string",
+        "data": "PrettyUI.BarRow[]",
+        "orientation": "'horizontal'|'vertical'",
+        "rgba": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "visible": "boolean"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.BarChartOptions?"
+          },
+          "returns": [
+            "PrettyUI.BarChart"
+          ]
+        },
+        "SetData": {
+          "params": {
+            "rows": "PrettyUI.BarRow[]"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "GetSnapshot": {
+          "params": {},
+          "returns": [
+            "PrettyUI.BarSnapshot"
+          ]
+        },
+        "Reset": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetVisible": {
+          "params": {
+            "visible": "boolean"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetSize": {
+          "params": {
+            "width": "number",
+            "height": "number"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "HistogramBin": {
+      "fields": {
+        "lower": "number",
+        "upper": "number",
+        "count": "integer"
+      }
+    },
+    "HistogramSnapshot": {
+      "fields": {
+        "label": "string",
+        "binWidth": "number",
+        "origin": "number",
+        "sampleCount": "integer",
+        "bins": "PrettyUI.HistogramBin[]"
+      }
+    },
+    "Histogram": {
+      "options": {
+        "label": "string",
+        "rgba": "number",
+        "samples": "number[]",
+        "binWidth": "number",
+        "origin": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "visible": "boolean"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.HistogramOptions?"
+          },
+          "returns": [
+            "PrettyUI.Histogram"
+          ]
+        },
+        "SetSamples": {
+          "params": {
+            "samples": "number[]"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetBins": {
+          "params": {
+            "bins": "PrettyUI.HistogramBin[]"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "GetSnapshot": {
+          "params": {},
+          "returns": [
+            "PrettyUI.HistogramSnapshot"
+          ]
+        },
+        "Reset": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetVisible": {
+          "params": {
+            "visible": "boolean"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetSize": {
+          "params": {
+            "width": "number",
+            "height": "number"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "DialogAction": {
+      "fields": {
+        "label": "string",
+        "variant": "'neutral'|'positive'|'negative'?",
+        "disabled": "boolean?",
+        "tooltip": "string|PrettyUI.TooltipOptions|nil",
+        "onClick": "fun(): boolean?"
+      }
+    },
+    "Dialog": {
+      "options": {
+        "title": "string",
+        "width": "number",
+        "height": "number",
+        "modal": "boolean",
+        "content": "fun(window: PrettyUI.Window)",
+        "actions": "PrettyUI.DialogAction[]",
+        "onDismiss": "fun()"
+      },
+      "fields": {
+        "window": "PrettyUI.Window"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.DialogOptions?"
+          },
+          "returns": [
+            "PrettyUI.Dialog"
+          ]
+        },
+        "depth": {
+          "static": true,
+          "params": {
+            "parent": "any"
+          },
+          "returns": [
+            "integer"
+          ]
+        },
+        "dismissAll": {
+          "static": true,
+          "params": {
+            "parent": "any"
+          }
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    },
+    "Confirm": {
+      "options": {
+        "title": "string",
+        "body": "string",
+        "width": "number",
+        "height": "number",
+        "modal": "boolean",
+        "cancelLabel": "string",
+        "confirmLabel": "string",
+        "confirmVariant": "'neutral'|'positive'|'negative'",
+        "onConfirm": "fun(): boolean?",
+        "onCancel": "fun(): boolean?"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.ConfirmOptions?"
+          },
+          "returns": [
+            "PrettyUI.Dialog"
+          ]
+        }
+      }
+    },
+    "KeybindField": {
+      "options": {
+        "value": "integer[]",
+        "defaultValue": "integer[]",
+        "onChange": "fun(field: PrettyUI.KeybindField, value: integer[])",
+        "disabled": "boolean",
+        "width": "number",
+        "height": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "colour": "number",
+        "color": "number",
+        "font": "number",
+        "shadowed": "boolean",
+        "stylesheetID": "number",
+        "inputSprite": "any"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.KeybindFieldOptions?"
+          },
+          "returns": [
+            "PrettyUI.KeybindField"
+          ]
+        },
+        "GetValue": {
+          "params": {},
+          "returns": [
+            "integer[]"
+          ]
+        },
+        "SetValue": {
+          "params": {
+            "value": "integer[]",
+            "notify": "boolean?"
+          }
+        },
+        "IsListening": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "StartListening": {
+          "params": {}
+        },
+        "CancelListening": {
+          "params": {}
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "IsDown": {
+          "static": true,
+          "params": {
+            "value": "integer[]"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "IsCapturing": {
+          "static": true,
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "FormatValue": {
+          "static": true,
+          "params": {
+            "value": "integer[]"
+          },
+          "returns": [
+            "string"
+          ]
+        }
+      }
+    },
+    "TextField": {
+      "options": {
+        "text": "string",
+        "content": "string",
+        "placeholder": "string",
+        "emptyText": "string",
+        "visibility": "any",
+        "filterMode": "any",
+        "filter": "any",
+        "maxLength": "integer",
+        "inputMode": "any",
+        "onChange": "fun(field: PrettyUI.TextField, reason: any, content: string)",
+        "onSubmit": "fun(field: PrettyUI.TextField, content: string)",
+        "disabled": "boolean",
+        "width": "number",
+        "height": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "font": "number",
+        "colour": "number",
+        "color": "number",
+        "shadowed": "boolean",
+        "stylesheetID": "number",
+        "inputSprite": "any",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "contentMargin": "any",
+        "placeholderColour": "number",
+        "placeholderColor": "number",
+        "caretColour": "number",
+        "caretColor": "number",
+        "selectionColour": "number",
+        "selectionColor": "number"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.TextFieldOptions?"
+          },
+          "returns": [
+            "PrettyUI.TextField"
+          ]
+        },
+        "GetText": {
+          "params": {},
+          "returns": [
+            "string"
+          ]
+        },
+        "SetText": {
+          "params": {
+            "value": "string",
+            "notify": "boolean?"
+          }
+        },
+        "SetPlaceholder": {
+          "params": {
+            "value": "string"
+          }
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "ComboEntry": {
+      "fields": {
+        "label": "string?",
+        "text": "string?",
+        "id": "any?",
+        "value": "any?",
+        "order": "integer?"
+      }
+    },
+    "ComboBox": {
+      "options": {
+        "entries": "(string|PrettyUI.ComboEntry)[]",
+        "choices": "(string|PrettyUI.ComboEntry)[]",
+        "selectedID": "any",
+        "selected": "any",
+        "onChange": "fun(combo: PrettyUI.ComboBox, id: any, label: string, eventType: any)",
+        "disabled": "boolean",
+        "width": "number",
+        "height": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "entryHeight": "number",
+        "maxVisibleEntries": "integer",
+        "dropdownMaxVisibleEntries": "integer",
+        "stylesheetID": "number",
+        "inputStylesheetID": "number",
+        "font": "number",
+        "colour": "number",
+        "color": "number",
+        "shadowed": "boolean",
+        "hoverTextColour": "number",
+        "hoverTextColor": "number",
+        "selectedTextColour": "number",
+        "selectedTextColor": "number",
+        "disabledTextColour": "number",
+        "disabledTextColor": "number",
+        "hoverColour": "number",
+        "hoverColor": "number",
+        "selectedColour": "number",
+        "selectedColor": "number",
+        "selectionColour": "number",
+        "selectionColor": "number",
+        "caretColour": "number",
+        "caretColor": "number",
+        "errorCaretColour": "number",
+        "errorCaretColor": "number",
+        "placeholderColour": "number",
+        "placeholderColor": "number",
+        "dropdownBackgroundColour": "number",
+        "dropdownBackgroundColor": "number",
+        "dropdownBorderColour": "number",
+        "dropdownBorderColor": "number",
+        "maxLength": "integer",
+        "inputMode": "any",
+        "contentMargin": "any",
+        "headerMargin": "any",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "overlayParent": "any"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.ComboBoxOptions?"
+          },
+          "returns": [
+            "PrettyUI.ComboBox"
+          ]
+        },
+        "Add": {
+          "params": {
+            "label": "string",
+            "entryID": "any"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Remove": {
+          "params": {
+            "entryID": "any"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Clear": {
+          "params": {}
+        },
+        "SetEntries": {
+          "params": {
+            "entries": "(string|PrettyUI.ComboEntry)[]",
+            "selectedID": "any?"
+          }
+        },
+        "Select": {
+          "params": {
+            "entryID": "any",
+            "triggerEvents": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "GetSelectedID": {
+          "params": {},
+          "returns": [
+            "any"
+          ]
+        },
+        "GetSelectedLabel": {
+          "params": {},
+          "returns": [
+            "string|nil"
+          ]
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "ListEntry": {
+      "fields": {
+        "label": "string?",
+        "text": "string?",
+        "id": "any?",
+        "value": "any?",
+        "selected": "boolean?",
+        "enabled": "boolean?",
+        "disabled": "boolean?",
+        "visible": "boolean?",
+        "icon": "number?",
+        "backgroundColour": "number?",
+        "backgroundColor": "number?",
+        "hoverColour": "number?",
+        "hoverColor": "number?",
+        "selectedColour": "number?",
+        "selectedColor": "number?",
+        "colour": "number?",
+        "color": "number?",
+        "textColour": "number?",
+        "textColor": "number?",
+        "disabledTextColour": "number?",
+        "disabledTextColor": "number?"
+      }
+    },
+    "ListStateEntry": {
+      "fields": {
+        "id": "any",
+        "text": "string",
+        "selected": "boolean",
+        "enabled": "boolean",
+        "visible": "boolean",
+        "icon": "number|nil",
+        "backgroundColour": "number|nil",
+        "hoverColour": "number|nil",
+        "selectedColour": "number|nil",
+        "textColour": "number|nil",
+        "disabledTextColour": "number|nil"
+      }
+    },
+    "List": {
+      "options": {
+        "entries": "(string|PrettyUI.ListEntry)[]",
+        "choices": "(string|PrettyUI.ListEntry)[]",
+        "maxSelected": "integer",
+        "onChange": "fun(list: PrettyUI.List, id: any, selected: boolean, eventType: any)",
+        "disabled": "boolean",
+        "width": "number",
+        "height": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "entryHeight": "number",
+        "entryIconScale": "number",
+        "font": "number",
+        "colour": "number",
+        "color": "number",
+        "shadowed": "boolean",
+        "backgroundColour": "number",
+        "backgroundColor": "number",
+        "borderColour": "number",
+        "borderColor": "number",
+        "hoverColour": "number",
+        "hoverColor": "number",
+        "selectedColour": "number",
+        "selectedColor": "number",
+        "disabledColour": "number",
+        "disabledColor": "number",
+        "disabledTextColour": "number",
+        "disabledTextColor": "number",
+        "tooltip": "string|PrettyUI.TooltipOptions"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.ListOptions?"
+          },
+          "returns": [
+            "PrettyUI.List"
+          ]
+        },
+        "Add": {
+          "params": {
+            "label": "string",
+            "entryID": "any"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetEntries": {
+          "params": {
+            "entries": "(string|PrettyUI.ListEntry)[]"
+          }
+        },
+        "SetSelected": {
+          "params": {
+            "entryID": "any",
+            "selected": "boolean",
+            "triggerEvents": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "UnselectAll": {
+          "params": {}
+        },
+        "GetSelectedEntries": {
+          "params": {},
+          "returns": [
+            "PrettyUI.ListStateEntry[]"
+          ]
+        },
+        "SetScrollPosition": {
+          "params": {
+            "value": "number"
+          }
+        },
+        "SetSize": {
+          "params": {
+            "width": "number",
+            "height": "number",
+            "widthAnchor": "number?",
+            "heightAnchor": "number?"
+          }
+        },
+        "SetEntryEnabled": {
+          "params": {
+            "entryID": "any",
+            "enabled": "boolean"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetEntryVisible": {
+          "params": {
+            "entryID": "any",
+            "visible": "boolean"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetEntryIcon": {
+          "params": {
+            "entryID": "any",
+            "spriteID": "number?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "Choice": {
+      "fields": {
+        "text": "string?",
+        "label": "string?",
+        "value": "any?",
+        "selected": "boolean?",
+        "disabled": "boolean?",
+        "tooltip": "string|PrettyUI.TooltipOptions|nil"
+      }
+    },
+    "SelectionButton": {
+      "methods": {
+        "GetSelectedValue": {
+          "params": {},
+          "returns": [
+            "any"
+          ]
+        },
+        "SetSelectedValue": {
+          "params": {
+            "value": "any?",
+            "notify": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "GetSelectedValues": {
+          "params": {},
+          "returns": [
+            "any[]"
+          ]
+        },
+        "IsSelected": {
+          "params": {
+            "value": "any"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetSelected": {
+          "params": {
+            "value": "any",
+            "selected": "boolean",
+            "notify": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetOptionTooltip": {
+          "params": {
+            "value": "any",
+            "tooltip": "string|PrettyUI.TooltipOptions|nil"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    },
+    "RadioButton": {
+      "bases": [
+        "SelectionButton"
+      ],
+      "options": {
+        "selectedValue": "any",
+        "inline": "boolean",
+        "disabled": "boolean",
+        "onChange": "fun(group: PrettyUI.RadioButton, value: any)",
+        "colour": "number",
+        "disabledColour": "number",
+        "tooltip": "string|PrettyUI.TooltipOptions"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "choices": "(any|PrettyUI.Choice)[]",
+            "options": "PrettyUI.RadioButtonOptions?"
+          },
+          "returns": [
+            "PrettyUI.RadioButton"
+          ]
+        },
+        "GetSelectedValue": {
+          "params": {},
+          "returns": [
+            "any"
+          ]
+        },
+        "SetSelectedValue": {
+          "params": {
+            "value": "any?",
+            "notify": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "CheckboxButton": {
+      "bases": [
+        "SelectionButton"
+      ],
+      "options": {
+        "selectedValues": "any[]|table<any, boolean>",
+        "inline": "boolean",
+        "disabled": "boolean",
+        "onChange": "fun(group: PrettyUI.CheckboxButton, values: any[], changedValue: any, selected: boolean)",
+        "colour": "number",
+        "disabledColour": "number",
+        "tooltip": "string|PrettyUI.TooltipOptions"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "choices": "(any|PrettyUI.Choice)[]",
+            "options": "PrettyUI.CheckboxButtonOptions?"
+          },
+          "returns": [
+            "PrettyUI.CheckboxButton"
+          ]
+        },
+        "GetSelectedValues": {
+          "params": {},
+          "returns": [
+            "any[]"
+          ]
+        },
+        "SetSelected": {
+          "params": {
+            "value": "any",
+            "selected": "boolean",
+            "notify": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "ItemGridEntry": {
+      "fields": {
+        "object": "any",
+        "quantity": "integer?",
+        "tooltip": "string|PrettyUI.TooltipOptions|nil"
+      }
+    },
+    "ItemSlot": {
+      "options": {
+        "quantity": "integer",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "disabled": "boolean",
+        "itemInset": "number",
+        "outlineWidth": "number",
+        "shadowRGBA": "number",
+        "quantityMode": "any",
+        "clickthrough": "boolean",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "object": "any?",
+            "options": "PrettyUI.ItemSlotOptions?"
+          },
+          "returns": [
+            "PrettyUI.ItemSlot"
+          ]
+        },
+        "SetObject": {
+          "params": {
+            "object": "any?",
+            "quantity": "integer?"
+          }
+        },
+        "SetQuantity": {
+          "params": {
+            "quantity": "integer?"
+          }
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "ItemGrid": {
+      "options": {
+        "columns": "integer",
+        "rows": "integer",
+        "slotGap": "number",
+        "quantityMode": "any",
+        "dragDrop": "boolean",
+        "onDrop": "fun(grid: PrettyUI.ItemGrid, sourceIndex: integer, destinationIndex: integer, moved: any, displaced: any)",
+        "tooltip": "boolean|string|PrettyUI.TooltipOptions|fun(object: any, index: integer, row: integer, column: integer): (string|PrettyUI.TooltipOptions|nil)",
+        "itemInset": "number",
+        "outlineWidth": "number",
+        "shadowRGBA": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "objects": "table<integer, any|PrettyUI.ItemGridEntry>",
+            "options": "PrettyUI.ItemGridOptions?"
+          },
+          "returns": [
+            "PrettyUI.ItemGrid"
+          ]
+        },
+        "GetSlot": {
+          "params": {
+            "index": "integer"
+          },
+          "returns": [
+            "PrettyUI.ItemSlot|nil"
+          ]
+        },
+        "SetObject": {
+          "params": {
+            "index": "integer",
+            "object": "any?",
+            "tooltip": "string|PrettyUI.TooltipOptions|nil",
+            "quantity": "integer?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetObjectAt": {
+          "params": {
+            "column": "integer",
+            "row": "integer",
+            "object": "any?",
+            "tooltip": "string|PrettyUI.TooltipOptions|nil",
+            "quantity": "integer?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetObjects": {
+          "params": {
+            "objects": "table<integer, any|PrettyUI.ItemGridEntry>"
+          }
+        },
+        "MoveObject": {
+          "params": {
+            "sourceIndex": "integer",
+            "destinationIndex": "integer",
+            "notify": "boolean?"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "boolean|string|PrettyUI.TooltipOptions|fun(object: any, index: integer, row: integer, column: integer): (string|PrettyUI.TooltipOptions|nil)"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "SetDragDropEnabled": {
+          "params": {
+            "enabled": "boolean"
+          }
+        }
+      }
+    },
+    "Text": {
+      "options": {
+        "text": "string",
+        "colour": "number",
+        "font": "number",
+        "shadowed": "boolean",
+        "alignHorizontal": "any",
+        "alignVertical": "any",
+        "maxLines": "integer",
+        "lineSpacing": "number",
+        "x": "number",
+        "y": "number",
+        "width": "number",
+        "height": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "inline": "boolean",
+        "offsetY": "number",
+        "columnGap": "number",
+        "absolute": "boolean",
+        "rowBackground": "boolean",
+        "rowBackgroundGroup": "any"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.TextOptions?"
+          },
+          "returns": [
+            "any"
+          ]
+        },
+        "title": {
+          "static": true,
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.TextOptions?"
+          },
+          "returns": [
+            "any"
+          ]
+        }
+      }
+    },
+    "Divider": {
+      "options": {
+        "x": "number",
+        "y": "number",
+        "width": "number",
+        "widthAnchor": "number",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "rowBackground": "boolean",
+        "tooltip": "string|PrettyUI.TooltipOptions"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.DividerOptions?"
+          },
+          "returns": [
+            "PrettyUI.Divider"
+          ]
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "CollapseButton": {
+      "options": {
+        "expanded": "boolean",
+        "resizeParent": "boolean",
+        "disabled": "boolean",
+        "indent": "number",
+        "onToggle": "fun(section: PrettyUI.CollapseButton, expanded: boolean)",
+        "colour": "number",
+        "disabledColour": "number",
+        "hoverCursor": "any",
+        "shadowed": "boolean",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "width": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "widthAnchor": "number",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "inline": "boolean",
+        "rowBackground": "boolean",
+        "rowBackgroundGroup": "any"
+      },
+      "fields": {
+        "content": "any"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "text": "string",
+            "options": "PrettyUI.CollapseButtonOptions?"
+          },
+          "returns": [
+            "PrettyUI.CollapseButton"
+          ]
+        },
+        "AddText": {
+          "params": {
+            "value": "string|PrettyUI.TextOptions"
+          },
+          "returns": [
+            "any"
+          ]
+        },
+        "SetExpanded": {
+          "params": {
+            "expanded": "boolean"
+          }
+        },
+        "Toggle": {
+          "params": {}
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "Slider": {
+      "options": {
+        "min": "number",
+        "max": "number",
+        "value": "number",
+        "step": "number",
+        "buttonGap": "number",
+        "onChange": "fun(slider: PrettyUI.Slider, value: number)",
+        "disabled": "boolean",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "hoverCursor": "any",
+        "x": "number",
+        "y": "number",
+        "width": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "widthAnchor": "number"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.SliderOptions?"
+          },
+          "returns": [
+            "PrettyUI.Slider"
+          ]
+        },
+        "SetValue": {
+          "params": {
+            "value": "number",
+            "notify": "boolean?"
+          }
+        },
+        "GetValue": {
+          "params": {},
+          "returns": [
+            "number"
+          ]
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "ColourPicker": {
+      "options": {
+        "value": "number",
+        "colour": "number",
+        "defaultColour": "number",
+        "alphaSlider": "boolean",
+        "showAlpha": "boolean",
+        "buttonSize": "number",
+        "size": "number",
+        "width": "number",
+        "height": "number",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "disabled": "boolean",
+        "onChange": "fun(picker: PrettyUI.ColourPicker, colour: number)",
+        "windowTitle": "string",
+        "title": "string",
+        "windowWidth": "number",
+        "windowHeight": "number",
+        "windowParent": "any",
+        "overlayParent": "any",
+        "windowX": "number",
+        "windowY": "number",
+        "pickerX": "number",
+        "pickerY": "number",
+        "acceptText": "string",
+        "acceptWidth": "number",
+        "acceptVariant": "'neutral'|'positive'|'negative'",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "inline": "boolean"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.ColourPickerOptions?"
+          },
+          "returns": [
+            "PrettyUI.ColourPicker"
+          ]
+        },
+        "GetValue": {
+          "params": {},
+          "returns": [
+            "number"
+          ]
+        },
+        "GetColour": {
+          "params": {},
+          "returns": [
+            "number"
+          ]
+        },
+        "SetValue": {
+          "params": {
+            "colour": "number",
+            "notify": "boolean?"
+          }
+        },
+        "SetColour": {
+          "params": {
+            "colour": "number",
+            "notify": "boolean?"
+          }
+        },
+        "Open": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Close": {
+          "params": {}
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        }
+      }
+    },
+    "SimpleButton": {
+      "options": {
+        "toggleable": "boolean",
+        "active": "boolean",
+        "disabled": "boolean",
+        "width": "number",
+        "height": "number",
+        "size": "number",
+        "iconSize": "number",
+        "iconWidth": "number",
+        "iconHeight": "number",
+        "colour": "number",
+        "disabledColour": "number",
+        "hoverCursor": "any",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "shadowed": "boolean",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "inline": "boolean",
+        "offsetY": "number",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "columnGap": "number",
+        "absolute": "boolean",
+        "rowBackground": "boolean",
+        "rowBackgroundGroup": "any"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "content": "string|number",
+            "action": "fun(button: PrettyUI.SimpleButton, active: boolean)?",
+            "options": "PrettyUI.SimpleButtonOptions?"
+          },
+          "returns": [
+            "PrettyUI.SimpleButton"
+          ]
+        },
+        "SetActive": {
+          "params": {
+            "active": "boolean"
+          }
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetHoverCursor": {
+          "params": {
+            "cursor": "any"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "FancyButton": {
+      "options": {
+        "variant": "'neutral'|'positive'|'negative'",
+        "width": "number",
+        "colour": "number",
+        "disabledColour": "number",
+        "disabled": "boolean",
+        "hoverCursor": "any",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "inline": "boolean",
+        "offsetY": "number",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "columnGap": "number",
+        "absolute": "boolean"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "text": "string",
+            "action": "fun(button: PrettyUI.FancyButton)?",
+            "options": "PrettyUI.FancyButtonOptions?"
+          },
+          "returns": [
+            "PrettyUI.FancyButton"
+          ]
+        },
+        "SetVariant": {
+          "params": {
+            "variant": "'neutral'|'positive'|'negative'"
+          }
+        },
+        "SetText": {
+          "params": {
+            "text": "string"
+          }
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetHoverCursor": {
+          "params": {
+            "cursor": "any"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "SpriteButton": {
+      "options": {
+        "toggleable": "boolean",
+        "disabled": "boolean",
+        "width": "number",
+        "height": "number",
+        "size": "number",
+        "hoverCursor": "any",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "inline": "boolean",
+        "offsetY": "number",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "columnGap": "number",
+        "absolute": "boolean"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "spriteName": "string",
+            "action": "fun(button: PrettyUI.SpriteButton, enabled: boolean)?",
+            "options": "PrettyUI.SpriteButtonOptions?"
+          },
+          "returns": [
+            "PrettyUI.SpriteButton"
+          ]
+        },
+        "SetSprite": {
+          "params": {
+            "spriteName": "string"
+          }
+        },
+        "SetDisabled": {
+          "params": {
+            "disabled": "boolean"
+          }
+        },
+        "SetHoverCursor": {
+          "params": {
+            "cursor": "any"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "RibbonButton": {
+      "options": {
+        "active": "boolean",
+        "disabled": "boolean",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "inline": "boolean",
+        "marginTop": "number",
+        "marginBottom": "number"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "spriteID": "number",
+            "action": "fun(button: PrettyUI.RibbonButton)?",
+            "options": "PrettyUI.RibbonButtonOptions?"
+          },
+          "returns": [
+            "PrettyUI.RibbonButton"
+          ]
+        },
+        "SetIcon": {
+          "params": {
+            "spriteID": "number"
+          }
+        },
+        "SetActive": {
+          "params": {
+            "active": "boolean"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "Sprite": {
+      "options": {
+        "size": "number",
+        "width": "number",
+        "height": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "widthAnchor": "number",
+        "heightAnchor": "number",
+        "colour": "number",
+        "color": "number",
+        "alpha": "number",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "inline": "boolean",
+        "offsetY": "number",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "columnGap": "number",
+        "absolute": "boolean",
+        "rowBackground": "boolean",
+        "rowBackgroundGroup": "any"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "sprite": "any",
+            "options": "PrettyUI.SpriteOptions?"
+          },
+          "returns": [
+            "PrettyUI.Sprite"
+          ]
+        },
+        "getSize": {
+          "static": true,
+          "params": {
+            "options": "PrettyUI.SpriteOptions?"
+          },
+          "returns": [
+            "number",
+            "number"
+          ]
+        },
+        "SetSprite": {
+          "params": {
+            "sprite": "any"
+          }
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "Spinner": {
+      "options": {
+        "size": "number",
+        "width": "number",
+        "height": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "rotation": "number",
+        "degreesPerLogicUpdate": "number",
+        "autoPlay": "boolean",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "inline": "boolean",
+        "offsetY": "number",
+        "marginTop": "number",
+        "marginBottom": "number",
+        "columnGap": "number",
+        "absolute": "boolean"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.SpinnerOptions?"
+          },
+          "returns": [
+            "PrettyUI.Spinner"
+          ]
+        },
+        "SetRotation": {
+          "params": {
+            "degrees": "number"
+          }
+        },
+        "SetDegreesPerLogicUpdate": {
+          "params": {
+            "degrees": "number"
+          }
+        },
+        "Start": {
+          "params": {}
+        },
+        "Stop": {
+          "params": {}
+        },
+        "Reset": {
+          "params": {}
+        },
+        "SetTooltip": {
+          "params": {
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "boolean"
+          ]
+        }
+      }
+    },
+    "BigSpinner": {
+      "bases": [
+        "Spinner"
+      ],
+      "options": {
+        "size": "number",
+        "width": "number",
+        "height": "number",
+        "rotation": "number",
+        "degreesPerLogicUpdate": "number",
+        "autoPlay": "boolean",
+        "tooltip": "string|PrettyUI.TooltipOptions"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.BigSpinnerOptions?"
+          },
+          "returns": [
+            "PrettyUI.Spinner"
+          ]
+        }
+      }
+    },
+    "AchievementPopup": {
+      "options": {
+        "parent": "any",
+        "title": "string",
+        "text": "string",
+        "item": "any",
+        "quantity": "integer",
+        "quantityMode": "any",
+        "sound": "boolean",
+        "soundID": "number",
+        "titleColour": "number",
+        "textColour": "number",
+        "shadowed": "boolean",
+        "width": "number",
+        "height": "number",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "itemInset": "number",
+        "outlineWidth": "number",
+        "shadowRGBA": "number",
+        "onComplete": "fun(popup: PrettyUI.AchievementPopup)"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.AchievementPopupOptions?"
+          },
+          "returns": [
+            "PrettyUI.AchievementPopup"
+          ]
+        },
+        "show": {
+          "static": true,
+          "params": {
+            "options": "PrettyUI.AchievementPopupOptions?"
+          },
+          "returns": [
+            "PrettyUI.AchievementPopup|nil"
+          ]
+        }
+      }
+    },
+    "AnchoredTooltip": {
+      "options": {
+        "parent": "any",
+        "npc": "any",
+        "loc": "any",
+        "position": "any",
+        "anchor": "fun(tooltip: PrettyUI.AnchoredTooltip): any",
+        "text": "string",
+        "buildContent": "fun(tooltip: PrettyUI.AnchoredTooltip, content: any): any",
+        "content": "fun(tooltip: PrettyUI.AnchoredTooltip, content: any): any",
+        "width": "number",
+        "height": "number",
+        "maxWidth": "number",
+        "contentWidth": "number",
+        "contentHeight": "number",
+        "padding": "number",
+        "paddingX": "number",
+        "paddingY": "number",
+        "heightAboveGround": "number",
+        "offsetX": "number",
+        "offsetY": "number",
+        "backgroundColour": "number",
+        "backgroundAlpha": "number",
+        "hidden": "boolean"
+      },
+      "fields": {
+        "root": "any",
+        "content": "any",
+        "contentResult": "any",
+        "visible": "boolean"
+      },
+      "methods": {
+        "new": {
+          "params": {
+            "parent": "any",
+            "options": "PrettyUI.AnchoredTooltipOptions"
+          },
+          "returns": [
+            "PrettyUI.AnchoredTooltip"
+          ]
+        },
+        "show": {
+          "static": true,
+          "params": {
+            "options": "PrettyUI.AnchoredTooltipOptions"
+          },
+          "returns": [
+            "PrettyUI.AnchoredTooltip|nil"
+          ]
+        },
+        "forNPC": {
+          "static": true,
+          "params": {
+            "npc": "any",
+            "options": "PrettyUI.AnchoredTooltipOptions?"
+          },
+          "returns": [
+            "PrettyUI.AnchoredTooltip|nil"
+          ]
+        },
+        "forLoc": {
+          "static": true,
+          "params": {
+            "loc": "any",
+            "options": "PrettyUI.AnchoredTooltipOptions?"
+          },
+          "returns": [
+            "PrettyUI.AnchoredTooltip|nil"
+          ]
+        },
+        "SetText": {
+          "params": {
+            "text": "string"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Update": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Show": {
+          "params": {},
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Hide": {
+          "params": {}
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    },
+    "Tooltip": {
+      "methods": {
+        "attach": {
+          "static": true,
+          "params": {
+            "target": "any",
+            "parent": "any",
+            "value": "string|PrettyUI.TooltipOptions|nil"
+          },
+          "returns": [
+            "PrettyUI.Tooltip|nil"
+          ]
+        },
+        "Show": {
+          "params": {}
+        },
+        "Hide": {
+          "params": {}
+        },
+        "SetText": {
+          "params": {
+            "text": "string"
+          },
+          "returns": [
+            "boolean"
+          ]
+        },
+        "Destroy": {
+          "params": {}
+        }
+      }
+    }
+  }
+}

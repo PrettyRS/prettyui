@@ -1,3 +1,4 @@
+local Components = require("src/core/components")
 local clamp = require("src/core/math").clamp
 local Sprites = require("src/core/sprites")
 local ContentMethods = require("src/core/content_methods")
@@ -11,6 +12,7 @@ local DragFeedback = require("src/core/drag_feedback")
 local DragBounds = require("src/core/drag_bounds")
 local Cursor = require("src/core/cursor")
 local Resize = require("src/core/resize")
+local NativeInterfaceSettings = require("src/core/native_interface_settings")
 
 local Window = {}
 Window.__index = Window
@@ -27,13 +29,13 @@ local MIN_WIDTH = 220
 local MIN_HEIGHT = 140
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = false
     return component
 end
 
-function Window.new(parent, options)
+local function buildWindow(parent, options)
     options = options or {}
 
     local self = setmetatable({}, Window)
@@ -41,11 +43,16 @@ function Window.new(parent, options)
     self.interfaceID = parent.interfaceID
     self.title = options.title
     self.onClose = options.onClose
+    self.hideCloseButton = options.hideCloseButton == true
+    self.onPositionChange = options.onPositionChange
     self.destroyOnClose = options.destroyOnClose == true
     self.minWidth = options.minWidth or MIN_WIDTH
     self.minHeight = options.minHeight or MIN_HEIGHT
     self.maxWidth = options.maxWidth
     self.maxHeight = options.maxHeight
+    self.useNativeTransparency = options.useNativeTransparency == true
+    self.respectInterfaceLock = options.respectInterfaceLock ~= false
+    self.locked = false
     self.overlays = {}
     self.rowBackgroundColours = options.rowBackgroundColours
         or options.rowBackgroundColors
@@ -53,7 +60,7 @@ function Window.new(parent, options)
     self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
     self.rowBackgrounds = {}
 
-    self.root = ui.Layer.new(parent)
+    self.root = Components.newContent(parent, options)
     self.root.clickthrough = false
     self.root:SetPos(
         options.x or 80,
@@ -117,12 +124,24 @@ function Window.new(parent, options)
         self.titleCentre.isTiling = true
 
         self.titleCentreRight = sprite(self.root, Sprites.TITLEBAR_CENTRE_RIGHT)
-        self.titleCentreRight:SetPos(-TITLE_RIGHT_WIDTH - TITLE_INNER_WIDTH, 0, 1.0)
-        self.titleCentreRight:SetSize(TITLE_INNER_WIDTH, TITLE_HEIGHT)
 
-        self.titleRight = sprite(self.root, Sprites.TITLEBAR_RIGHT)
-        self.titleRight:SetPos(-TITLE_RIGHT_WIDTH, 0, 1.0)
-        self.titleRight:SetSize(TITLE_RIGHT_WIDTH, TITLE_HEIGHT)
+        if self.hideCloseButton then
+            self.titleCentreRight:SetPos(-TITLE_LEFT_WIDTH - 100, 0, 1.0)
+            self.titleCentreRight:SetSize(100, TITLE_HEIGHT)
+            self.titleCentreRight.isTiling = true
+
+            self.titleRight = sprite(self.root, Sprites.TITLEBAR_LEFT)
+            self.titleRight.isFlippedHorizontally = true
+            self.titleRight:SetPos(-TITLE_LEFT_WIDTH, 0, 1.0)
+            self.titleRight:SetSize(TITLE_LEFT_WIDTH, TITLE_HEIGHT)
+        else
+            self.titleCentreRight:SetPos(-(TITLE_INNER_WIDTH + TITLE_RIGHT_WIDTH), 0, 1.0)
+            self.titleCentreRight:SetSize(TITLE_INNER_WIDTH, TITLE_HEIGHT)
+
+            self.titleRight = sprite(self.root, Sprites.TITLEBAR_RIGHT)
+            self.titleRight:SetPos(-TITLE_RIGHT_WIDTH, 0, 1.0)
+            self.titleRight:SetSize(TITLE_RIGHT_WIDTH, TITLE_HEIGHT)
+        end
 
         self.titleLeft:MoveToFront()
         self.titleRight:MoveToFront()
@@ -138,7 +157,9 @@ function Window.new(parent, options)
             alignHorizontal = ui.AlignMode.CENTRE,
         })
 
-        self.titleDrag = ui.Layer.new(self.parent)
+        self.titleDrag = Components.new(ui.Layer, self.parent, {
+            _categoryPolicy = Components.policyOf(self.root),
+        })
         self.titleDrag:MoveToFront()
         self.titleDrag:SetPos(self.root.x, self.root.y)
         self.titleDrag:SetSize(self.root.width - CLOSE_SIZE - 14, TITLE_HEIGHT)
@@ -148,9 +169,10 @@ function Window.new(parent, options)
         local dragStart = nil
         local captureExpanded = false
 
-        local function stopDrag()
+        local function stopDrag(notify)
+            local drag = dragStart
             dragStart = nil
-            if self.resize then self.resize:SetEnabled(true) end
+            if self.resize then self.resize:SetEnabled(not self.locked) end
             captureExpanded = false
             if self.dragFeedback then
                 self.dragFeedback:Destroy()
@@ -162,10 +184,16 @@ function Window.new(parent, options)
                 self.titleDrag:SetPos(self.root.x, self.root.y)
                 self.titleDrag:SetSize(self.root.width - CLOSE_SIZE - 14, TITLE_HEIGHT)
                 self:_SyncOverlays(false)
+                if notify == true and drag and drag.positionChanged and self.onPositionChange then
+                    self.onPositionChange(self, self.root.x, self.root.y)
+                end
             end
             return false
         end
         self._stopDrag = stopDrag
+        local function finishDrag()
+            return stopDrag(true)
+        end
 
         local function moveDrag(component, x, y)
             local mouse = InterfaceMouse.GetPosition(component, x, y)
@@ -188,6 +216,7 @@ function Window.new(parent, options)
                 if self.root.x ~= nextX or self.root.y ~= nextY then
                     self.root:SetPos(nextX, nextY)
                     self.dragBounds:RememberPosition()
+                    dragStart.positionChanged = true
                 end
                 self.dragFeedback:Update()
             end
@@ -195,6 +224,12 @@ function Window.new(parent, options)
         end
 
         self.titleDrag:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
+            -- A locked interface still raises the window on a title click; it just stays put.
+            if self.locked then
+                self.root:MoveToFront()
+                self.titleDrag:MoveToFront()
+                return false
+            end
             if self.resize then self.resize:SetEnabled(false) end
             InterfaceMouse.BeginScreenCapture(component, x, y)
             local mouse = InterfaceMouse.GetPosition(component, x, y)
@@ -209,8 +244,8 @@ function Window.new(parent, options)
             return false
         end)
         self.titleDrag:Subscribe(ui.Hook.ONHOLD, moveDrag)
-        self.titleDrag:Subscribe(ui.Hook.ONRELEASE, stopDrag)
-        self.titleDrag:Subscribe(ui.Hook.ONDRAGCOMPLETE, stopDrag)
+        self.titleDrag:Subscribe(ui.Hook.ONRELEASE, finishDrag)
+        self.titleDrag:Subscribe(ui.Hook.ONDRAGCOMPLETE, finishDrag)
         self.dragBounds = DragBounds.new(self.parent, self.root, function(dx, dy)
             if dragStart then
                 dragStart.windowX = dragStart.windowX + dx
@@ -241,19 +276,28 @@ function Window.new(parent, options)
         self.topRight.isFlippedVertical = true
     end
 
-    self.closeButton = sprite(self.root, Sprites.CLOSE)
-    self.closeButton:SetPos(-CLOSE_SIZE - CLOSE_RIGHT, 7, 1.0)
-    self.closeButton:SetSize(CLOSE_SIZE, CLOSE_SIZE)
-    self.closeButton:Subscribe(ui.Hook.ONMOUSEOVER, function()
-        self.closeButton.spriteID = Sprites.CLOSE_ACTIVE
-    end)
-    self.closeButton:Subscribe(ui.Hook.ONMOUSELEAVE, function()
-        self.closeButton.spriteID = Sprites.CLOSE
-    end)
-    self.closeButton:Subscribe(ui.Hook.ONCLICK, function()
-        self:Close()
-        return false
-    end)
+    if not self.hideCloseButton then
+        self.closeButton = ui.Layer.new(self.root)
+        self.closeButton.clickthrough = false
+        self.closeButton:SetPos(-CLOSE_SIZE - CLOSE_RIGHT, 7, 1.0)
+        self.closeButton:SetSize(CLOSE_SIZE, CLOSE_SIZE)
+        self.closeSprite = sprite(self.closeButton, Sprites.CLOSE)
+        self.closeSprite.clickthrough = true
+        self.closeSprite:SetPos(1, 1)
+        self.closeSprite:SetSize(CLOSE_SIZE - 2, CLOSE_SIZE - 2)
+        self.closeButton:Subscribe(ui.Hook.ONMOUSEOVER, function()
+            self.closeSprite.spriteID = Sprites.CLOSE_ACTIVE
+        end)
+        self.closeButton:Subscribe(ui.Hook.ONMOUSELEAVE, function()
+            self.closeSprite.spriteID = Sprites.CLOSE
+        end)
+        self.closeButton:Subscribe(ui.Hook.ONCLICK, function()
+            self:Close()
+            return false
+        end)
+    end
+
+    
 
     local parentTooltipContext = Tooltip.getContext(parent)
     local tooltipParent = parentTooltipContext and parentTooltipContext.parent or parent
@@ -280,7 +324,11 @@ function Window.new(parent, options)
             return rootX + (scrollRoot.x or 0), rootY + (scrollRoot.y or 0)
         end,
     })
-    self.closeButton:MoveToFront()
+
+    if self.closeButton then
+        self.closeButton:MoveToFront()
+    end
+
     self.tooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
         local rootX, rootY = self._scroll:_AbsolutePosition()
         return rootX + (target.x or 0),
@@ -313,8 +361,62 @@ function Window.new(parent, options)
             end,
         })
     end
+    self:_WatchNativeTransparency()
+    self:_WatchNativeLock()
 
     return self
+end
+
+function Window:_WatchNativeTransparency()
+    if self.useNativeTransparency then
+        NativeInterfaceSettings.watchTransparency(self, function(transparency)
+            self:_SetBackgroundTransparency(transparency)
+        end)
+    else
+        NativeInterfaceSettings.unwatchTransparency(self)
+    end
+end
+
+function Window:_SetBackgroundTransparency(transparency)
+    if ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    self.background.alpha = 1 - transparency
+end
+
+function Window:_WatchNativeLock()
+    if self.respectInterfaceLock then
+        NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
+    else
+        NativeInterfaceSettings.unwatchLock(self)
+    end
+end
+
+function Window:_SetLocked(locked)
+    if self.locked == locked or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    self.locked = locked
+    if locked then
+        if self._stopDrag then self._stopDrag() end
+        if self.resize then self.resize:Cancel() end
+    end
+    if self.resize then self.resize:SetEnabled(not locked) end
+    if self.titleDrag then Cursor.apply(self.titleDrag, config.Cursor.TOPLEVEL_V2_MOVE, not locked) end
+end
+
+function Window:SetUseNativeTransparency(enabled)
+    self.useNativeTransparency = enabled == true
+    self:_WatchNativeTransparency()
+    if not self.useNativeTransparency then self:_SetBackgroundTransparency(0) end
+end
+
+function Window:SetRespectInterfaceLock(enabled)
+    self.respectInterfaceLock = enabled == true
+    self:_WatchNativeLock()
+    if not self.respectInterfaceLock then self:_SetLocked(false) end
+end
+
+function Window.new(parent, options)
+    return Components.withBatch(parent, function()
+        return buildWindow(parent, options)
+    end)
 end
 
 function Window:SetSize(width, height)
@@ -413,6 +515,8 @@ function Window:Close()
 end
 
 function Window:Destroy()
+    NativeInterfaceSettings.unwatchTransparency(self)
+    NativeInterfaceSettings.unwatchLock(self)
     if self.resize then
         self.resize:Destroy()
         self.resize = nil

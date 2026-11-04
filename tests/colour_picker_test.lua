@@ -8,7 +8,7 @@ end
 
 local mousePosition
 
-local function component(parent, kind)
+local function component(parent, kind, categoryID, dynamicID)
     local result = {
         parent = parent,
         kind = kind,
@@ -40,6 +40,9 @@ local function component(parent, kind)
                 local origin = self.parent and self.parent.xyGlobal or { x = 0, y = 0 }
                 return { x = origin.x + self.x, y = origin.y + self.y }
             end
+            if key == "visibleGlobal" then
+                return not self.hidden and (not self.parent or self.parent.visibleGlobal)
+            end
         end,
     })
     function result:Destroy() self.destroyed = true end
@@ -47,11 +50,11 @@ local function component(parent, kind)
         parent.children = parent.children or {}
         table.insert(parent.children, result)
     end
-    return Interfaces.component(result, parent)
+    return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
-local function canvas(parent)
-    local result = component(parent, "canvas")
+local function canvas(parent, categoryID, dynamicID)
+    local result = component(parent, "canvas", categoryID, dynamicID)
     result.rectangles = {}
     function result:Clear()
         self.rectangles = {}
@@ -79,7 +82,8 @@ local function canvas(parent)
 end
 
 local function simpleButton(parent, options, action)
-    local root = component(parent, "button")
+    local root = require("src/core/components").new(ui.Layer, parent, options)
+    root.kind = "button"
     root:SetPos(options and options.x or 0, options and options.y or 0)
     root:SetSize(options and options.width or 24, options and options.height or 24)
     local content = component(root, "button-content")
@@ -94,9 +98,30 @@ local function simpleButton(parent, options, action)
 end
 
 ui = {
-    Rectangle = { new = function(parent) return component(parent, "rectangle") end },
+    Rectangle = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "rectangle", categoryID, dynamicID)
+    end },
     Canvas = { new = canvas },
-    Layer = { new = function(parent) return component(parent, "layer") end },
+    Layer = { new = function(parent, categoryID, dynamicID)
+        return component(parent, "layer", categoryID, dynamicID)
+    end },
+    InputField = { new = function(parent, categoryID, dynamicID)
+        local field = component(parent, "input", categoryID, dynamicID)
+        field.text = {}
+        field.containerSprite = {}
+        function field:Setup(_, _, maxLength) self.maxLength = maxLength end
+        return field
+    end },
+    Margin = { new = function(left, top, right, bottom)
+        return { left = left, top = top, right = right, bottom = bottom }
+    end },
+    AlignMode = { CENTRE = 1, TOPLEFT = 2 },
+    TextContentVisibilityMode = { VISIBLE = 1 },
+    InputFieldFilterMode = { NONE = 1 },
+    InputFieldKeyHandlingMode = { DEFAULT = 1 },
+    InputFieldActionResult = {
+        CONTENT_CHANGE = 1, SUBMIT = 2, SUBMIT_ON_ESCAPE = 3, SUBMIT_ON_FOCUS_LOSS = 4,
+    },
     Hook = {
         ONCLICK = 1,
         ONHOLD = 2,
@@ -105,8 +130,24 @@ ui = {
         ONDRAGCOMPLETE = 5,
         ONMOUSEOVER = 6,
         ONMOUSELEAVE = 7,
+        ONCONTENTCHANGED = 8,
     },
 }
+
+id = {
+    StyleSheet = { INPUT_DEFAULT = 1 },
+    Font = { MUSEO_SANS_15PT_REGULAR = 1 },
+}
+config = { Font = { MUSEO_SANS_15PT_REGULAR = {
+    GetStringWidth = function(_, text)
+        local width = 0
+        for character in text:gmatch(".") do
+            width = width + (character == "1" and 5 or 8)
+        end
+        return width
+    end,
+} } }
+package.loaded["src/core/wheel"] = { bind = function() end }
 
 package.loaded["src/fancy_button"] = {
     getSize = function(_, options) return options.width end,
@@ -134,10 +175,12 @@ package.loaded["src/core/sprites"] = { CLOSE = 1 }
 local contexts = {}
 package.loaded["src/tooltip"] = {
     getContext = function(parent) return contexts[parent] end,
+    bind = function() end,
 }
 package.loaded["src/window"] = {
     new = function(parent, options)
-        local root = component(parent, "window")
+        local root = require("src/core/components").new(ui.Layer, parent, options)
+        root.kind = "window"
         root:SetPos(options.x, options.y)
         root:SetSize(options.width, options.height)
         local content = component(root, "window-content")
@@ -149,14 +192,20 @@ package.loaded["src/window"] = {
             AddSimpleButton = function(_, _, _, buttonOptions)
                 return simpleButton(content, buttonOptions)
             end,
+            AddTextField = function(_, fieldOptions)
+                return require("src/text_field").new(content, fieldOptions)
+            end,
             AddFancyButton = function(_, _, action, buttonOptions)
                 local button = simpleButton(content, buttonOptions)
                 button.action = action
                 return button
             end,
             Show = function() end,
-            Close = function() end,
-            Destroy = function() end,
+            Close = function(self)
+                if options.onClose then options.onClose() end
+                self:Destroy()
+            end,
+            Destroy = function(self) self.root:Destroy() end,
         }
         return window
     end,
@@ -321,5 +370,185 @@ local oversized = ColourPicker.new(smallScreen, {})
 oversized:Open()
 expect(oversized.pickerWindow.root.x, 0, "oversized popup keeps its left edge reachable")
 expect(oversized.pickerWindow.root.y, 0, "oversized popup keeps its title bar reachable")
+
+local optionOwner = component(screen, "picker-option-owner")
+local optedIn = ColourPicker.new(optionOwner, {
+    categoryID = "auto", windowParent = screen,
+})
+expect(optedIn:Open(), true, "an opted-in picker still opens its detached window")
+expect(optedIn.pickerWindow.root.parent, screen, "picker popup still uses its physical overlay host")
+expect(optedIn.pickerWindow.root.categoryID, 0, "popup root inherits its static native host")
+local Components = require("src/core/components")
+expect(Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0, true,
+    "detached popup descendants follow the picker's managed policy")
+optedIn:Close()
+expect(optedIn:Open(), true, "an opted-in picker reopens after closing")
+expect(Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0, true,
+    "a reopened popup retains its owner's auto mode")
+optedIn:Close()
+
+local autoScreenHost = Components.new(ui.Layer, screen, { categoryID = "auto" })
+local legacyPicker = ColourPicker.new(optionOwner, { windowParent = autoScreenHost })
+expect(legacyPicker:Open(), true, "a legacy picker opens on the shared physical host")
+expect(Components.new(ui.Layer, legacyPicker.pickerWindow.content).categoryID, 0,
+    "legacy popup descendants do not inherit an unrelated auto picker policy")
+legacyPicker:Close()
+
+local valueNotifications = 0
+local raw = ColourPicker.new(screen, {
+    value = 0x33669980,
+    onChange = function() valueNotifications = valueNotifications + 1 end,
+})
+local function beginValue(picker)
+    local root = picker.valueField.root
+    root.subscriptions[ui.Hook.ONCLICK](root)
+end
+local function editValue(picker, text, reason)
+    local root = picker.valueField.root
+    root.content = text
+    root.subscriptions[ui.Hook.ONCONTENTCHANGED](
+        root, reason or ui.InputFieldActionResult.CONTENT_CHANGE, text)
+end
+
+local function expectCaptionAligned(picker)
+    local field = picker.valueField.root
+    local preview = picker.previewButton.root
+    local textWidth = config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(
+        picker.valueField:GetText(), false)
+    local centre = preview.x + preview.width / 2
+    expect(math.abs(field.x + field.contentMargin.left + textWidth / 2 - centre) <= 0.5,
+        true, "raw value text shares the preview centre with proportional glyph widths")
+    expect(math.abs(picker.valueUnderline.x + picker.valueUnderline.width / 2 - centre) <= 0.5,
+        true, "the hover underline shares the preview centre")
+    expect(picker.valueUnderline.width, textWidth, "the hover underline fits the text")
+    expect(field.y - preview.y - preview.height,
+        picker.acceptButton.root.y - field.y - field.height,
+        "the value field has balanced gaps above and below")
+end
+
+raw:Open()
+expect(raw.valueField:GetText(), "#33669980", "the caption shows the selected RGBA hex code")
+expect(raw.valueField.root.containerSprite.rgba, 0, "the idle caption has no input chrome")
+expect(raw.valueUnderline.hidden, true, "the idle caption has no underline")
+local caption = raw.valueField.root
+expectCaptionAligned(raw)
+caption.subscriptions[ui.Hook.ONMOUSEOVER]()
+expect(raw.valueUnderline.hidden, false, "hover underlines the editable caption")
+caption.subscriptions[ui.Hook.ONMOUSELEAVE]()
+expect(raw.valueUnderline.hidden, true, "leaving hides the underline")
+beginValue(raw)
+expect(raw.valueEditing, true, "clicking the caption begins editing")
+expect(caption.containerSprite.rgba, 0xFFFFFFFF, "editing reveals the input chrome")
+editValue(raw, "#aBcDeF40")
+expect(raw.preview.rgba, 0xABCDEF40, "mixed-case hex edits update the preview")
+expect(raw.pendingAlpha, 0x40, "packed-value edits synchronize opacity")
+expect(raw.alphaCanvas, nil, "packed opacity also works without the optional alpha slider")
+expect(raw.valueField:GetText(), "#aBcDeF40", "typing is not rewritten")
+expect(raw:GetValue(), 0x33669980, "preview edits do not commit")
+expect(valueNotifications, 0, "preview edits do not notify consumers")
+editValue(raw, "#aBcDeF40", ui.InputFieldActionResult.SUBMIT)
+expect(raw.valueEditing, false, "Enter returns to caption mode")
+expect(raw.valueField:GetText(), "#ABCDEF40", "finishing uses uppercase RGBA hex notation")
+expect(caption.containerSprite.rgba, 0, "finishing hides the input chrome")
+expect(raw:GetValue(), 0x33669980, "Enter does not accept the colour")
+-- Native input may retain keyboard focus after Enter.
+editValue(raw, "112233")
+expect(raw.valueEditing, true, "typing after Enter resumes editing")
+expect(raw.preview.rgba, 0x11223340, "six-digit RGB preserves the pending alpha")
+expectCaptionAligned(raw)
+editValue(raw, "112233", ui.InputFieldActionResult.SUBMIT_ON_FOCUS_LOSS)
+expect(raw.valueEditing, false, "focus loss returns to caption mode")
+expect(raw.valueField:GetText(), "#11223340", "focus loss includes the preserved alpha byte")
+beginValue(raw)
+editValue(raw, "#99887766")
+editValue(raw, "#99887766", ui.InputFieldActionResult.SUBMIT_ON_ESCAPE)
+expect(raw.pendingColour, 0x11223340, "Escape restores the value from before this edit")
+expect(raw.valueField:GetText(), "#11223340", "Escape restores the caption")
+raw:Close()
+expect(raw:GetValue(), 0x33669980, "closing cancels all provisional edits")
+raw:Open()
+expect(raw.valueField:GetText(), "#33669980", "reopening discards cancelled edits")
+beginValue(raw)
+editValue(raw, "#11223380")
+raw.acceptButton.action()
+expect(raw:GetValue(), 0x11223380, "Accept commits the exact packed value")
+expect(valueNotifications, 1, "Accept notifies exactly once")
+expect(raw.pickerWindow, nil, "Accept closes the picker")
+
+raw:Open()
+beginValue(raw)
+for _, invalid in ipairs({
+    "", "#", "#12345", "1122334", "GG112233", "0x112233", "#100000000",
+}) do
+    editValue(raw, invalid)
+    expect(raw.acceptButton.disabled, true, "incomplete or invalid hex disables Accept")
+    expect(raw.preview.rgba, 0x11223380, "invalid edits retain the last valid preview")
+    raw.acceptButton.action()
+    expect(raw.pickerWindow ~= nil, true, "invalid input cannot confirm a stale colour")
+end
+editValue(raw, "", ui.InputFieldActionResult.SUBMIT_ON_FOCUS_LOSS)
+expect(raw.valueEditing, false, "focus loss exits incomplete input")
+expect(raw.valueField:GetText(), "#11223380", "incomplete input restores the last valid value")
+expect(raw.acceptButton.disabled, false, "discarding incomplete input restores Accept")
+beginValue(raw)
+editValue(raw, "00000000")
+expect(raw.preview.rgba, 0, "fully transparent black remains a valid colour")
+expect(raw.acceptButton.disabled, false, "valid input restores Accept")
+raw.acceptButton.action()
+expect(raw:GetValue(), 0, "Accept preserves all zero RGBA bytes")
+
+raw:Open()
+beginValue(raw)
+editValue(raw, "#FFFFFFFF")
+raw:SetValue(0x10203040, false)
+expect(raw.valueField:GetText(), "#10203040", "external changes resync the caption")
+expect(raw.preview.rgba, 0x10203040, "external changes resync the preview")
+expect(raw.valueEditing, false, "external changes end the previous edit")
+raw.valueField.root.subscriptions[ui.Hook.ONCONTENTCHANGED](
+    raw.valueField.root, ui.InputFieldActionResult.CONTENT_CHANGE, "#FFFFFFFF")
+expect(raw.pendingColour, 0x10203040, "late native notifications cannot restore stale text")
+expect(raw.valueEditing, false, "late native notifications cannot reopen editing")
+beginValue(raw)
+editValue(raw, "")
+raw.hueHit.subscriptions[ui.Hook.ONCLICK](raw.hueHit, 12, 0)
+expect(raw.valueEditing, false, "dragging the picker returns to caption mode")
+expect(raw.valueField:GetText(), string.format("#%08X", raw.pendingColour),
+    "dragging keeps the caption synchronized")
+expect(raw.acceptButton.disabled, false, "dragging replaces incomplete value input")
+raw.hueHit.subscriptions[ui.Hook.ONRELEASE](raw.hueHit, 12, 0)
+raw:Close()
+raw:SetDisabled(true)
+expect(raw:Open(), false, "disabled swatches cannot open the picker")
+raw:SetDisabled(false)
+raw:Open()
+beginValue(raw)
+local destroyedWindow = raw.pickerWindow
+raw:Destroy()
+expect(destroyedWindow.root.destroyed, true, "destroying the control removes its popup")
+expect(raw.valueField, nil, "destroying the control releases its editor")
+
+local alphaValue = ColourPicker.new(screen, { value = 0x33669980, alphaSlider = true })
+alphaValue:Open()
+beginValue(alphaValue)
+editValue(alphaValue, "#FF000040")
+expect(alphaValue.pendingHue, 0, "packed-value edits synchronize hue")
+expect(alphaValue.fieldMarkerVertical.x, 143, "packed-value edits synchronize value")
+expect(alphaValue.fieldMarkerHorizontal.y, 12, "packed-value edits synchronize saturation")
+expect(alphaValue.alphaMarker.x, 47, "packed-value edits synchronize the alpha marker")
+alphaValue.alphaHit.subscriptions[ui.Hook.ONCLICK](alphaValue.alphaHit, 127, 12)
+expect(alphaValue.valueField:GetText(), "#FF0000FF", "the alpha slider updates the caption")
+alphaValue.alphaHit.subscriptions[ui.Hook.ONRELEASE](alphaValue.alphaHit, 127, 12)
+alphaValue:Destroy()
+
+local upperBound = ColourPicker.new(screen, { value = 0xFFFFFFFF })
+upperBound:Open()
+expect(upperBound.valueField:GetText(), "#FFFFFFFF", "the largest RGBA hex code fits the caption")
+beginValue(upperBound)
+editValue(upperBound, "#FFFFFFFE")
+expect(upperBound.pendingColour, 0xFFFFFFFE, "large packed values retain their low alpha byte")
+editValue(upperBound, "#FFFFFFFF")
+upperBound.acceptButton.action()
+expect(upperBound:GetValue(), 0xFFFFFFFF, "the maximum unsigned packed value can be accepted")
+upperBound:Destroy()
 
 print("colour_picker_test: ok")

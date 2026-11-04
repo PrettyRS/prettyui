@@ -4,7 +4,7 @@ local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 
-local function component(parent)
+local function component(parent, categoryID, dynamicID)
     local value = {}
     function value:SetPos(x, y, xAnchor, yAnchor)
         self.x, self.y, self.xAnchor, self.yAnchor = x, y, xAnchor, yAnchor
@@ -19,7 +19,7 @@ local function component(parent)
     function value:MoveToBack() end
     function value:MoveToFront() end
     function value:Destroy() self.destroyed = true end
-    return Interfaces.component(value, parent)
+    return Interfaces.component(value, parent, categoryID, dynamicID)
 end
 
 ui = {
@@ -90,4 +90,18 @@ local paintedDivider = host:AddDivider({ rowBackground = true })
 host:RefreshRowBackgrounds()
 expect(#host.rowBackgrounds, 1, "explicitly included divider receives a background")
 paintedDivider:Destroy()
+local Components = require("src/core/components")
+local Slider = require("src/slider")
+local nativeHost = ui.Layer.new(host.content)
+local autoSlider = Slider.new(nativeHost, { categoryID = "auto" })
+expect(autoSlider.root.categoryID > 0, true, "opted-in slider root uses managed IDs")
+expect(autoSlider.thumbDrag.categoryID > 0, true,
+    "slider thumb drag inherits the opted-in slider policy")
+autoSlider:Destroy()
+local autoHost = Components.new(ui.Layer, host.content, { categoryID = "auto" })
+local legacySlider = Slider.new(autoHost, { _categoryPolicy = "legacy" })
+expect(legacySlider.thumbDrag.categoryID, autoHost.categoryID,
+    "legacy thumb drag overrides the physical host's auto policy")
+legacySlider:Destroy()
+
 print("divider_slider_background_test: ok")

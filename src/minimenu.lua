@@ -1,6 +1,7 @@
 local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
+local Components = require("src/core/components")
 
 local PrettyMiniMenu = {}
 
@@ -33,7 +34,7 @@ local parentsByEntry = {}
 local parentsByText = {}
 
 local function sprite(parent, spriteID)
-    local component = ui.Sprite.new(parent)
+    local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
     component.clickthrough = true
     return component
@@ -76,7 +77,7 @@ end
 
 local function frame(root, width, height)
     local sprites = Sprites.MINIMENU
-    local background = ui.Rectangle.new(root)
+    local background = Components.new(ui.Rectangle, root)
     background:SetPos(BORDER_SIZE, TITLEBAR_HEIGHT)
     background:SetSize(width - BORDER_SIZE * 2, height - TITLEBAR_HEIGHT - BORDER_SIZE)
     background.fill = true
@@ -304,14 +305,16 @@ local function mountOverlay(menuOverlay, state)
     end
 
     menuOverlay.interfaceID = rootParent.interfaceID
-    local root = ui.Layer.new(rootParent)
+    local root = Components.new(ui.Layer, rootParent, {
+        categoryID = registration.categoryID,
+    })
     menuOverlay.root = root
     root:SetPos(rootX, rootY)
     root:SetSize(width, height)
     root.clickthrough = true
     local frameEdges = frame(root, width, height)
 
-    local title = ui.Text.new(root)
+    local title = Components.new(ui.Text, root)
     title:SetPos(TEXT_INSET, 0)
     title:SetSize(width - TEXT_INSET * 2, TITLEBAR_HEIGHT)
     title.content = tostring(registration.title or "Choose Option")
@@ -324,19 +327,19 @@ local function mountOverlay(menuOverlay, state)
     title.clickthrough = true
 
     for rowIndex = 1, menuOverlay.visibleRows do
-        local rowRoot = ui.Layer.new(root)
+        local rowRoot = Components.new(ui.Layer, root)
         rowRoot:SetPos(0, HEADER_HEIGHT + (rowIndex - 1) * ITEM_HEIGHT)
         rowRoot:SetSize(width, ITEM_HEIGHT)
         rowRoot.clickthrough = false
 
-        local background = ui.Rectangle.new(rowRoot)
+        local background = Components.new(ui.Rectangle, rowRoot)
         background:SetSize(0, 0, 1.0, 1.0)
         background.fill = true
         background.rgba = HOVER_COLOUR
         background.hidden = true
         background.clickthrough = true
 
-        local label = ui.Text.new(rowRoot)
+        local label = Components.new(ui.Text, rowRoot)
         label:SetPos(TEXT_INSET, 0)
         label:SetSize(-TEXT_INSET * 2, ITEM_HEIGHT, 1.0)
         label.font = MENU_FONT
@@ -601,24 +604,32 @@ local function moveEntry(miniMenu, currentIndex, targetIndex)
     end
 end
 
+local function findEntry(entries, key)
+    local count = #entries
+    if textKey(entryText(entries[1])) == key then return entries[1], 1 end
+    if textKey(entryText(entries[count])) == key then return entries[count], count end
+    for index = 2, count - 1 do
+        if textKey(entryText(entries[index])) == key then return entries[index], index end
+    end
+end
+
+-- Read once before and after Add, and find the parent by text
 local function addParentEntry(miniMenu, label, action)
     local key = textKey(label)
     assert(parentsByText[key] == nil,
         "MiniMenu submenu labels must be unique within the current menu")
-    local existing = {}
-    for _, entry in ipairs(miniMenu.entries) do
+    local entries = miniMenu.entries
+    for _, entry in ipairs(entries) do
         assert(textKey(entryText(entry)) ~= key,
             "MiniMenu submenu label conflicts with an existing menu entry")
-        existing[entry] = true
     end
-    local previousCount = #miniMenu.entries
+    local entryCount = #entries + 1
     miniMenu:Add(label, action)
-    assert(#miniMenu.entries == previousCount + 1,
-        "MiniMenu:Add did not add the submenu parent entry")
-    for index, entry in ipairs(miniMenu.entries) do
-        if not existing[entry] then return entry, index end
-    end
-    error("MiniMenu:Add did not expose the submenu parent entry")
+    entries = miniMenu.entries
+    assert(#entries == entryCount, "MiniMenu:Add did not add the submenu parent entry")
+    local entry, index = findEntry(entries, key)
+    if entry == nil then error("MiniMenu:Add did not expose the submenu parent entry") end
+    return entry, index, entryCount
 end
 
 function PrettyMiniMenu.AddSubmenu(miniMenu, label, children, options)
@@ -643,17 +654,18 @@ function PrettyMiniMenu.AddSubmenu(miniMenu, label, children, options)
     validatePosition(options.position)
     local parentLabel = label
     if options.arrow ~= false then parentLabel = parentLabel .. " <col=ffffff><gt></col>" end
-    local entry, entryIndex = addParentEntry(
+    local entry, entryIndex, entryCount = addParentEntry(
         miniMenu,
         parentLabel,
         options.parentAction or NOOP)
     moveEntry(
         miniMenu,
         entryIndex,
-        targetEntryIndex(options.position, #miniMenu.entries))
+        targetEntryIndex(options.position, entryCount))
     local registration = {
         children = children,
         title = options.title,
+        categoryID = options.categoryID,
     }
     parentsByEntry[entry] = registration
     parentsByText[textKey(parentLabel)] = registration

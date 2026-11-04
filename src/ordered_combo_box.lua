@@ -3,6 +3,7 @@ local Palette = require("src/core/control_palette")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local clamp = require("src/core/math").clamp
+local Components = require("src/core/components")
 
 local OrderedComboBox = {}
 OrderedComboBox.__index = OrderedComboBox
@@ -14,6 +15,15 @@ local DEFAULT_MAX_VISIBLE_ENTRIES = 8
 local DEFAULT_TEXT_COLOUR = Palette.TEXT
 local BUTTON_WIDTH = 24
 local CONTENT_TOP_INSET = 3
+
+local function anchorVisible(root)
+    if root.visibleGlobal == false then return false end
+    while root do
+        if root.hidden == true then return false end
+        root = root.parent
+    end
+    return true
+end
 
 local function entryParts(entry, fallbackID)
     if type(entry) == "table" then
@@ -56,14 +66,15 @@ local function findOwnerWindow(context)
     end
 end
 
-function OrderedComboBox.new(parent, options)
+local function buildOrderedComboBox(parent, options, overlayParent, policy)
     options = options or {}
     local self = setmetatable({}, OrderedComboBox)
     self.parent = parent
     self.context = Tooltip.getContext(parent)
-    self.overlayParent = options.overlayParent or (self.context and self.context.parent) or parent
+    self.overlayParent = overlayParent
     self.ownerWindow = findOwnerWindow(self.context)
     self.onChange = options.onChange
+    self._scrollController = options._scrollController
     self.disabled = options.disabled == true
     self.open = false
     self.entryHeight = options.entryHeight or DEFAULT_ENTRY_HEIGHT
@@ -75,7 +86,7 @@ function OrderedComboBox.new(parent, options)
     self._pendingInputContents = {}
 
     self.interfaceID = parent.interfaceID
-    self.root = ui.Layer.new(parent)
+    self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(
         options.width or DEFAULT_WIDTH,
@@ -86,12 +97,12 @@ function OrderedComboBox.new(parent, options)
     Wheel.bind(self.root, options)
 
     -- Keep the native frame and dropdown-button artwork as the visual shell.
-    self.shell = ui.ComboField.new(self.root)
+    self.shell = Components.new(ui.ComboField, self.root)
     self.shell.stylesheetID = options.stylesheetID or id.StyleSheet.COMBO_DEFAULT
     self.shell:SetSize(0, 0, 1.0, 1.0)
     self.shell.clickthrough = true
 
-    self.input = ui.InputField.new(self.root)
+    self.input = Components.new(ui.InputField, self.root)
     self.input.stylesheetID = options.inputStylesheetID or id.StyleSheet.INPUT_DEFAULT
     self.input:SetSize(-BUTTON_WIDTH, 0, 1.0, 1.0)
     self.input:Setup(
@@ -114,7 +125,7 @@ function OrderedComboBox.new(parent, options)
         or Palette.SELECTED
     self.input.containerSprite.alpha = 0
 
-    self.button = ui.Layer.new(self.root)
+    self.button = Components.new(ui.Layer, self.root)
     self.button:SetPos(-BUTTON_WIDTH, 0, 1.0, 0)
     self.button:SetSize(BUTTON_WIDTH, 0, 0, 1.0)
     self.button.clickthrough = false
@@ -122,6 +133,7 @@ function OrderedComboBox.new(parent, options)
     self.button:MoveToFront()
 
     self.dropdown = List.new(self.overlayParent, {
+        _categoryPolicy = policy,
         width = options.width or DEFAULT_WIDTH,
         height = self.entryHeight + 2,
         entryHeight = self.entryHeight,
@@ -186,11 +198,27 @@ function OrderedComboBox.new(parent, options)
     if self.ownerWindow then
         self.ownerWindow:_RegisterOverlay(
             self.dropdown.root,
-            function() return self.open end,
-            function() self:_LayoutDropdown() end
+            function() return self.open and not self._clipped and anchorVisible(self.root) end,
+            function() if self.open then self:_LayoutDropdown() end end
         )
     end
+    if self._scrollController then self._scrollController:RegisterClipTarget(self) end
     return self
+end
+
+function OrderedComboBox.new(parent, options)
+    options = options or {}
+    local context = Tooltip.getContext(parent)
+    local overlayParent = options.overlayParent or (context and context.parent) or parent
+    local policy = Components.policyOf(parent, options)
+    if policy == "auto" then
+        Components.checkContentParent(overlayParent, { _categoryPolicy = policy })
+    end
+    return Components.withBatch(parent, function()
+        return Components.withBatch(overlayParent, function()
+            return buildOrderedComboBox(parent, options, overlayParent, policy)
+        end)
+    end)
 end
 
 function OrderedComboBox:_SetInput(value)
@@ -218,7 +246,6 @@ function OrderedComboBox:_LayoutDropdown()
     end
     self.dropdown.root:SetPos(x, dropdownY)
     self.dropdown:SetSize(width, height)
-    self.dropdown:SetScrollPosition(0)
 end
 
 function OrderedComboBox:_FirstVisibleEntry()
@@ -238,11 +265,12 @@ function OrderedComboBox:_Filter(value)
         and self.entriesByID[self.selectedID].visible then
         self.dropdown:SetSelected(self.selectedID, true, false)
     end
+    self.dropdown:SetScrollPosition(0)
     self:_LayoutDropdown()
 end
 
 function OrderedComboBox:_Open(clearInput)
-    if self.disabled then return end
+    if self.disabled or self._clipped or not anchorVisible(self.root) then return end
     self.open = true
     if clearInput ~= false then self:_SetInput("") end
     self:_Filter(self.input.content)
@@ -329,6 +357,11 @@ function OrderedComboBox:GetSelectedLabel()
     return self.selectedLabel
 end
 
+function OrderedComboBox:_SetContentClipped(clipped)
+    self._clipped = clipped or not anchorVisible(self.root)
+    if self._clipped and self.open then self:_Close() end
+end
+
 function OrderedComboBox:SetDisabled(disabled)
     self.disabled = disabled == true
     self.shell.enabled = not self.disabled
@@ -345,6 +378,10 @@ function OrderedComboBox:SetTooltip(value)
 end
 
 function OrderedComboBox:Destroy()
+    if self._scrollController then
+        self._scrollController:UnregisterClipTarget(self)
+        self._scrollController = nil
+    end
     Tooltip.unbind(self)
     if self.ownerWindow and self.dropdown and self.dropdown.root then
         self.ownerWindow:_UnregisterOverlay(self.dropdown.root)
