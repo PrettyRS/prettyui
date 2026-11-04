@@ -13,11 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-<<<<<<< HEAD
-  group: release-${{ github.event.release.tag_name || github.ref_name }}
-=======
   group: release-${{ github.event.pull_request.head.ref || github.event.release.tag_name || github.ref_name }}
->>>>>>> main
   cancel-in-progress: false
 
 jobs:
@@ -28,14 +24,6 @@ jobs:
       (github.event.pull_request.merged && startsWith(github.event.pull_request.head.ref, 'release/'))
     runs-on: ubuntu-latest
     env:
-<<<<<<< HEAD
-      RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
-      TARGET_BRANCH: ${{ github.event.release.target_commitish }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.release.tag_name || github.ref_name }}
-=======
       EVENT_NAME: ${{ github.event_name }}
       EVENT_TAG: ${{ github.event.release.tag_name || github.ref_name }}
       RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
@@ -44,7 +32,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha || github.event.release.tag_name || github.ref_name }}
->>>>>>> main
           fetch-depth: 0
 
       - name: Prepare release metadata
@@ -77,16 +64,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-<<<<<<< HEAD
-          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            flags=()
-            if [[ "${RELEASE_TAG#v}" == *-* ]]; then
-              flags+=(--prerelease)
-            fi
-            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes "${flags[@]}"
-          fi
-          gh release upload "$RELEASE_TAG" "PrettyUI-${RELEASE_TAG}.zip" "developer-assets/PrettyUI-luals-addon-${RELEASE_TAG}.zip" --clobber
-=======
           asset="PrettyUI-${RELEASE_TAG}.zip"
           python3 .github/scripts/package_release.py "$RELEASE_TAG" --output "$asset"
           flags=()
@@ -104,4 +81,3 @@ jobs:
             gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
           gh release upload "$RELEASE_TAG" "$asset" --clobber
->>>>>>> main
