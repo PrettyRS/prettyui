@@ -25,7 +25,7 @@ class ValidateReleaseTests(unittest.TestCase):
                 version = suffix.removeprefix("v")
                 self.source(version, [version])
                 before = {path: path.read_bytes() for path in self.root.iterdir()}
-                self.assertEqual(validate_release(f"release/{suffix}", self.root), f"v{version}")
+                self.assertEqual(validate_release(f"release/{suffix}", self.root), version)
                 self.assertEqual({path: path.read_bytes() for path in self.root.iterdir()}, before)
 
     def test_ordinary_pr_does_not_require_release_files(self):

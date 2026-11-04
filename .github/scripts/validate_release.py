@@ -21,7 +21,7 @@ def validate_release(branch: str, root: Path) -> str | None:
         raise ValueError(f"plugin.json version must be {version!r}, found {manifest_version!r}")
     if lua_versions != [version]:
         raise ValueError(f"main.lua must contain exactly one PrettyUI.version = \"{version}\" assignment; found {lua_versions!r}")
-    return f"v{version}"
+    return version
 
 
 def main():

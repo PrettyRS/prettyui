@@ -22,6 +22,8 @@ hero:
 
 ## Unreleased {#unreleased}
 
+## 1.3.0 (published, awaiting approval) {#v1-3-0}
+
 ### Added
 
 - Added [overhead bars](index.html#overhead-bar-api) API that can be used to attach health-bar-like overlays to NPCs, players, or Locs.
