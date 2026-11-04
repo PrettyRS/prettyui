@@ -30,6 +30,7 @@ hero:
 - Added `NewComponent`, `RefreshComponentIDs`, `BuildCategoryGroup`, and `WithCategoryBatch` for custom native construction.
 - Added `hideCloseButton` as a option to windows and dialogs. 
 - Added a `useNativeTransparency` option to [windows](index.html#window-api) and [panels](index.html#panel-api), with a matching `SetUseNativeTransparency(enabled)` method, which when enabled makes them follow the player's native interface transparency setting.
+- Added an editable hex colour code caption beneath the [colour picker](index.html#colour-picker-api) preview.
 
 ### Changed
 - Dialog Component: Dialog footer actions can now be set to `Disabled`

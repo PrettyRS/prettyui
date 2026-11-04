@@ -76,8 +76,8 @@ ColourPicker.new(parent, options)
 : Changes the picker window title.
 
 `windowWidth`, `windowHeight`
-: Override picker dimensions. The minimum and default size is 220 × 312.
-  `alphaSlider` raises the minimum and default height to 348.
+: Override picker dimensions. The minimum and default size is 220 × 340.
+  `alphaSlider` raises the minimum and default height to 376.
 
 `windowParent`, `overlayParent`
 : Select the parent that contains the picker window. `overlayParent` is an
