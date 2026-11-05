@@ -265,6 +265,43 @@ closingWindow:Close()
 expectRemoved(closingWindow, feedback, "destroy-on-close window")
 expect(closingWindow.root, nil, "destroy-on-close releases the moving surface")
 
+-- Hide ends a move in progress and takes the title bar and resize handles with the window;
+-- Show brings it back movable.
+local hidingWindow = Window.new(parent, { title = "Hide", x = 60, y = 40, resizable = true })
+feedback = startDrag(hidingWindow, hidingWindow.root, hidingWindow.titleDrag)
+hidingWindow:Hide()
+expectRemoved(hidingWindow, feedback, "window Hide")
+expect(hidingWindow.root.hidden, true, "Hide hides the window")
+expect(hidingWindow.titleDrag.hidden, true, "Hide hides the title bar")
+expect(hidingWindow.resize.handles.n.hidden, true, "Hide hides the resize handles")
+local hiddenAt = rect(hidingWindow.root)
+fire(hidingWindow.titleDrag, ui.Hook.ONHOLD, 80, 60)
+expectRect(hidingWindow.root, hiddenAt, "a hidden window ignores holds")
+hidingWindow:Show()
+expect(hidingWindow.titleDrag.hidden, false, "Show restores the title bar")
+expect(hidingWindow.resize.handles.n.hidden, false, "Show restores the resize handles")
+feedback = startDrag(hidingWindow, hidingWindow.root, hidingWindow.titleDrag)
+fire(hidingWindow.titleDrag, ui.Hook.ONRELEASE)
+expectRemoved(hidingWindow, feedback, "a shown window drags again")
+hidingWindow:Destroy()
+
+-- Close is the player closing the window and calls onClose; Hide is the plugin hiding it
+-- and does not. Close then hides the window, or destroys it with destroyOnClose.
+local windowCloses = 0
+local closableWindow = Window.new(parent, {
+    title = "Closable", onClose = function() windowCloses = windowCloses + 1 end,
+})
+closableWindow:Hide()
+expect(windowCloses, 0, "window Hide does not call onClose")
+closableWindow:Show()
+fire(closableWindow.closeButton, ui.Hook.ONCLICK)
+expect(windowCloses, 1, "the close button calls onClose")
+expect(closableWindow.root.hidden, true, "the close button hides the window")
+closableWindow:Show()
+closableWindow:Close()
+expect(windowCloses, 2, "window Close calls onClose")
+closableWindow:Destroy()
+
 local panel = Panel.new(parent, { x = 45, y = 68, width = 270, height = 150 })
 setAlt(true)
 simpleClick(panel, panel.dock.root, panel.dockDragLayer)
@@ -287,6 +324,140 @@ setAlt(true)
 feedback = startDrag(panel, panel.dock.root, panel.dockDragLayer)
 panel:Destroy()
 expectRemoved(panel, feedback, "standalone panel Destroy")
+
+-- Panel:Hide ends a move in progress and takes the drag layer and resize handles with the
+-- panel; Show brings it back movable.
+local hidingPanel = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true })
+setAlt(true)
+feedback = startDrag(hidingPanel, hidingPanel.dock.root, hidingPanel.dockDragLayer)
+hidingPanel:Hide()
+expectRemoved(hidingPanel, feedback, "panel Hide")
+expect(hidingPanel.dock.root.hidden, true, "Hide hides the panel")
+expect(hidingPanel.dockDragLayer.hidden, true, "Hide drops the drag layer")
+expect(hidingPanel.dockResize.handles.n.hidden, true, "Hide hides the resize handles")
+setAlt(true)
+expect(hidingPanel.dockDragLayer.hidden, true, "Alt does not bring back a hidden panel's drag layer")
+hidingPanel:Show()
+expect(hidingPanel.dock.root.hidden, false, "Show shows the panel")
+expect(hidingPanel.dockDragLayer.hidden, false, "Show restores Alt dragging")
+expect(hidingPanel.dockResize.handles.n.hidden, false, "Show restores the resize handles")
+feedback = startDrag(hidingPanel, hidingPanel.dock.root, hidingPanel.dockDragLayer)
+fire(hidingPanel.dockDragLayer, ui.Hook.ONRELEASE)
+expectRemoved(hidingPanel, feedback, "a shown panel drags again")
+hidingPanel:Destroy()
+
+-- The drag layer and resize handles are siblings of the root, so they only take input while
+-- they sit above it.
+local function isAbove(upper, lower)
+    local upperIndex, lowerIndex
+    for index, child in ipairs(upper.parent.children) do
+        if child == upper then upperIndex = index end
+        if child == lower then lowerIndex = index end
+    end
+    return upperIndex > lowerIndex
+end
+
+-- Show while Alt is held leaves the panel draggable without pressing Alt again.
+local raisedPanel = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true })
+raisedPanel:Hide()
+setAlt(true)
+local raiseRoot = raisedPanel.dock.root.MoveToFront
+local rootRaisedHidden = false
+raisedPanel.dock.root.MoveToFront = function(root)
+    if root.hidden then rootRaisedHidden = true end
+    raiseRoot(root)
+end
+raisedPanel:Show()
+expect(rootRaisedHidden, false, "Show does not raise the root while it is hidden")
+expect(raisedPanel.dock.root.hidden, false, "Show leaves the root visible")
+expect(isAbove(raisedPanel.dockDragLayer, raisedPanel.dock.root), true, "Show raises the drag layer")
+expect(isAbove(raisedPanel.dockResize.handles.n, raisedPanel.dock.root), true,
+    "Show raises the resize handles")
+raisedPanel:Show()
+expect(isAbove(raisedPanel.dockDragLayer, raisedPanel.dock.root), true,
+    "Show on a visible panel with Alt held keeps the drag layer on top")
+raisedPanel:Destroy()
+
+local raisedPopout = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true,
+    popout = true, poppedOut = true })
+raisedPopout:Show()
+expect(isAbove(raisedPopout.overlayDragLayer, raisedPopout.overlay.root), true,
+    "Show on a visible popout with Alt held keeps the drag layer on top")
+raisedPopout:SetPoppedOut(false)
+expect(isAbove(raisedPopout.dock.root, raisedPopout.overlay.root), true, "docking raises a standalone panel")
+expect(isAbove(raisedPopout.dockDragLayer, raisedPopout.dock.root), true,
+    "docking with Alt held keeps the drag layer on top")
+raisedPopout:Destroy()
+
+-- A hidden panel gives up its height in a content flow, as a popped-out one does, and takes
+-- it back on Show. A standalone panel has no flow, so it keeps its height.
+local flowWindow = Window.new(parent, { title = "Flow", x = 0, y = 0, width = 400, height = 400 })
+local flowPanel = flowWindow:AddPanel({ height = 90 })
+local panelBelow = flowWindow:AddPanel({ height = 50 })
+local shownY = panelBelow.dock.root.y
+flowPanel:Hide()
+expect(flowPanel.dock.root.height, 0, "a hidden flow panel gives up its height")
+expect(panelBelow.dock.root.y, shownY - 90, "content below a hidden panel moves up")
+flowPanel:SetSize(flowPanel.width, 120)
+expect(flowPanel.dock.root.height, 0, "resizing a hidden flow panel keeps it collapsed")
+flowPanel:Show()
+expect(flowPanel.dock.root.height, 120, "Show restores the flow panel's latest height")
+expect(panelBelow.dock.root.y, shownY + 30, "content below a shown panel moves back down")
+flowWindow:Destroy()
+
+local standalonePanel = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140 })
+standalonePanel:Hide()
+expect(standalonePanel.dock.root.height, 140, "a hidden standalone panel keeps its height")
+standalonePanel:SetSize(260, 160)
+standalonePanel:Show()
+expect(standalonePanel.dock.root.height, 160, "a standalone panel resized while hidden shows at its new height")
+standalonePanel:Destroy()
+
+-- A popped-out panel hides its popout, stays hidden when popped in or out, and Show reveals
+-- whichever surface it is on.
+local hidingPopout = Panel.new(parent, {
+    x = 40, y = 60, width = 240, height = 130, popout = true, poppedOut = true,
+    overlayParent = overlayParent,
+    popoutX = 150, popoutY = 100, popoutWidth = 280, popoutHeight = 160,
+})
+hidingPopout:Hide()
+expect(hidingPopout.overlay.root.hidden, true, "Hide hides the popout")
+expect(hidingPopout.dock.root.hidden, true, "Hide keeps the dock hidden")
+hidingPopout:SetPoppedOut(false)
+expect(hidingPopout.dock.root.hidden, true, "docking a hidden panel keeps it hidden")
+expect(hidingPopout.overlay.root.hidden, true, "docking a hidden panel keeps the popout hidden")
+hidingPopout:Show()
+expect(hidingPopout.dock.root.hidden, false, "Show reveals the docked panel")
+expect(hidingPopout.overlay.root.hidden, true, "Show leaves the unused popout hidden")
+hidingPopout:Hide()
+hidingPopout:SetPoppedOut(true)
+expect(hidingPopout.overlay.root.hidden, true, "popping out a hidden panel keeps it hidden")
+hidingPopout:Show()
+expect(hidingPopout.overlay.root.hidden, false, "Show reveals the popout")
+expect(hidingPopout.dock.root.hidden, true, "Show leaves the unused dock hidden")
+hidingPopout:Destroy()
+
+-- Panel Close calls onClose and hides the panel, or destroys it with destroyOnClose; Hide
+-- does not call onClose.
+local panelCloses = 0
+local closablePanel = Panel.new(parent, {
+    x = 50, y = 70, width = 260, height = 140,
+    onClose = function() panelCloses = panelCloses + 1 end,
+})
+closablePanel:Hide()
+expect(panelCloses, 0, "panel Hide does not call onClose")
+closablePanel:Show()
+closablePanel:Close()
+expect(panelCloses, 1, "panel Close calls onClose")
+expect(closablePanel.dock.root.hidden, true, "panel Close hides the panel")
+closablePanel:Destroy()
+local destroyingPanel = Panel.new(parent, {
+    x = 50, y = 70, width = 260, height = 140, destroyOnClose = true,
+})
+setAlt(true)
+feedback = startDrag(destroyingPanel, destroyingPanel.dock.root, destroyingPanel.dockDragLayer)
+destroyingPanel:Close()
+expectRemoved(destroyingPanel, feedback, "destroy-on-close panel")
 
 local popout = Panel.new(parent, {
     x = 31, y = 48, width = 260, height = 145, popout = true,
