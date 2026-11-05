@@ -500,17 +500,25 @@ function Window:Show()
     self:_SyncOverlays(false)
 end
 
-function Window:Close()
+-- Hides the window for the plugin without calling onClose()
+-- Should only be called programmatically, not by end users.
+function Window:Hide()
     if self._stopDrag then self._stopDrag() end
     if self.resize then self.resize:Cancel() end
     if self.content then Tooltip.hideContextTooltips(self.content) end
+    if self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    self.root.hidden = true
+    if self.titleDrag then self.titleDrag.hidden = true end
+    self:_SyncOverlays(true)
+end
+
+-- Closes the window as the player does with its close button
+function Window:Close()
     if self.onClose then self.onClose(self) end
     if self.destroyOnClose then
         self:Destroy()
-    elseif self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
-        self.root.hidden = true
-        if self.titleDrag then self.titleDrag.hidden = true end
-        self:_SyncOverlays(true)
+    else
+        self:Hide()
     end
 end
 

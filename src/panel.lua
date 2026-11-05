@@ -383,6 +383,8 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.locked = false
     self.onPopoutChange = options.onPopoutChange
     self.onPositionChange = options.onPositionChange
+    self.onClose = options.onClose
+    self.destroyOnClose = options.destroyOnClose == true
     self.rowBackgroundColours = options.rowBackgroundColours
         or options.rowBackgroundColors
         or {}
@@ -390,6 +392,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.dockRowBackgrounds = {}
     self.overlayRowBackgrounds = {}
     self.poppedOut = self._canPopout and options.poppedOut == true
+    self._hidden = false
 
     self.dock = createSurface(parent, {
         _categoryPolicy = policy,
@@ -601,7 +604,7 @@ end
 
 function Panel:_SetAltDragActive(active, notify)
     local activeSurface
-    if active == true and not self.locked then
+    if active == true and not self.locked and not self._hidden then
         if self.poppedOut and self._canPopout then
             activeSurface = self.overlay
         elseif self._dockDraggable then
@@ -726,10 +729,10 @@ function Panel:_StopDrag(notify)
 end
 
 function Panel:_UpdateFlowHeight()
-    local height = self.poppedOut and 0 or self.height
+    local height = (self.poppedOut or self._hidden) and 0 or self.height
     if self.flowOwner then
         Layout.resize(self.flowOwner, self, height)
-    elseif not self.poppedOut then
+    elseif not self.poppedOut and not self._hidden then
         self.dock.root:SetHeight(height)
     end
 end
@@ -738,6 +741,30 @@ function Panel:BindFlow(owner)
     self.flowOwner = owner
     self:_UpdateFlowHeight()
     return self
+end
+
+-- Ensures the visual state of the panel is consistent with its properties.
+function Panel:_UpdateVisibility()
+    self.dock.root.hidden = self._hidden or self.poppedOut
+    self.overlay.root.hidden = self._hidden or not self.poppedOut
+    self:_UpdateFlowHeight()
+    self.dock.scroll:Refresh()
+    self.overlay.scroll:Refresh()
+    local bounds = self.poppedOut and self.overlayBounds or self.dockBounds
+    if bounds then bounds:Clamp() end
+    if not self._hidden then
+        if self.poppedOut then
+            self.overlay.root:MoveToFront()
+        elseif self._dockDraggable then
+            self.dock.root:MoveToFront()
+        end
+    end
+    if self.altDragSurface then
+        (self.altDragSurface == self.overlay and self.overlayDragLayer or self.dockDragLayer):MoveToFront()
+    end
+    self:_SetAltDragActive(isAltDown())
+    if self.dockResize then self.dockResize:Refresh() end
+    if self.overlayResize then self.overlayResize:Refresh() end
 end
 
 function Panel:SetPoppedOut(poppedOut, notify)
@@ -751,21 +778,11 @@ function Panel:SetPoppedOut(poppedOut, notify)
         if field:IsListening() then listening = field; break end
     end
     self.poppedOut = self._canPopout and poppedOut == true
-    self.dock.root.hidden = self.poppedOut
-    self.overlay.root.hidden = not self.poppedOut
+    self:_UpdateVisibility()
     if previous ~= self.poppedOut and listening then
         listening:CancelListening()
         listening:StartListening()
     end
-    self:_UpdateFlowHeight()
-    self.dock.scroll:Refresh()
-    self.overlay.scroll:Refresh()
-    local bounds = self.poppedOut and self.overlayBounds or self.dockBounds
-    if bounds then bounds:Clamp() end
-    if self.poppedOut then self.overlay.root:MoveToFront() end
-    self:_SetAltDragActive(isAltDown())
-    if self.dockResize then self.dockResize:Refresh() end
-    if self.overlayResize then self.overlayResize:Refresh() end
     if notify ~= false and previous ~= self.poppedOut and self.onPopoutChange then
         self.onPopoutChange(self, self.poppedOut)
     end
@@ -773,6 +790,38 @@ end
 
 function Panel:TogglePopout()
     self:SetPoppedOut(not self.poppedOut)
+end
+
+-- Hides the panel without calling onClose(). Does not destroy the panel.
+-- Should only be called programmatically, not by end users.
+function Panel:Hide()
+    if ui.Interfaces:GetInterface(self.dock.interfaceID) == nil then return end
+    self:_StopDrag()
+    if self.dockResize then self.dockResize:Cancel() end
+    if self.overlayResize then self.overlayResize:Cancel() end
+    Tooltip.hideContextTooltips(self.dock.content)
+    Tooltip.hideContextTooltips(self.overlay.content)
+    self._hidden = true
+    self:_UpdateVisibility()
+end
+
+function Panel:Show()
+    if ui.Interfaces:GetInterface(self.dock.interfaceID) == nil then return end
+    self._hidden = false
+    self:_UpdateVisibility()
+end
+
+-- Closes the panel following the destroyOnClose setting.
+-- Currently this is redundant as end users don't have a way to close panels
+-- Leaving this and the destroyOnClose setting for consistency with windows
+-- and in case a close button is added to panels in the future.
+function Panel:Close()
+    if self.onClose then self.onClose(self) end
+    if self.destroyOnClose then
+        self:Destroy()
+    else
+        self:Hide()
+    end
 end
 
 function Panel:SetPopoutClickthrough(clickthrough)
