@@ -185,7 +185,7 @@ Panel.new(parent, options)
 : Hides the panel without invoking **onClose**. 
 
 `Show()`
-: Shows and raises the window.
+: Shows and raises the panel.
 
 `Close()`
 : Invokes **onClose**, then hides or destroys the panel in accordance with the **destroyOnClose** setting.

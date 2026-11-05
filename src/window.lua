@@ -500,8 +500,7 @@ function Window:Show()
     self:_SyncOverlays(false)
 end
 
--- Hides the window for the plugin without calling onClose()
--- Should only be called programmatically, not by end users.
+-- Hides the window without calling onClose().
 function Window:Hide()
     if self._stopDrag then self._stopDrag() end
     if self.resize then self.resize:Cancel() end

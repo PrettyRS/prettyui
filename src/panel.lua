@@ -792,8 +792,7 @@ function Panel:TogglePopout()
     self:SetPoppedOut(not self.poppedOut)
 end
 
--- Hides the panel without calling onClose(). Does not destroy the panel.
--- Should only be called programmatically, not by end users.
+-- Hides the panel without calling onClose().
 function Panel:Hide()
     if ui.Interfaces:GetInterface(self.dock.interfaceID) == nil then return end
     self:_StopDrag()
@@ -812,9 +811,6 @@ function Panel:Show()
 end
 
 -- Closes the panel following the destroyOnClose setting.
--- Currently this is redundant as end users don't have a way to close panels
--- Leaving this and the destroyOnClose setting for consistency with windows
--- and in case a close button is added to panels in the future.
 function Panel:Close()
     if self.onClose then self.onClose(self) end
     if self.destroyOnClose then

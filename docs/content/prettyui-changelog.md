@@ -20,7 +20,7 @@ hero:
   compact: true
 ---
 
-## 1.4.0 (unreleased) {#v1-4-0}
+## Unreleased {#unreleased}
 
 ### Added
 
