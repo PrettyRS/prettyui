@@ -22,6 +22,11 @@ hero:
 
 ## Unreleased {#unreleased}
 
+### Added
+
+- Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
+- Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
+
 ## 1.3.0 (published, awaiting approval) {#v1-3-0}
 
 ### Added

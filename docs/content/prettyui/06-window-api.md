@@ -191,9 +191,12 @@ Interactive resizing is opt-in with `resizable = true`.
 `Show()`
 : Shows and raises the window.
 
+`Hide()`
+: Hides the window without invoking **onClose**.
+
 `Close()`
-: Hides tooltips belonging to the window and its nested panels, invokes
-  **onClose**, then hides or destroys the window.
+: Invokes **onClose**, then hides or destroys the window. Invoked 
+automatically when the end user closes a window with the 'X' button.
 
 `Destroy()`
 : Destroys the complete component tree.
