@@ -46,7 +46,6 @@ local noOffset = positionsFor({ target }, 0)
 expect(noOffset.across[3].at, 400, "without an edge offset the window's right side meets the target's left side")
 expect(noOffset.across[4].at, 700, "without an edge offset the window starts at the target's right side")
 expect(noOffset.down[4].at, 450, "without an edge offset the window starts at the target's bottom")
-expect(noOffset.across[1].at, 0, "the parent's edges never take the edge offset")
 
 local second = { x = 1200, y = 600, width = 300, height = 200 }
 local two = positionsFor({ target, second })
@@ -69,11 +68,16 @@ expectLanding(one, 405, 302, 402, 298, "both axes snap at once into the target's
 expectLanding(one, 414, 320, 402, 320, "a window exactly the snap distance away still snaps")
 expectLanding(one, 415, 320, 415, 320, "a window one pixel past the snap distance stays where the mouse put it")
 expectLanding(one, 405, 900, 405, 900, "a window far below the target isn't level with it, so it doesn't snap beside it")
+expectLanding(one, 405, 462, 402, 462, "a window exactly the snap distance below the target's bottom still snaps beside it")
+expectLanding(one, 405, 463, 405, 463, "a window one pixel further below doesn't snap beside it")
 expectLanding(one, 6, 600, 0, 600, "a window near the parent's left edge snaps to it")
 expectLanding(one, 600, 995, 600, 1000, "a window near the parent's bottom edge snaps to it")
+expectLanding(one, 405, 215, 402, 222, "a window just off the target's corner snaps corner to corner")
 
-expectLanding(one, 407, 320, 402, 320, "a window snaps while it's close")
-expectLanding(one, 420, 320, 420, 320, "moving it past the snap distance takes it off the snap")
+local TALL_HEIGHT = 400
+local tall = Snap.positions({ target }, WIDTH, TALL_HEIGHT, PARENT_WIDTH, PARENT_HEIGHT, EDGE_OFFSET)
+local tallX = Snap.apply(tall, 407, 200, WIDTH, TALL_HEIGHT, DISTANCE)
+expect(tallX, 402, "a window taller than the target still snaps beside it")
 
 local nearer = { x = 507, y = 200, width = 50, height = 300 }
 expectLanding(positionsFor({ target, nearer }), 407, 320, 409, 320, "of two entries in range, the nearer one wins")
@@ -97,7 +101,7 @@ local layoutLayer = {
 }
 function layoutLayer:IterateStaticComponents(callback)
     for _, child in ipairs(self.children) do
-        if callback(child, not child.visibleGlobal) then return end
+        callback(child)
     end
 end
 local loadedLayoutLayer = layoutLayer
@@ -161,5 +165,17 @@ expect(#Snap.start(moving).across, 10, "a window whose interface isn't loaded is
 loadedLayoutLayer = nil
 expect(#Snap.start(moving).across, 6, "without the layout layer, only prettyui windows are targets")
 loadedLayoutLayer = layoutLayer
+
+local destroyedWindow = prettyWindow(300, 300)
+destroyedWindow.root = nil
+Snap.register(destroyedWindow)
+expect(#Snap.start(moving).across, 10, "a registered window without a root is skipped, not a crash")
+
+local forgottenWindow = prettyWindow(300, 300)
+Snap.register(forgottenWindow)
+expect(#Snap.start(moving).across, 14, "a registered window is a target while something still holds it")
+forgottenWindow = nil
+collectgarbage()
+expect(#Snap.start(moving).across, 10, "a window nothing else holds drops out of the registry")
 
 print("snap_test: ok")

@@ -40,7 +40,7 @@ function Snap.positions(rects, width, height, parentWidth, parentHeight, edgeOff
 end
 
 local function isOverlappingOtherAxis(position, otherStart, otherSize, distance)
-    return otherStart < position.to + distance and otherStart + otherSize > position.from - distance
+    return otherStart <= position.to + distance and otherStart + otherSize >= position.from - distance
 end
 
 local function snapAxis(list, rawValue, otherStart, otherSize, distance)
