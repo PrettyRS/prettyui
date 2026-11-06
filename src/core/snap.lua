@@ -6,7 +6,7 @@ local function add(list, at, from, to)
 end
 
 -- inset lines up the drawn frames, which sit inside each box
-function Snap.edges(rects, width, height, parentWidth, parentHeight, inset)
+function Snap.positions(rects, width, height, parentWidth, parentHeight, inset)
     local across, down = {}, {}
     add(across, 0, -math.huge, math.huge)
     add(across, parentWidth - width, -math.huge, math.huge)
@@ -29,20 +29,20 @@ end
 
 local function closest(list, value, start, size, distance)
     local snapped, snappedGap = value, math.huge
-    for _, edge in ipairs(list) do
-        if start < edge.to + distance and start + size > edge.from - distance then
-            local gap = math.abs(value - edge.at)
+    for _, position in ipairs(list) do
+        if start < position.to + distance and start + size > position.from - distance then
+            local gap = math.abs(value - position.at)
             if gap <= distance and gap < snappedGap then
-                snapped, snappedGap = edge.at, gap
+                snapped, snappedGap = position.at, gap
             end
         end
     end
     return snapped
 end
 
-function Snap.apply(edges, x, y, width, height, distance)
-    local snappedX = closest(edges.across, x, y, height, distance)
-    local snappedY = closest(edges.down, y, x, width, distance)
+function Snap.apply(positions, x, y, width, height, distance)
+    local snappedX = closest(positions.across, x, y, height, distance)
+    local snappedY = closest(positions.down, y, x, width, distance)
     return snappedX, snappedY
 end
 
