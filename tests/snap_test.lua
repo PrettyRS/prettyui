@@ -1,10 +1,4 @@
-id = {
-    Component = { TOPLEVEL_V2__GAME_AREA = (1477 << 16) | 61 },
-    Interface = {
-        TOPLEVEL_V2_MINIMAP = 1465, TOPLEVEL_V2_COMPASS = 1504, TOPLEVEL_V2_INVENTORY = 1473, XP_POPUP = 1213,
-        CLOSED_INTERFACE = 999,
-    },
-}
+id = { Component = { TOPLEVEL_V2__GAME_AREA = (1477 << 16) | 61 } }
 
 local Snap = require("src/core/snap")
 
@@ -87,34 +81,37 @@ expectLanding(positionsFor({ target, nearer }), 407, 320, 409, 320, "of two entr
 local tied = { x = 118, y = 300, width = 200, height = 150 }
 expectLanding(positionsFor({ tied }), 10, 320, 0, 320, "on a tie, the parent's edge wins because it comes first")
 
-local screen = { interfaceID = 1477, staticID = 28, width = 1920, height = 1009 }
-local layout = { interfaceID = 1477, staticID = 61, parent = screen, width = 1920, height = 1009 }
-local overlays = { interfaceID = 1477, staticID = 578, parent = screen, width = 1920, height = 1009 }
-local minimapFrame = {
-    interfaceID = 1477, staticID = 94, parent = layout, width = 387, height = 334, xyGlobal = { x = 1533, y = 48 },
+local function frame(x, y, width, height, shown)
+    return { xyGlobal = { x = x, y = y }, width = width, height = height, visibleGlobal = shown }
+end
+
+local wideBar = frame(0, 400, 1920, 40, false)
+local gameArea = {
+    interfaceID = 1477, width = 1920, height = 1009, xyGlobal = { x = 0, y = 0 },
+    children = {
+        frame(0, 0, 1920, 1009, true),
+        frame(1533, 48, 387, 334, true),
+        frame(1533, 671, 191, 338, false),
+        wideBar,
+    },
 }
-local hiddenFrame = {
-    interfaceID = 1477, staticID = 103, parent = layout, width = 191, height = 338, xyGlobal = { x = 1533, y = 671 },
-    visibleGlobal = false,
-}
-local popupFrame = {
-    interfaceID = 1477, staticID = 671, parent = overlays, width = 400, height = 60, xyGlobal = { x = 747, y = 0 },
-}
-local roots = {
-    [1465] = { interfaceID = 1465, staticID = 0, parent = minimapFrame },
-    [1504] = { interfaceID = 1504, staticID = 0, parent = minimapFrame },
-    [1473] = { interfaceID = 1473, staticID = 0, parent = hiddenFrame },
-    [1213] = { interfaceID = 1213, staticID = 0, parent = popupFrame },
-}
+function gameArea:IterateStaticComponents(callback)
+    for _, child in ipairs(self.children) do
+        if callback(child, not child.visibleGlobal) then return end
+    end
+end
 local buildLayer = { interfaceID = 1477, width = 1920, height = 1009, xyGlobal = { x = 10, y = 20 } }
 
 ui = {
     Interfaces = {
         GetInterface = function(_, interfaceID)
-            if interfaceID == buildLayer.interfaceID or roots[interfaceID] then return {} end
+            if interfaceID == buildLayer.interfaceID then return {} end
             return nil
         end,
-        GetComponent = function(_, packed) return roots[packed >> 16] end,
+        GetComponent = function(_, packed)
+            if packed == id.Component.TOPLEVEL_V2__GAME_AREA then return gameArea end
+            return nil
+        end,
     },
 }
 local function prettyWindow(x, y, parent)
@@ -137,7 +134,11 @@ local started = Snap.start(moving)
 expect(#started.across, 10, "the other window and the minimap each add four across entries")
 expectPosition(started.across[4], 796, 102, 298, "right of the other window's visible frame")
 expectPosition(started.across[7], 1225, 28, 362, "left of the minimap, converted into the build layer's coordinates")
-expect(#started.down, 10, "the compass shares the minimap's frame, so it adds nothing more")
+expect(#started.down, 10, "the full screen layer and the closed slot add nothing")
+
+wideBar.visibleGlobal = true
+expect(#Snap.start(moving).across, 14, "a shown bar as wide as the screen is still a window")
+wideBar.visibleGlobal = false
 
 Snap.unregister(other)
 expect(#Snap.start(moving).across, 6, "an unregistered window is no longer a target")
@@ -145,7 +146,6 @@ other.root.hidden = true
 Snap.register(other)
 expect(#Snap.start(moving).across, 6, "a hidden window isn't a target")
 
-local gameArea = { interfaceID = 1477, width = 1920, height = 1009, xyGlobal = { x = 0, y = 0 } }
 Snap.register(prettyWindow(1000, 600, gameArea))
 local crossParent = Snap.start(moving)
 expect(#crossParent.across, 10, "a window in another parent is still a target")
