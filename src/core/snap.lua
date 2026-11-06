@@ -1,9 +1,9 @@
 local Snap = {}
 
--- derived from in-game testing, 2px snaps windows flush with one another
+-- a prettyui windows visible edge sits 2px inside its box and game windows dont have this
 local VISIBLE_EDGE_OFFSET = 2
--- theory: the games own windows only snap to the layout windows, which all sit in this container
-local LAYOUT_CONTAINER = id.Component.TOPLEVEL_V2__GAME_AREA
+-- theory: game windows only snap to the layout windows, which all sit on this layer
+local LAYOUT_LAYER = id.Component.TOPLEVEL_V2__GAME_AREA
 local windows = setmetatable({}, { __mode = "k" })
 
 function Snap.register(window)
@@ -14,36 +14,40 @@ function Snap.unregister(window)
     windows[window] = nil
 end
 
-local function add(list, at, from, to)
+local function addPosition(list, at, from, to)
     list[#list + 1] = { at = at, from = from, to = to }
 end
 
 function Snap.positions(rects, width, height, parentWidth, parentHeight, edgeOffset)
     local across, down = {}, {}
-    add(across, 0, -math.huge, math.huge)
-    add(across, parentWidth - width, -math.huge, math.huge)
-    add(down, 0, -math.huge, math.huge)
-    add(down, parentHeight - height, -math.huge, math.huge)
+    addPosition(across, 0, -math.huge, math.huge)
+    addPosition(across, parentWidth - width, -math.huge, math.huge)
+    addPosition(down, 0, -math.huge, math.huge)
+    addPosition(down, parentHeight - height, -math.huge, math.huge)
     for _, rect in ipairs(rects) do
         local left, top = rect.x, rect.y
         local right, bottom = rect.x + rect.width, rect.y + rect.height
-        add(across, left - width + edgeOffset, top, bottom)
-        add(across, right - edgeOffset, top, bottom)
-        add(across, left - edgeOffset, top, bottom)
-        add(across, right - width + edgeOffset, top, bottom)
-        add(down, top - height + edgeOffset, left, right)
-        add(down, bottom - edgeOffset, left, right)
-        add(down, top - edgeOffset, left, right)
-        add(down, bottom - height + edgeOffset, left, right)
+        addPosition(across, left - width + edgeOffset, top, bottom)
+        addPosition(across, right - edgeOffset, top, bottom)
+        addPosition(across, left - edgeOffset, top, bottom)
+        addPosition(across, right - width + edgeOffset, top, bottom)
+        addPosition(down, top - height + edgeOffset, left, right)
+        addPosition(down, bottom - edgeOffset, left, right)
+        addPosition(down, top - edgeOffset, left, right)
+        addPosition(down, bottom - height + edgeOffset, left, right)
     end
     return { across = across, down = down }
 end
 
-local function closest(list, value, start, size, distance)
-    local snapped, snappedGap = value, math.huge
+local function isOverlappingOtherAxis(position, otherStart, otherSize, distance)
+    return otherStart < position.to + distance and otherStart + otherSize > position.from - distance
+end
+
+local function snapAxis(list, rawValue, otherStart, otherSize, distance)
+    local snapped, snappedGap = rawValue, math.huge
     for _, position in ipairs(list) do
-        if start < position.to + distance and start + size > position.from - distance then
-            local gap = math.abs(value - position.at)
+        if isOverlappingOtherAxis(position, otherStart, otherSize, distance) then
+            local gap = math.abs(rawValue - position.at)
             if gap <= distance and gap < snappedGap then
                 snapped, snappedGap = position.at, gap
             end
@@ -53,27 +57,28 @@ local function closest(list, value, start, size, distance)
 end
 
 function Snap.apply(positions, x, y, width, height, distance)
-    local snappedX = closest(positions.across, x, y, height, distance)
-    local snappedY = closest(positions.down, y, x, width, distance)
+    local snappedX = snapAxis(positions.across, x, y, height, distance)
+    local snappedY = snapAxis(positions.down, y, x, width, distance)
     return snappedX, snappedY
 end
 
-local function snappable(other, movingWindow)
+local function isSnapTarget(other, movingWindow)
     return other ~= movingWindow
         and other.root ~= nil
         and not other.root.hidden
         and ui.Interfaces:GetInterface(other.interfaceID) ~= nil
 end
 
-local function windowRects(movingWindow, rects)
-    local origin = movingWindow.parent.xyGlobal
+-- prettyui windows (registered automatically via Snap.register) from version 1.4.0+
+local function addRegisteredWindows(rects, movingWindow)
+    local parentOrigin = movingWindow.parent.xyGlobal
     for other in pairs(windows) do
-        if snappable(other, movingWindow) then
+        if isSnapTarget(other, movingWindow) then
             local root = other.root
-            local at = root.xyGlobal
+            local rootOrigin = root.xyGlobal
             rects[#rects + 1] = {
-                x = at.x - origin.x + VISIBLE_EDGE_OFFSET,
-                y = at.y - origin.y + VISIBLE_EDGE_OFFSET,
+                x = rootOrigin.x - parentOrigin.x + VISIBLE_EDGE_OFFSET,
+                y = rootOrigin.y - parentOrigin.y + VISIBLE_EDGE_OFFSET,
                 width = root.width - 2 * VISIBLE_EDGE_OFFSET,
                 height = root.height - 2 * VISIBLE_EDGE_OFFSET,
             }
@@ -81,20 +86,25 @@ local function windowRects(movingWindow, rects)
     end
 end
 
--- the game area also holds a full screen layer, which isnt a window
-local function shownWindow(frame, gameArea)
-    return frame.visibleGlobal
-        and not (frame.width >= gameArea.width and frame.height >= gameArea.height)
+-- the layout layer also holds a full screen layer, which isnt a window
+local function isShownWindow(child, layoutLayer)
+    return child.visibleGlobal
+        and not (child.width >= layoutLayer.width and child.height >= layoutLayer.height)
 end
 
-local function gameRects(movingWindow, rects)
-    local gameArea = ui.Interfaces:GetComponent(LAYOUT_CONTAINER)
-    if gameArea == nil then return end
-    local origin = movingWindow.parent.xyGlobal
-    gameArea:IterateStaticComponents(function(frame)
-        if shownWindow(frame, gameArea) then
-            local at = frame.xyGlobal
-            rects[#rects + 1] = { x = at.x - origin.x, y = at.y - origin.y, width = frame.width, height = frame.height }
+local function addLayoutWindows(rects, movingWindow)
+    local layoutLayer = ui.Interfaces:GetComponent(LAYOUT_LAYER)
+    if layoutLayer == nil then return end
+    local parentOrigin = movingWindow.parent.xyGlobal
+    layoutLayer:IterateStaticComponents(function(child)
+        if isShownWindow(child, layoutLayer) then
+            local childOrigin = child.xyGlobal
+            rects[#rects + 1] = {
+                x = childOrigin.x - parentOrigin.x,
+                y = childOrigin.y - parentOrigin.y,
+                width = child.width,
+                height = child.height,
+            }
         end
     end)
 end
@@ -102,8 +112,8 @@ end
 function Snap.start(movingWindow)
     local root, parent = movingWindow.root, movingWindow.parent
     local rects = {}
-    windowRects(movingWindow, rects)
-    gameRects(movingWindow, rects)
+    addRegisteredWindows(rects, movingWindow)
+    addLayoutWindows(rects, movingWindow)
     return Snap.positions(rects, root.width, root.height, parent.width, parent.height, VISIBLE_EDGE_OFFSET)
 end
 

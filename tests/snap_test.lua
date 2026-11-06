@@ -15,11 +15,11 @@ local function expectPosition(position, at, from, to, message)
 end
 
 local PARENT_WIDTH, PARENT_HEIGHT = 1920, 1080
-local WIDTH, HEIGHT, INSET = 100, 80, 2
+local WIDTH, HEIGHT, EDGE_OFFSET = 100, 80, 2
 local target = { x = 500, y = 300, width = 200, height = 150 }
 
-local function positionsFor(rects, inset)
-    return Snap.positions(rects, WIDTH, HEIGHT, PARENT_WIDTH, PARENT_HEIGHT, inset or INSET)
+local function positionsFor(rects, edgeOffset)
+    return Snap.positions(rects, WIDTH, HEIGHT, PARENT_WIDTH, PARENT_HEIGHT, edgeOffset or EDGE_OFFSET)
 end
 
 local empty = positionsFor({})
@@ -42,11 +42,11 @@ expectPosition(one.down[4], 448, 500, 700, "below the target")
 expectPosition(one.down[5], 298, 500, 700, "flush with the target's top")
 expectPosition(one.down[6], 372, 500, 700, "flush with the target's bottom")
 
-local noInset = positionsFor({ target }, 0)
-expect(noInset.across[3].at, 400, "without an inset the window's right side meets the target's left side")
-expect(noInset.across[4].at, 700, "without an inset the window starts at the target's right side")
-expect(noInset.down[4].at, 450, "without an inset the window starts at the target's bottom")
-expect(noInset.across[1].at, 0, "the parent's edges never take the inset")
+local noOffset = positionsFor({ target }, 0)
+expect(noOffset.across[3].at, 400, "without an edge offset the window's right side meets the target's left side")
+expect(noOffset.across[4].at, 700, "without an edge offset the window starts at the target's right side")
+expect(noOffset.down[4].at, 450, "without an edge offset the window starts at the target's bottom")
+expect(noOffset.across[1].at, 0, "the parent's edges never take the edge offset")
 
 local second = { x = 1200, y = 600, width = 300, height = 200 }
 local two = positionsFor({ target, second })
@@ -81,25 +81,26 @@ expectLanding(positionsFor({ target, nearer }), 407, 320, 409, 320, "of two entr
 local tied = { x = 118, y = 300, width = 200, height = 150 }
 expectLanding(positionsFor({ tied }), 10, 320, 0, 320, "on a tie, the parent's edge wins because it comes first")
 
-local function frame(x, y, width, height, shown)
+local function gameWindow(x, y, width, height, shown)
     return { xyGlobal = { x = x, y = y }, width = width, height = height, visibleGlobal = shown }
 end
 
-local wideBar = frame(0, 400, 1920, 40, false)
-local gameArea = {
+local wideBar = gameWindow(0, 400, 1920, 40, false)
+local layoutLayer = {
     interfaceID = 1477, width = 1920, height = 1009, xyGlobal = { x = 0, y = 0 },
     children = {
-        frame(0, 0, 1920, 1009, true),
-        frame(1533, 48, 387, 334, true),
-        frame(1533, 671, 191, 338, false),
+        gameWindow(0, 0, 1920, 1009, true),
+        gameWindow(1533, 48, 387, 334, true),
+        gameWindow(1533, 671, 191, 338, false),
         wideBar,
     },
 }
-function gameArea:IterateStaticComponents(callback)
+function layoutLayer:IterateStaticComponents(callback)
     for _, child in ipairs(self.children) do
         if callback(child, not child.visibleGlobal) then return end
     end
 end
+local loadedLayoutLayer = layoutLayer
 local buildLayer = { interfaceID = 1477, width = 1920, height = 1009, xyGlobal = { x = 10, y = 20 } }
 
 ui = {
@@ -109,7 +110,7 @@ ui = {
             return nil
         end,
         GetComponent = function(_, packed)
-            if packed == id.Component.TOPLEVEL_V2__GAME_AREA then return gameArea end
+            if packed == id.Component.TOPLEVEL_V2__GAME_AREA then return loadedLayoutLayer end
             return nil
         end,
     },
@@ -132,7 +133,7 @@ Snap.register(other)
 
 local started = Snap.start(moving)
 expect(#started.across, 10, "the other window and the minimap each add four across entries")
-expectPosition(started.across[4], 796, 102, 298, "right of the other window's visible frame")
+expectPosition(started.across[4], 796, 102, 298, "right of the other window's visible edge")
 expectPosition(started.across[7], 1225, 28, 362, "left of the minimap, converted into the build layer's coordinates")
 expect(#started.down, 10, "the full screen layer and the closed slot add nothing")
 
@@ -146,9 +147,19 @@ other.root.hidden = true
 Snap.register(other)
 expect(#Snap.start(moving).across, 6, "a hidden window isn't a target")
 
-Snap.register(prettyWindow(1000, 600, gameArea))
+local crossParentWindow = prettyWindow(1000, 600, layoutLayer)
+Snap.register(crossParentWindow)
 local crossParent = Snap.start(moving)
 expect(#crossParent.across, 10, "a window in another parent is still a target")
-expectPosition(crossParent.across[4], 1286, 582, 778, "right of a game area window, converted into the build layer's coordinates")
+expectPosition(crossParent.across[4], 1286, 582, 778, "right of a window in the layout layer, converted into the build layer's coordinates")
+
+local unloadedLayer = { interfaceID = 1500, xyGlobal = { x = 0, y = 0 } }
+local unloadedWindow = prettyWindow(200, 600, unloadedLayer)
+Snap.register(unloadedWindow)
+expect(#Snap.start(moving).across, 10, "a window whose interface isn't loaded isn't a target")
+
+loadedLayoutLayer = nil
+expect(#Snap.start(moving).across, 6, "without the layout layer, only prettyui windows are targets")
+loadedLayoutLayer = layoutLayer
 
 print("snap_test: ok")
