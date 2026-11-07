@@ -1,6 +1,6 @@
 local Snap = {}
 
--- a prettyui windows visible edge sits 2px inside its box and game windows dont have this
+-- a prettyui windows visible edge sits 2 units inside its box and game windows dont have this
 local VISIBLE_EDGE_OFFSET = 2
 -- the games own windows snap from about this far away too
 local SNAP_DISTANCE = 12
@@ -68,7 +68,6 @@ local function isSnapTarget(other, movingWindow)
         and ui.Interfaces:GetInterface(other.interfaceID) ~= nil
 end
 
--- prettyui windows (registered automatically via Snap.register) from version 1.4.0+
 local function addRegisteredWindows(rects, movingWindow)
     local parentOrigin = movingWindow.parent.xyGlobal
     for other in pairs(windows) do

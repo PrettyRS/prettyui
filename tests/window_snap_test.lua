@@ -131,7 +131,7 @@ Event = { Logic = { Subscribe = function() end, Unsubscribe = function() end } }
 
 local minimap = { xyGlobal = { x = 700, y = 40 }, width = 200, height = 150, visibleGlobal = true }
 local closedWindow = { xyGlobal = { x = 300, y = 300 }, width = 200, height = 150, visibleGlobal = false }
-local layoutLayer = { width = 1000, height = 700, children = { minimap, closedWindow } }
+local layoutLayer = { children = { minimap, closedWindow } }
 function layoutLayer:IterateStaticComponents(callback)
     for _, child in ipairs(self.children) do callback(child) end
 end
@@ -173,21 +173,21 @@ expect(snapping.snapToEdges, true, "snapToEdges is on by default")
 expect(still.snapToEdges, false, "snapToEdges = false turns snapping off")
 
 dragBy(snapping, 199, 0)
-expectAt(snapping, 304, 300, "a snapping window dropped 5px short of another window's left side snaps beside it")
+expectAt(snapping, 304, 300, "a window dropped 5 units short of an opted-out window still snaps beside it")
 
 snapping.root:SetPos(100, 300)
 dragBy(still, -199, 0)
-expectAt(still, 401, 300, "a window with snapToEdges = false stays where the mouse put it, but is still a target for others")
+expectAt(still, 401, 300, "a window with snapToEdges = false doesn't snap")
 
 still.root:SetPos(600, 300)
 snapping.root:SetPos(100, 40)
 dragBy(snapping, 297, 0)
-expectAt(snapping, 402, 38, "a snapping window snaps beside a shown game layout window, flush with its top")
+expectAt(snapping, 402, 38, "a window snaps beside a shown game window, flush with its top")
 
 snapping.root:SetPos(100, 300)
 layoutLayerFails = true
 dragBy(snapping, 199, 0)
-expectAt(snapping, 299, 300, "when collecting targets fails, the window still drags, just without snapping")
+expectAt(snapping, 299, 300, "if gathering targets fails, the window drags without snapping")
 layoutLayerFails = false
 
 still:Destroy()
