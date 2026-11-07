@@ -123,6 +123,11 @@ Interactive resizing is opt-in with `resizable = true`.
 : Stops the window from being moved or resized while the player's interface is
   locked. Defaults to true.
 
+`snapToEdges`
+: Snaps the dragged window to edges within 12 interface units: other PrettyUI
+  windows, the game's own interfaces that use snapping, and the screen. Defaults
+  to true.
+
 `scrollable`
 : Enables automatic vertical scrolling. Defaults to true.
 
