@@ -53,7 +53,7 @@ local function buildWindow(parent, options)
     self.maxHeight = options.maxHeight
     self.useNativeTransparency = options.useNativeTransparency == true
     self.respectInterfaceLock = options.respectInterfaceLock ~= false
-    self.snapToEdges = options.snapToEdges == true
+    self.snapToEdges = options.snapToEdges ~= false
     self.locked = false
     self.overlays = {}
     self.rowBackgroundColours = options.rowBackgroundColours

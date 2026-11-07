@@ -165,19 +165,19 @@ local Window = require("src/window")
 local parent = component(nil, "parent")
 parent:SetSize(1000, 700)
 
-local snapping = Window.new(parent, {
-    title = "Snapping", x = 100, y = 300, width = 300, height = 200, snapToEdges = true,
+local snapping = Window.new(parent, { title = "Snapping", x = 100, y = 300, width = 300, height = 200 })
+local still = Window.new(parent, {
+    title = "Not snapping", x = 600, y = 300, width = 300, height = 200, snapToEdges = false,
 })
-local still = Window.new(parent, { title = "Not snapping", x = 600, y = 300, width = 300, height = 200 })
-expect(snapping.snapToEdges, true, "snapToEdges is read from the options")
-expect(still.snapToEdges, false, "snapToEdges is off by default")
+expect(snapping.snapToEdges, true, "snapToEdges is on by default")
+expect(still.snapToEdges, false, "snapToEdges = false turns snapping off")
 
 dragBy(snapping, 199, 0)
 expectAt(snapping, 304, 300, "a snapping window dropped 5px short of another window's left side snaps beside it")
 
 snapping.root:SetPos(100, 300)
 dragBy(still, -199, 0)
-expectAt(still, 401, 300, "a window without snapToEdges stays where the mouse put it, but is still a target for others")
+expectAt(still, 401, 300, "a window with snapToEdges = false stays where the mouse put it, but is still a target for others")
 
 still.root:SetPos(600, 300)
 snapping.root:SetPos(100, 40)
