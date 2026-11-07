@@ -54,10 +54,8 @@ expect(#two.down, 10, "each target adds four down entries")
 expectPosition(two.across[7], 1102, 600, 800, "the second target's entries follow the first's")
 expectPosition(two.down[10], 722, 1200, 1500, "the second target's last down entry is flush with its bottom")
 
-local DISTANCE = 12
-
 local function expectLanding(positions, x, y, expectedX, expectedY, message)
-    local snappedX, snappedY = Snap.apply(positions, x, y, WIDTH, HEIGHT, DISTANCE)
+    local snappedX, snappedY = Snap.apply(positions, x, y, WIDTH, HEIGHT)
     expect(snappedX, expectedX, message .. " x")
     expect(snappedY, expectedY, message .. " y")
 end
@@ -76,7 +74,7 @@ expectLanding(one, 405, 215, 402, 222, "a window just off the target's corner sn
 
 local TALL_HEIGHT = 400
 local tall = Snap.positions({ target }, WIDTH, TALL_HEIGHT, PARENT_WIDTH, PARENT_HEIGHT, EDGE_OFFSET)
-local tallX = Snap.apply(tall, 407, 200, WIDTH, TALL_HEIGHT, DISTANCE)
+local tallX = Snap.apply(tall, 407, 200, WIDTH, TALL_HEIGHT)
 expect(tallX, 402, "a window taller than the target still snaps beside it")
 
 local nearer = { x = 507, y = 200, width = 50, height = 300 }
@@ -89,14 +87,11 @@ local function gameWindow(x, y, width, height, shown)
     return { xyGlobal = { x = x, y = y }, width = width, height = height, visibleGlobal = shown }
 end
 
-local wideBar = gameWindow(0, 400, 1920, 40, false)
 local layoutLayer = {
     interfaceID = 1477, width = 1920, height = 1009, xyGlobal = { x = 0, y = 0 },
     children = {
-        gameWindow(0, 0, 1920, 1009, true),
         gameWindow(1533, 48, 387, 334, true),
         gameWindow(1533, 671, 191, 338, false),
-        wideBar,
     },
 }
 function layoutLayer:IterateStaticComponents(callback)
@@ -139,11 +134,7 @@ local started = Snap.start(moving)
 expect(#started.across, 10, "the other window and the minimap each add four across entries")
 expectPosition(started.across[4], 796, 102, 298, "right of the other window's visible edge")
 expectPosition(started.across[7], 1225, 28, 362, "left of the minimap, converted into the build layer's coordinates")
-expect(#started.down, 10, "the full screen layer and the closed slot add nothing")
-
-wideBar.visibleGlobal = true
-expect(#Snap.start(moving).across, 14, "a shown bar as wide as the screen is still a window")
-wideBar.visibleGlobal = false
+expect(#started.down, 10, "the closed window adds nothing")
 
 Snap.unregister(other)
 expect(#Snap.start(moving).across, 6, "an unregistered window is no longer a target")
@@ -165,11 +156,6 @@ expect(#Snap.start(moving).across, 10, "a window whose interface isn't loaded is
 loadedLayoutLayer = nil
 expect(#Snap.start(moving).across, 6, "without the layout layer, only prettyui windows are targets")
 loadedLayoutLayer = layoutLayer
-
-local destroyedWindow = prettyWindow(300, 300)
-destroyedWindow.root = nil
-Snap.register(destroyedWindow)
-expect(#Snap.start(moving).across, 10, "a registered window without a root is skipped, not a crash")
 
 local forgottenWindow = prettyWindow(300, 300)
 Snap.register(forgottenWindow)

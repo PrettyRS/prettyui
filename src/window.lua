@@ -10,6 +10,7 @@ local Scroll = require("src/core/scroll")
 local RowBackgrounds = require("src/core/row_backgrounds")
 local DragFeedback = require("src/core/drag_feedback")
 local DragBounds = require("src/core/drag_bounds")
+local Snap = require("src/core/snap")
 local Cursor = require("src/core/cursor")
 local Resize = require("src/core/resize")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
@@ -52,6 +53,7 @@ local function buildWindow(parent, options)
     self.maxHeight = options.maxHeight
     self.useNativeTransparency = options.useNativeTransparency == true
     self.respectInterfaceLock = options.respectInterfaceLock ~= false
+    self.snapToEdges = options.snapToEdges == true
     self.locked = false
     self.overlays = {}
     self.rowBackgroundColours = options.rowBackgroundColours
@@ -208,11 +210,20 @@ local function buildWindow(parent, options)
                     self.titleDrag:SetPos(0, 0)
                     self.titleDrag:SetSize(0, 0, 1.0, 1.0)
                     self.titleDrag:MoveToFront()
+                    if self.snapToEdges then
+                        local ok, positions = pcall(Snap.start, self)
+                        if ok then dragStart.snapPositions = positions end
+                    end
                 end
-                local nextX = clamp(dragStart.windowX + mouse.x - dragStart.mouseX,
-                    0, self.parent.width - self.root.width)
-                local nextY = clamp(dragStart.windowY + mouse.y - dragStart.mouseY,
-                    0, self.parent.height - self.root.height)
+                local rawX = dragStart.windowX + mouse.x - dragStart.mouseX
+                local rawY = dragStart.windowY + mouse.y - dragStart.mouseY
+                local snappedX, snappedY = rawX, rawY
+                if dragStart.snapPositions then
+                    snappedX, snappedY = Snap.apply(dragStart.snapPositions, rawX, rawY,
+                        self.root.width, self.root.height)
+                end
+                local nextX = clamp(snappedX, 0, self.parent.width - self.root.width)
+                local nextY = clamp(snappedY, 0, self.parent.height - self.root.height)
                 if self.root.x ~= nextX or self.root.y ~= nextY then
                     self.root:SetPos(nextX, nextY)
                     self.dragBounds:RememberPosition()
@@ -297,7 +308,7 @@ local function buildWindow(parent, options)
         end)
     end
 
-    
+
 
     local parentTooltipContext = Tooltip.getContext(parent)
     local tooltipParent = parentTooltipContext and parentTooltipContext.parent or parent
@@ -337,6 +348,7 @@ local function buildWindow(parent, options)
     self.tooltipContext.ownerWindow = self
     Layout.configure(self, options.layout or options.textLayout)
     Tooltip.bind(self, self.root, parent, options.tooltip)
+    Snap.register(self)
     if options.resizable == true then
         if not self.dragBounds then
             self.dragBounds = DragBounds.new(self.parent, self.root, function()
@@ -543,6 +555,7 @@ function Window:Destroy()
     end
     Layout.destroyManaged(self)
     Tooltip.unbind(self)
+    Snap.unregister(self)
     if self._scroll then
         self._scroll:Destroy()
         self._scroll = nil

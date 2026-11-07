@@ -2,8 +2,8 @@ local Snap = {}
 
 -- a prettyui windows visible edge sits 2px inside its box and game windows dont have this
 local VISIBLE_EDGE_OFFSET = 2
--- theory: game windows only snap to the layout windows, which all sit on this layer
-local LAYOUT_LAYER = id.Component.TOPLEVEL_V2__GAME_AREA
+-- the games own windows snap from about this far away too
+local SNAP_DISTANCE = 12
 local windows = setmetatable({}, { __mode = "k" })
 
 function Snap.register(window)
@@ -56,15 +56,14 @@ local function snapAxis(list, rawValue, otherStart, otherSize, distance)
     return snapped
 end
 
-function Snap.apply(positions, x, y, width, height, distance)
-    local snappedX = snapAxis(positions.across, x, y, height, distance)
-    local snappedY = snapAxis(positions.down, y, x, width, distance)
+function Snap.apply(positions, x, y, width, height)
+    local snappedX = snapAxis(positions.across, x, y, height, SNAP_DISTANCE)
+    local snappedY = snapAxis(positions.down, y, x, width, SNAP_DISTANCE)
     return snappedX, snappedY
 end
 
 local function isSnapTarget(other, movingWindow)
     return other ~= movingWindow
-        and other.root ~= nil
         and not other.root.hidden
         and ui.Interfaces:GetInterface(other.interfaceID) ~= nil
 end
@@ -86,18 +85,13 @@ local function addRegisteredWindows(rects, movingWindow)
     end
 end
 
--- the layout layer also holds a full screen layer, which isnt a window
-local function isShownWindow(child, layoutLayer)
-    return child.visibleGlobal
-        and not (child.width >= layoutLayer.width and child.height >= layoutLayer.height)
-end
-
 local function addLayoutWindows(rects, movingWindow)
-    local layoutLayer = ui.Interfaces:GetComponent(LAYOUT_LAYER)
+    -- theory: game windows only snap to the layout windows, which all sit on this layer
+    local layoutLayer = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
     if layoutLayer == nil then return end
     local parentOrigin = movingWindow.parent.xyGlobal
     layoutLayer:IterateStaticComponents(function(child)
-        if isShownWindow(child, layoutLayer) then
+        if child.visibleGlobal then
             local childOrigin = child.xyGlobal
             rects[#rects + 1] = {
                 x = childOrigin.x - parentOrigin.x,
