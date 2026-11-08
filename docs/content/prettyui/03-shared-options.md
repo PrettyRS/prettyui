@@ -63,7 +63,7 @@ window:AddSpriteButton("SETTINGS", openSettings, {
 : Parent-relative size anchors when supported.
 
 `tooltip`
-: A string or tooltip options table. [KeybindField](#keybind-field-api) uses built-in action tooltips instead of this option.
+: A string or tooltip options table.
 
 {{% /api-card %}}
 
