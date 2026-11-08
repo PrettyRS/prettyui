@@ -288,7 +288,7 @@ local function buildWindow(parent, options)
     end
 
     if not self.hideCloseButton then
-        self.closeButton = ui.Layer.new(self.root)
+        self.closeButton = Components.new(ui.Layer, self.root)
         self.closeButton.clickthrough = false
         self.closeButton:SetPos(-CLOSE_SIZE - CLOSE_RIGHT, 7, 1.0)
         self.closeButton:SetSize(CLOSE_SIZE, CLOSE_SIZE)
