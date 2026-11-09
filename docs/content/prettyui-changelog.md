@@ -31,6 +31,7 @@ hero:
 
 ### Fixed
 - Improved hover feedback on keybind fields and restored the missing clear sprite for resetting keybinds.
+- Panels inside a window, panel or tab page are linked to the surface around them again, which 1.3.0 had broken. This affects tooltip placement and scrollbar dragging inside such panels.
 
 ## 1.3.0 (published, awaiting approval) {#v1-3-0}
 

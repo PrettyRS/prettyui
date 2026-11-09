@@ -335,6 +335,9 @@ end
 local flowHost = Window.new(parent, { title = "Inline resize", width = 800, height = 600 })
 local flowPanel = flowHost:AddPanel({ resizable = true, popout = true, width = 300, height = 200 })
 local inlineSibling = flowHost:AddPanel({ inline = true, width = 100, height = 160 })
+expect(flowPanel.dockTooltipContext.parentContext, flowHost.tooltipContext,
+    "a docked panel's tooltip context links to its window's")
+expect(flowPanel.dock.scroll.ownerWindow, flowHost, "a docked panel's scroll finds its window")
 local flowHandle = begin(flowPanel.dockResize, "e", flowPanel.root)
 fire(flowHandle, ui.Hook.ONHOLD, 42, 2)
 finish(flowPanel.dockResize, flowHandle)
