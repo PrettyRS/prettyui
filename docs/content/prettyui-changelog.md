@@ -27,7 +27,7 @@ hero:
 - Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
-- Added `Refresh()` to [sliders](index.html#slider-api), which places the marker again after the slider's width changes, for sliders on layers of your own.
+- Added `Refresh()` to [sliders](index.html#slider-api), which can update the marker's position again after the slider's width changes.
 
 
 ### Fixed
