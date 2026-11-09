@@ -27,11 +27,14 @@ hero:
 - Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
+- Added `Refresh()` to [sliders](index.html#slider-api), which places the marker again after the slider's width changes, for sliders on layers of your own.
 
 
 ### Fixed
 - Improved hover feedback on keybind fields and restored the missing clear sprite for resetting keybinds.
-- Panels inside a window, panel or tab page are linked to the surface around them again, which 1.3.0 had broken. This affects tooltip placement and scrollbar dragging inside such panels.
+- [Slider](index.html#slider-api) markers now move with the track when the window or panel holding them is resized.
+- Nested panels' content now resizes when the parent being resized causes the panel to be resized.
+- Nested Panels are linked to their parent again, which 1.3.0 had broken.
 
 ## 1.3.0 (published, awaiting approval) {#v1-3-0}
 
