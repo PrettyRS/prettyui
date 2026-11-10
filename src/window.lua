@@ -29,8 +29,7 @@ local CLOSE_RIGHT = 8
 local MIN_WIDTH = 220
 local MIN_HEIGHT = 140
 
--- Negative offsets used to compensate for window's visible edge sitting 2 units inside its box
--- A title bar's top has no such gap; an untitled window's top is the bottom tile flipped, so it does.
+-- Offsets used to compensate for the window's visible edge sitting 2 units inside its box
 local EDGE_STRIP = 2
 local TITLED_EDGE_OFFSETS = { left = EDGE_STRIP, top = 0, right = EDGE_STRIP, bottom = EDGE_STRIP }
 local UNTITLED_EDGE_OFFSETS = { left = EDGE_STRIP, top = EDGE_STRIP, right = EDGE_STRIP, bottom = EDGE_STRIP }
