@@ -491,7 +491,14 @@ headerWindow:Destroy()
 -- the containing area is too small even for the configured minimum.
 local bounds = component(nil, "bounds")
 bounds:SetSize(600, 400)
-for _, kind in ipairs({ "titled", "standalone", "popout" }) do
+-- A window's box may hang past its parent's edges by the transparent strip in its border sprites,
+-- so its border sits flush. A title bar's top has no strip; an untitled window's top does.
+local NO_EDGES = { left = 0, top = 0, right = 0, bottom = 0 }
+local KIND_EDGES = {
+    titled = { left = 2, top = 0, right = 2, bottom = 2 },
+    untitled = { left = 2, top = 2, right = 2, bottom = 2 },
+}
+for _, kind in ipairs({ "titled", "untitled", "standalone", "popout" }) do
     for _, sample in ipairs({
         { direction = "se_v", delta = 1000, expected = { x = 100, y = 80, width = 360, height = 250 } },
         { direction = "se_v", delta = -1000, expected = { x = 100, y = 80, width = 100, height = 80 } },
@@ -521,13 +528,16 @@ for _, kind in ipairs({ "titled", "standalone", "popout" }) do
         end
         owner:Destroy()
     end
+    local edges = KIND_EDGES[kind] or NO_EDGES
     for _, direction in ipairs({ "se_v", "nw_v" }) do
         local owner, root, controller = createSurface(kind, bounds, { width = 300, height = 200 })
         handle = begin(controller, direction, root)
         local delta = direction == "se_v" and 10000 or -10000
         fire(handle, ui.Hook.ONHOLD, 2 + delta, 2 + delta)
-        expectRect(root, direction == "se_v" and { x = 100, y = 80, width = 500, height = 320 }
-            or { x = 0, y = 0, width = 400, height = 280 }, kind .. " stops at viewport boundary")
+        local expected = direction == "se_v"
+            and { x = 100, y = 80, width = 500 + edges.right, height = 320 + edges.bottom }
+            or { x = -edges.left, y = -edges.top, width = 400 + edges.left, height = 280 + edges.top }
+        expectRect(root, expected, kind .. " stops at viewport boundary")
         expectGold(controller, root)
         finish(controller, handle)
         owner:Destroy()
@@ -538,7 +548,8 @@ for _, kind in ipairs({ "titled", "standalone", "popout" }) do
     })
     handle = begin(controller, "nw_v", root)
     fire(handle, ui.Hook.ONHOLD, 1000, 1000)
-    expectRect(root, { x = 0, y = 0, width = 220, height = 140 }, "undersized viewport retains minimum and pins origin")
+    expectRect(root, { x = -edges.left, y = -edges.top, width = 220, height = 140 },
+        "undersized viewport retains minimum and pins origin")
     expectGold(controller, root)
     finish(controller, handle)
     owner:Destroy()

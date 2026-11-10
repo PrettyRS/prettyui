@@ -31,6 +31,7 @@ hero:
 
 ### Fixed
 - Improved hover feedback on keybind fields and restored the missing clear sprite for resetting keybinds.
+- [Windows](index.html#window-api) can now be positioned visually flush against the edges of their parents.
 
 ## 1.3.0 (published, awaiting approval) {#v1-3-0}
 

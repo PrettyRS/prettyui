@@ -182,7 +182,7 @@ expectAt(still, 401, 300, "a window with snapToEdges = false doesn't snap")
 still.root:SetPos(600, 300)
 snapping.root:SetPos(100, 40)
 dragBy(snapping, 297, 0)
-expectAt(snapping, 402, 38, "a window snaps beside a shown game window, flush with its top")
+expectAt(snapping, 402, 40, "a window snaps beside a shown game window, its title bar flush with its top")
 
 snapping.root:SetPos(100, 300)
 layoutLayerFails = true
@@ -200,6 +200,32 @@ snapping.root:SetPos(100, 300)
 dragBy(snapping, 199, 0)
 expectAt(snapping, 304, 300, "snapping to the remaining windows still works after one is destroyed")
 
+-- Stacked windows meet border to border: a title bar's top has no strip, so a titled window below
+-- another sits 2 units lower, and one above a titled window 2 units higher, than with a strip there.
+snapping.root:SetPos(600, 100)
+dragBy(snapping, 0, 393)
+expectAt(snapping, 600, 498, "a window dropped below another meets its bottom border with its title bar")
+snapping.root:SetPos(600, 50)
+dragBy(snapping, 0, 55)
+expectAt(snapping, 600, 102, "a window dropped above a titled window meets its title bar with its bottom border")
 replacement:Destroy()
+local untitledTarget = Window.new(parent, { x = 600, y = 300, width = 300, height = 200 })
+snapping.root:SetPos(600, 50)
+dragBy(snapping, 0, 55)
+expectAt(snapping, 600, 104, "a window dropped above an untitled window meets its top border")
+snapping.root:SetPos(600, 100)
+dragBy(snapping, 0, 393)
+expectAt(snapping, 600, 498, "a window dropped below an untitled window meets its bottom border")
+untitledTarget:Destroy()
+
+-- The window's box hangs 2 units past the parent's edges but its title bar's top, so its visible
+-- border sits flush.
+snapping.root:SetPos(100, 300)
+dragBy(snapping, -94, 0)
+expectAt(snapping, -2, 300, "a window dropped near the parent's left edge snaps flush with it")
+dragBy(snapping, -10000, -10000)
+expectAt(snapping, -2, 0, "a window dragged past the parent's corner stops with its border flush")
+dragBy(snapping, 10000, 10000)
+expectAt(snapping, 702, 502, "a window dragged past the far corner stops with its border flush")
 snapping:Destroy()
 print("window_snap_test: ok")
