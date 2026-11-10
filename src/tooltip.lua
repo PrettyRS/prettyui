@@ -53,7 +53,8 @@ local function measure(text, options)
     return width, math.max(BORDER_SIZE * 2 + 1, height)
 end
 
-local function placementOrder(preferred)
+local function placementOrder(preferred, fallback)
+    if fallback == false then return { preferred or "right" } end
     if preferred == "left" then return { "left", "right", "below", "above" } end
     if preferred == "below" then return { "below", "above", "right", "left" } end
     if preferred == "above" then return { "above", "below", "right", "left" } end
@@ -364,7 +365,7 @@ function Tooltip:Show()
     local parentHeight = self.parent and (self.parent.height or 0) or 0
     local margin = self.options.boundsMargin or OFFSET
     local x, y
-    for _, placement in ipairs(placementOrder(self.options.placement)) do
+    for _, placement in ipairs(placementOrder(self.options.placement, self.options.placementFallback)) do
         local candidateX, candidateY = placedPosition(
             placement, targetX, targetY, targetWidth, targetHeight, self.width, self.height, offset
         )

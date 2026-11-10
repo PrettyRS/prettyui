@@ -475,10 +475,15 @@ def collect_definitions(exports: dict[str, tuple[str, str | None]]) -> dict[str,
                 existing.returns = method.returns.copy()
                 if "options" in existing.params:
                     existing.param_types.update(method.param_types)
-        if name in {"Window", "SimpleView"}:
+        if name in {"Window", "SimpleView", "NisPanel"}:
             scroll = function_map(ROOT / "src/core/scroll.lua").get("Scroll", {})
-            merge_forwarded_methods(definition, scroll)
-        if name in {"Window", "SimpleView", "Panel", "Tabs"}:
+            # Only Scroll.install's public host API is forwarded, not controller internals.
+            merge_forwarded_methods(definition, {
+                method: scroll[method]
+                for method in ("SetContentHeight", "SetScrollPosition", "ScrollBy", "ScrollToChild", "SetScrollable")
+                if method in scroll
+            })
+        if name in {"Window", "SimpleView", "NisPanel", "Panel", "Tabs"}:
             # Layout.configure consumes the nested layout/textLayout/contentLayout
             # table, not top-level component options.
             if "layout" in definition.options or "textLayout" in definition.options:

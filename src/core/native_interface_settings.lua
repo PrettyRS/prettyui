@@ -23,6 +23,21 @@ local function readID(name)
     return nil
 end
 
+local function transparencyTransmitID()
+    local varID = readID(TRANSPARENCY_VAR)
+    if varID == nil then return nil end
+    local ok, isVarBit = pcall(function()
+        return var.VarPlayer[TRANSPARENCY_VAR].isVarBit
+    end)
+    if not ok or isVarBit ~= true then return varID end
+    local baseOK, baseID = pcall(function()
+        local base = var.VarPlayer[TRANSPARENCY_VAR].baseVar
+        return base and base.id
+    end)
+    if baseOK and type(baseID) == "number" then return baseID end
+    return nil
+end
+
 local lock = {
     varID = readID(LOCK_BASE_VAR),
     read = function() return readValue(LOCK_VARBIT) ~= 0 end,
@@ -31,15 +46,10 @@ local lock = {
 
 -- 0 is opaque and 1 fully transparent.
 local transparency = {
-    varID = readID(TRANSPARENCY_VAR),
+    varID = transparencyTransmitID(),
     read = function() return readValue(TRANSPARENCY_VAR) / TRANSPARENCY_MAX end,
     watchers = {},
 }
-
--- Settings by the id of the variable the server transmits for them.
-local settingsByVarID = {}
-if lock.varID then settingsByVarID[lock.varID] = lock end
-if transparency.varID then settingsByVarID[transparency.varID] = transparency end
 
 local function anyWatched()
     return next(lock.watchers) ~= nil or next(transparency.watchers) ~= nil
@@ -54,8 +64,10 @@ local function refresh(setting)
 end
 
 local function onVarTransmit(event)
-    local setting = settingsByVarID[event.var.id]
-    if setting then refresh(setting) end
+    local varID = event.var.id
+    -- Both varbits may share one base variable; refresh every affected setting.
+    if varID == lock.varID then refresh(lock) end
+    if varID == transparency.varID then refresh(transparency) end
 end
 
 -- Calls back with the setting's value at once and again whenever it changes, until

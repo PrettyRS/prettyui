@@ -164,4 +164,27 @@ forgottenWindow = nil
 collectgarbage()
 expect(#Snap.start(moving).across, 10, "a window nothing else holds drops out of the registry")
 
+-- Collection reuses storage, honors each surface's visible edge, and only reads
+-- loaded roots. Ordinary snapping intentionally retains its old visibility rule.
+Snap.unregister(crossParentWindow)
+other.root.hidden = false
+other.root.visibleGlobal = false
+Snap.register(other, 0)
+local storage = { {}, {}, {} }
+local firstEntry = storage[1]
+expect(Snap.collect(moving, storage), storage, "collection returns supplied storage")
+expect(storage[1], firstEntry, "collection reuses rectangle entries")
+expect(#storage, 2, "collection trims unused entries")
+expect(storage[1].x, 500, "zero inset collects the full HUD left edge")
+expect(storage[1].width, 300, "zero inset collects the full HUD width")
+expect(#Snap.collect(moving, storage, true), 1, "visible-only excludes globally invisible roots")
+other.root.visibleGlobal = true
+expect(#Snap.collect(moving, storage, true), 2, "visible targets return")
+Snap.register(moving, 0)
+expectPosition(Snap.start(moving).across[4], 800, 100, 300, "moving zero inset meets the full target edge")
+Snap.register(other)
+expectPosition(Snap.start(moving).across[4], 798, 102, 298, "target default inset remains independent")
+unloadedWindow.root = setmetatable({}, { __index = function() error("unloaded root accessed") end })
+Snap.collect(moving, storage, true)
+
 print("snap_test: ok")

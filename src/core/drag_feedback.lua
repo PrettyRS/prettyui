@@ -69,14 +69,19 @@ function DragFeedback.newFinal(parent, root)
     return self
 end
 
+function DragFeedback:SetTargetRect(x, y, width, height)
+    local active = self.active
+    if active.x ~= x or active.y ~= y then
+        active:SetPos(x, y)
+    end
+    if active.width ~= width or active.height ~= height then
+        layout(active, self.activeParts, width, height, 8)
+    end
+end
+
 function DragFeedback:Update()
-    local root, active = self.root, self.active
-    if active.x ~= root.x or active.y ~= root.y then
-        active:SetPos(root.x, root.y)
-    end
-    if active.width ~= root.width or active.height ~= root.height then
-        layout(active, self.activeParts, root.width, root.height, 8)
-    end
+    local root = self.root
+    self:SetTargetRect(root.x, root.y, root.width, root.height)
 end
 
 function DragFeedback:Destroy()

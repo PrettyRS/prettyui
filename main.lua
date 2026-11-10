@@ -39,6 +39,7 @@ local PrettyUI = {
     KeybindField = KeybindField,
     List = require("src/list"),
     MiniMenu = PrettyMiniMenu,
+    NisPanel = require("src/nis_panel"),
     Panel = require("src/panel"),
     OverheadBar = OverheadBar,
     Sprites = require("src/core/sprites"),

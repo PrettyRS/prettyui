@@ -673,6 +673,41 @@ expect(autoResize.feedback.active.categoryID > 0, true,
     "deferred resize feedback follows the auto owner's policy")
 finish(autoResize, autoHandle)
 autoResize:Destroy()
+-- Optional geometry constraints can reject a motion without releasing the
+-- capture or its outline, and can return a different safe edge on the next hold.
+local limitedOwner = component(resizeHost, "limited-owner")
+limitedOwner:SetPos(100, 100)
+limitedOwner:SetSize(100, 80)
+local allowResize = false
+local limitedResize = Resize.new(resizeHost, limitedOwner, {
+    isVisible = function() return true end,
+    setRect = function(x, y, width, height)
+        limitedOwner:SetPos(x, y)
+        limitedOwner:SetSize(width, height)
+    end,
+    constrainRect = function(x, y, width, height, edge)
+        expect(edge.east, true, "constraint receives the grabbed edge")
+        if not allowResize then return nil end
+        return x, y, math.min(width, 120), height
+    end,
+})
+local limitedHandle = begin(limitedResize, "e", limitedOwner)
+local limitedFeedback = limitedResize.feedback
+fire(limitedHandle, ui.Hook.ONHOLD, 42, 2)
+expectRect(limitedOwner, { x = 100, y = 100, width = 100, height = 80 },
+    "rejected motion keeps the source rectangle")
+expect(limitedResize.feedback, limitedFeedback, "rejected motion retains resize feedback")
+expect(limitedResize.dragState ~= nil, true, "rejected motion retains capture")
+allowResize = true
+fire(limitedHandle, ui.Hook.ONHOLD, 62, 2)
+expectRect(limitedOwner, { x = 100, y = 100, width = 120, height = 80 },
+    "accepted motion applies the constrained rectangle")
+expectGold(limitedResize, limitedOwner)
+finish(limitedResize, limitedHandle)
+limitedResize:Destroy()
+expect(limitedResize.constrainRect, nil, "destroy clears the constraint callback")
+limitedOwner:Destroy()
+
 
 local autoPhysicalHost = Components.new(ui.Layer, overlayParent, { categoryID = "auto" })
 autoPhysicalHost:SetSize(360, 220)

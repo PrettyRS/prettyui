@@ -152,6 +152,72 @@
         }
       }
     },
+    "NisPanel": {
+      "options": {
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "categoryID": "number|'auto'",
+        "_categoryPolicy": "'auto'|'legacy'",
+        "minWidth": "number",
+        "minHeight": "number",
+        "maxWidth": "number",
+        "maxHeight": "number",
+        "tabIcon": "number",
+        "tabText": "string",
+        "scrollable": "boolean",
+        "scrollStep": "number",
+        "contentHeight": "number",
+        "layout": "PrettyUI.LayoutOptions",
+        "textLayout": "PrettyUI.LayoutOptions",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "rowBackgroundColours": "number[]",
+        "rowBackgroundColors": "number[]",
+        "rowBackgroundEdgeToEdge": "boolean",
+        "onClose": "fun(panel: PrettyUI.NisPanel)",
+        "onBoundsChange": "fun(panel: PrettyUI.NisPanel, x: number, y: number, width: number, height: number)",
+        "destroyOnClose": "boolean"
+      },
+      "fields": {
+        "root": "any",
+        "content": "any",
+        "viewport": "any",
+        "width": "number",
+        "height": "number",
+        "scrollable": "boolean",
+        "scrollbarVisible": "boolean",
+        "scrollY": "number",
+        "contentHeight": "number",
+        "contentWidth": "number"
+      },
+      "methods": {
+        "new": {
+          "params": { "parent": "any", "options": "PrettyUI.NisPanelOptions?" },
+          "returns": ["PrettyUI.NisPanel"]
+        },
+        "SetSize": { "params": { "width": "number", "height": "number" }, "returns": ["nil"] },
+        "DockTo": { "params": { "target": "PrettyUI.NisPanel" }, "returns": ["boolean"] },
+        "Undock": { "params": {}, "returns": ["nil"] },
+        "SelectTab": { "params": {}, "returns": ["nil"] },
+        "Show": { "params": {}, "returns": ["nil"] },
+        "Hide": { "params": {}, "returns": ["nil"] },
+        "Close": { "params": {}, "returns": ["nil"] },
+        "Destroy": { "params": {}, "returns": ["nil"] },
+        "SetTooltip": {
+          "params": { "value": "string|PrettyUI.TooltipOptions|nil" },
+          "returns": ["boolean"]
+        },
+        "RefreshRowBackgrounds": { "params": {}, "returns": ["nil"] },
+        "SetScrollable": { "params": { "value": "boolean" }, "returns": ["nil"] },
+        "SetScrollPosition": { "params": { "y": "number" }, "returns": ["nil"] },
+        "ScrollBy": { "params": { "delta": "number" }, "returns": ["nil"] },
+        "ScrollToChild": { "params": { "child": "any", "topOffset": "number?" }, "returns": ["nil"] },
+        "SetContentHeight": { "params": { "height": "number" }, "returns": ["nil"] }
+      }
+    },
     "SimpleView": {
       "options": {
         "x": "number",

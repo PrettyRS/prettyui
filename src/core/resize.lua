@@ -187,6 +187,16 @@ function Resize:_Move(component, x, y)
         parent.width, self.minWidth, self.maxWidth)
     local nextY, height = resizeAxis(root.y, root.height, dy, edge.north, edge.south,
         parent.height, self.minHeight, self.maxHeight)
+    if self.constrainRect then
+        local constrainedX, constrainedY, constrainedWidth, constrainedHeight =
+            self.constrainRect(nextX, nextY, width, height, edge)
+        if constrainedX == nil then
+            self:Refresh()
+            return false
+        end
+        nextX, nextY, width, height =
+            constrainedX, constrainedY, constrainedWidth, constrainedHeight
+    end
     if nextX ~= root.x or nextY ~= root.y or width ~= root.width or height ~= root.height then
         -- Owners may synchronously reflow their content and call Refresh again.
         self.applying = true
@@ -200,6 +210,13 @@ end
 function Resize:Cancel()
     self:_Clear()
     self:Refresh()
+    return false
+end
+
+function Resize:_Finish()
+    local dragging = self.dragState ~= nil
+    self:Cancel()
+    if dragging and self.onFinish then self.onFinish() end
     return false
 end
 
@@ -226,6 +243,8 @@ function Resize:Destroy()
     self.setRect = nil
     self.isVisible = nil
     self.onBegin = nil
+    self.constrainRect = nil
+    self.onFinish = nil
 end
 
 function Resize.new(parent, root, options)
@@ -239,8 +258,10 @@ function Resize.new(parent, root, options)
         maxWidth = options.maxWidth or math.huge,
         maxHeight = options.maxHeight or math.huge,
         setRect = options.setRect,
+        constrainRect = options.constrainRect,
         isVisible = options.isVisible,
         onBegin = options.onBegin,
+        onFinish = options.onFinish,
         handles = {},
     }, Resize)
     local policyOptions = { _categoryPolicy = Components.policyOf(root) }
@@ -255,8 +276,8 @@ function Resize.new(parent, root, options)
         handle:Subscribe(ui.Hook.ONHOLD, function(component, x, y)
             return self:_Move(component, x, y)
         end)
-        handle:Subscribe(ui.Hook.ONRELEASE, function() return self:Cancel() end)
-        handle:Subscribe(ui.Hook.ONDRAGCOMPLETE, function() return self:Cancel() end)
+        handle:Subscribe(ui.Hook.ONRELEASE, function() return self:_Finish() end)
+        handle:Subscribe(ui.Hook.ONDRAGCOMPLETE, function() return self:_Finish() end)
     end
     local wasEmpty = next(controllers) == nil
     controllers[self] = true

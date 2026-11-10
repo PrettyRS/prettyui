@@ -6,8 +6,8 @@ local VISIBLE_EDGE_OFFSET = 2
 local SNAP_DISTANCE = 12
 local windows = setmetatable({}, { __mode = "k" })
 
-function Snap.register(window)
-    windows[window] = true
+function Snap.register(window, edgeOffset)
+    windows[window] = edgeOffset or VISIBLE_EDGE_OFFSET
 end
 
 function Snap.unregister(window)
@@ -62,52 +62,59 @@ function Snap.apply(positions, x, y, width, height)
     return snappedX, snappedY
 end
 
-local function isSnapTarget(other, movingWindow)
+local function isSnapTarget(other, movingWindow, visibleOnly)
+    -- Check the cached interface ID before touching a potentially unloaded root.
     return other ~= movingWindow
-        and not other.root.hidden
+        and not (movingWindow._nisGroup ~= nil and other._nisGroup == movingWindow._nisGroup)
         and ui.Interfaces:GetInterface(other.interfaceID) ~= nil
+        and not other.root.hidden
+        and (visibleOnly ~= true or other.root.visibleGlobal ~= false)
 end
 
-local function addRegisteredWindows(rects, movingWindow)
+function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID)
+    rects = rects or {}
+    local count = 0
     local parentOrigin = movingWindow.parent.xyGlobal
-    for other in pairs(windows) do
-        if isSnapTarget(other, movingWindow) then
+    local function add(x, y, width, height)
+        count = count + 1
+        local rect = rects[count]
+        if rect == nil then
+            rect = {}
+            rects[count] = rect
+        end
+        rect.x, rect.y, rect.width, rect.height = x, y, width, height
+    end
+    for other, inset in pairs(windows) do
+        if isSnapTarget(other, movingWindow, visibleOnly) then
             local root = other.root
-            local rootOrigin = root.xyGlobal
-            rects[#rects + 1] = {
-                x = rootOrigin.x - parentOrigin.x + VISIBLE_EDGE_OFFSET,
-                y = rootOrigin.y - parentOrigin.y + VISIBLE_EDGE_OFFSET,
-                width = root.width - 2 * VISIBLE_EDGE_OFFSET,
-                height = root.height - 2 * VISIBLE_EDGE_OFFSET,
-            }
+            local origin = root.xyGlobal
+            add(origin.x - parentOrigin.x + inset, origin.y - parentOrigin.y + inset,
+                root.width - 2 * inset, root.height - 2 * inset)
         end
     end
-end
-
-local function addLayoutWindows(rects, movingWindow)
-    -- theory: game windows only snap to the layout windows, which all sit on this layer
+    -- Theory: game windows only snap to the layout windows on this layer.
+    -- Enumeration failures propagate so placement cannot approve unknown geometry.
     local layoutLayer = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
-    if layoutLayer == nil then return end
-    local parentOrigin = movingWindow.parent.xyGlobal
-    layoutLayer:IterateStaticComponents(function(child)
-        if child.visibleGlobal then
-            local childOrigin = child.xyGlobal
-            rects[#rects + 1] = {
-                x = childOrigin.x - parentOrigin.x,
-                y = childOrigin.y - parentOrigin.y,
-                width = child.width,
-                height = child.height,
-            }
-        end
-    end)
+    local excludedInterface = excludedNativeID and (excludedNativeID >> 16)
+    local excludedStatic = excludedNativeID and (excludedNativeID & 0xFFFF)
+    if layoutLayer ~= nil then
+        layoutLayer:IterateStaticComponents(function(child)
+            if child.visibleGlobal and (excludedNativeID == nil or
+                child.interfaceID ~= excludedInterface or child.staticID ~= excludedStatic) then
+                local origin = child.xyGlobal
+                add(origin.x - parentOrigin.x, origin.y - parentOrigin.y, child.width, child.height)
+            end
+            return false
+        end)
+    end
+    for index = #rects, count + 1, -1 do rects[index] = nil end
+    return rects
 end
 
 function Snap.start(movingWindow)
     local root, parent = movingWindow.root, movingWindow.parent
-    local rects = {}
-    addRegisteredWindows(rects, movingWindow)
-    addLayoutWindows(rects, movingWindow)
-    return Snap.positions(rects, root.width, root.height, parent.width, parent.height, VISIBLE_EDGE_OFFSET)
+    return Snap.positions(Snap.collect(movingWindow), root.width, root.height,
+        parent.width, parent.height, windows[movingWindow] or VISIBLE_EDGE_OFFSET)
 end
 
 return Snap
