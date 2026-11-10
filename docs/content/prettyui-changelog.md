@@ -27,7 +27,7 @@ hero:
 - Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
-- Added the `NisPanel` component, this component matches the visuals and behavior of panels in the modern interface.
+- Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface.
 - Added a `placement` option to tooltips, allowing control over their position relative to the target element.
 
 
