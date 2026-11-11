@@ -45,7 +45,7 @@ end
 
 local function component(parent, categoryID, dynamicID, kind)
     constructed = constructed + 1
-    local static = parent.parentStatic or parent
+    local static = parent.categoryID == -1 and parent or parent.parentStatic or parent
     if static.rejectExplicitStatic and parent == static and categoryID ~= nil then
         error("categorized constructor on static parent", 0)
     end
@@ -63,6 +63,7 @@ local function component(parent, categoryID, dynamicID, kind)
     local result = {
         parent = parent, parentStatic = static, interfaceID = static.interfaceID,
         categoryID = category, dynamicID = dynamic, kind = kind,
+        staticID = static.staticID,
         children = {}, subscriptions = {}, x = 0, y = 0, width = 0, height = 0,
         hidden = false, cursorConfig = {}, text = {},
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
@@ -376,6 +377,56 @@ do
         end)
         ui.Interfaces.GetComponent = fullLookup
     end
+end
+
+-- Different Lua handles can identify the same native parent. Lookups and
+-- iteration must still protect components created through the original handle.
+do
+    local C = require("src/core/components")
+    local fullLookup = ui.Interfaces.GetComponent
+    for _, mode in ipairs({ "full", "unresolved" }) do
+        local static = host(46)
+        local parent = ui.Layer.new(static)
+        local foreign = ui.Text.new(parent, 1, 0)
+        foreign.content = "Other plugin"
+        local staticAlias = setmetatable({}, { __index = static })
+        local parentAlias = setmetatable({ parentStatic = staticAlias }, { __index = parent })
+        if mode == "unresolved" then ui.Interfaces.GetComponent = function() return nil end end
+        local control = C.new(ui.Text, parentAlias, { categoryID = "auto" })
+        control.content = "This plugin"
+        expect(static.registry[pair(foreign.categoryID, foreign.dynamicID)].content, "Other plugin",
+            "aliased parent preserves the other plugin's control: " .. mode)
+        expect(static.registry[pair(control.categoryID, control.dynamicID)].content, "This plugin",
+            "aliased parent creates a separately addressable control: " .. mode)
+        control:Destroy()
+        expect(foreign.destroyed, nil, "aliased allocation cleanup cannot destroy a foreign control")
+        ui.Interfaces.GetComponent = fullLookup
+    end
+end
+
+-- A static component can have a static ancestor without sharing its namespace.
+do
+    local ancestor = host(47)
+    local area = host(47)
+    area.parent, area.parentStatic = ancestor, ancestor
+    local foreignRoot = ui.Layer.new(area)
+    local foreign = ui.Sprite.new(foreignRoot, 1, 0)
+    foreign.content = "Existing plugin"
+    local window = prettyui.Window.new(area, { categoryID = "auto", title = "Static descendant" })
+    local text = window:AddText("Independent window")
+    expect(text.parentStatic, area, "managed content uses the supplied static area's namespace")
+    expect(area.registry[pair(1, 0)], foreign, "managed construction preserves another plugin's sprite")
+    expect(next(ancestor.registry), nil, "managed construction does not allocate in the static ancestor")
+    window:Destroy()
+    expect(foreign.content, "Existing plugin", "destroying the new window preserves existing content")
+    local grouped = prettyui.BuildCategoryGroup(area, 1, function(new)
+        return new(ui.Text, foreignRoot)
+    end)
+    grouped.content = "Reserved group"
+    expect(grouped.parentStatic, area, "reserved groups use the supplied static area's namespace")
+    expect(area.registry[pair(1, 0)], foreign, "reserved groups preserve the existing plugin's slot")
+    grouped:Destroy()
+    foreignRoot:Destroy()
 end
 
 do

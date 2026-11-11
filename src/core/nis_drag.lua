@@ -4,6 +4,7 @@ local DragFeedback = require("src/core/drag_feedback")
 local InterfaceMouse = require("src/core/mouse")
 local Cursor = require("src/core/cursor")
 local NisGroup = require("src/core/nis_group")
+local Persistence = require("src/core/nis_persistence")
 
 local NisDrag = {}
 local activePanel
@@ -277,6 +278,7 @@ function NisDrag.install(NisPanel)
             elseif target and not nisTarget then
                 NisGroup.apply(self, target.x, target.y, target.width, target.height)
                 if self._nisTabTransaction then
+                    Persistence.detach(self)
                     self._nisTabTransaction = nil
                 end
             else
@@ -437,6 +439,7 @@ function NisDrag.install(NisPanel)
         end
         local group = member._nisGroup
         if group then group.active._nisTabs:Refresh(group.members, group.active) end
+        if group then NisGroup.notify(member) end
         if member.root and ui.Interfaces:GetInterface(member.interfaceID) ~= nil then
             member:_SyncOverlays(member.root.hidden == true)
         end

@@ -1,5 +1,16 @@
 local Components = {}
 
+-- Different Lua handles can refer to the same native component.
+function Components.sameComponent(first, second)
+    if first == second then return true end
+    return first ~= nil and second ~= nil
+        and type(first.interfaceID) == "number" and type(first.staticID) == "number"
+        and first.interfaceID == second.interfaceID and first.staticID == second.staticID
+        and first.categoryID == second.categoryID and first.dynamicID == second.dynamicID
+end
+
+local sameComponent = Components.sameComponent
+
 local IDS_PER_CATEGORY = 235
 local LAST_CATEGORY = 234
 local CAPACITY = LAST_CATEGORY * IDS_PER_CATEGORY
@@ -14,10 +25,19 @@ local states = setmetatable({}, { __mode = "k" })
 local policies = setmetatable({}, { __mode = "k" })
 local knownHosts = setmetatable({}, { __mode = "k" })
 local warned = false
+
+local function visitKey(component)
+    local categoryID, dynamicID = component.categoryID, component.dynamicID
+    if type(categoryID) == "number" and type(dynamicID) == "number" then
+        return categoryID * 4096 + dynamicID
+    end
+    return component
+end
+
 local function staticParentOf(parent)
     local host = knownHosts[parent]
     if host then return host end
-    host = parent.parentStatic or parent
+    host = parent.categoryID == -1 and parent or parent.parentStatic or parent
     knownHosts[parent] = host
     return host
 end
@@ -42,7 +62,7 @@ end
 function Components.setPolicy(component, policy)
     assert(policy == "auto" or policy == "legacy", "invalid component allocation policy")
     policies[component] = policy
-    knownHosts[component] = component.parentStatic or component
+    knownHosts[component] = staticParentOf(component)
     return component
 end
 
@@ -63,10 +83,11 @@ end
 function Components.occupiedIDs(staticParent)
     local occupied, visited = {}, {}
     local function visit(collection)
-        if visited[collection] or collection.IterateDynamicComponents == nil then return end
-        visited[collection] = true
+        local key = visitKey(collection)
+        if visited[key] or collection.IterateDynamicComponents == nil then return end
+        visited[key] = true
         collection:IterateDynamicComponents(function(child)
-            if child.parentStatic == staticParent then
+            if sameComponent(child.parentStatic, staticParent) then
                 local slot = slotOf(child.categoryID, child.dynamicID)
                 if slot then occupied[slot] = true end
                 visit(child)
@@ -109,12 +130,12 @@ local function nativeOccupant(staticParent, state, parent, categoryID, dynamicID
     if state.fullLookup ~= false and interfaces and interfaces.GetComponent and
         interfaces.GetInterface and type(state.interfaceID) == "number" and
         type(state.staticID) == "number" then
-        if parent ~= staticParent and parent.parentStatic == staticParent and
+        if parent ~= staticParent and sameComponent(parent.parentStatic, staticParent) and
             type(parent.categoryID) == "number" and parent.categoryID >= 0 and
             type(parent.dynamicID) == "number" and parent.dynamicID >= 0 then
             local resolved = interfaces:GetComponent(state.interfaceID, state.staticID,
                 parent.categoryID, parent.dynamicID)
-            if resolved ~= parent then state.fullLookup = false end
+            if not sameComponent(resolved, parent) then state.fullLookup = false end
         end
         if state.fullLookup ~= false then
             return interfaces:GetComponent(state.interfaceID, state.staticID,
@@ -124,11 +145,12 @@ local function nativeOccupant(staticParent, state, parent, categoryID, dynamicID
     if staticParent.IterateDynamicComponents == nil then error(UNVERIFIABLE, 3) end
     local visited, found = {}, false
     local function visit(collection)
-        if found or visited[collection] then return end
+        local key = visitKey(collection)
+        if found or visited[key] then return end
         if collection.IterateDynamicComponents == nil then error(UNVERIFIABLE, 3) end
-        visited[collection] = true
+        visited[key] = true
         collection:IterateDynamicComponents(function(child)
-            if child.parentStatic == staticParent then
+            if sameComponent(child.parentStatic, staticParent) then
                 if child.categoryID == categoryID and child.dynamicID == dynamicID then
                     found = true
                     return true

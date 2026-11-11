@@ -198,6 +198,21 @@ local function hitAt(area, x, y)
     end
 end
 
+local savedLayouts = {}
+local function copy(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, child in pairs(value) do result[key] = copy(child) end
+    return result
+end
+PersistentDB = {
+    GetStructuredData = function(_, key) return copy(savedLayouts[key]) end,
+    SetStructuredData = function(_, key, value)
+        savedLayouts[key] = copy(value)
+        return true
+    end,
+}
+
 local NisPanel = require("src/nis_panel")
 local parent = component(nil, "parent")
 parent:SetSize(1000, 700)
@@ -1203,6 +1218,236 @@ do
     expect(target.root.hidden, false, "callback destruction leaves target content visible")
     expect(target.surface.container.y, 16, "callback destruction cleans up shared chrome")
     endPair(source, target)
+end
+
+-- Stable IDs retain user layouts across plugin teardown and complete Lua restarts.
+do
+    locked = false
+    transmit(id.VarPlayer.TOPLEVEL_V2_SKINS_VARP)
+    obstacles = {}
+    Mouse.GetPosition = function() return nil end
+    local function create(panelID, extra)
+        local options = { id = panelID, x = 100, y = 100, width = 260, height = 180 }
+        for key, value in pairs(extra or {}) do options[key] = value end
+        return NisPanel.new(parent, options)
+    end
+    local function restart()
+        for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
+            "src/core/nis_drag", "src/core/nis_persistence" }) do
+            package.loaded[name] = nil
+        end
+        NisPanel = require("src/nis_panel")
+    end
+    local function saved(panelID)
+        return savedLayouts["prettyui.nis-layout.v1"].panels[panelID]
+    end
+    local a = create("plugin-a:tracker")
+    local b = create("plugin-b:tracker", { x = 500, height = 240 })
+    expectRect(a.root, 100, 100, 260, 180, "first declaration uses defaults")
+    expect(saved("plugin-a:tracker").group, nil, "first standalone declaration is recorded")
+    expect(a:DockTo(b), true, "identified panels can group across plugin namespaces")
+    a:SetSize(340, 260)
+    b:SelectTab()
+    local held = b._nisTabs.tabs[1].hit
+    local raw = { x = held.x + 12, y = held.y + 12 }
+    Mouse.GetPosition = function() return raw end
+    fire(held, ui.Hook.ONCLICK, 12, 12)
+    raw = { x = b.root.x + 60, y = b.root.y + 28 }
+    fire(held, ui.Hook.ONHOLD, 12, 12)
+    fire(held, ui.Hook.ONRELEASE)
+    Mouse.GetPosition = function() return nil end
+    local oldGroup = saved("plugin-a:tracker").group
+    expect(savedLayouts["prettyui.nis-layout.v1"].groups[oldGroup].active,
+        "plugin-b:tracker", "active tab is saved without changing geometry")
+    local children = #parent.children
+    expect(pcall(create, "plugin-a:tracker"), false, "duplicate live IDs are rejected")
+    expect(#parent.children, children, "duplicate ID fails before allocating components")
+    a:Destroy()
+    b:Destroy()
+    expect(saved("plugin-a:tracker").group, oldGroup, "shutdown does not save an undock")
+
+    restart()
+    locked = true
+    b = create("plugin-b:tracker", { x = -10, y = -10, xAnchor = 0.5,
+        yAnchor = 0.5, width = 600, height = 400, dockTo = "new:default" })
+    expectRect(b.root, 500, 100, 340, 260, "saved bounds override changed defaults and anchors")
+    expect(b._nisGroup, nil, "missing plugin leaves a usable standalone panel")
+    a = create("plugin-a:tracker", { width = 500, height = 500 })
+    expect(a._nisGroup, b._nisGroup, "group restores in reverse plugin creation order")
+    expect(a._nisGroup.active, b, "locked startup restores the selected tab")
+    expect(a._nisGroup.members[1], a, "saved tab order restores")
+    expect(a._nisGroup.members[2], b, "reordered tab remains last")
+    expect(a.root.hidden, true, "restored inactive page is hidden")
+    expectRect(a.root, 500, 100, 340, 260, "restored members share saved bounds")
+
+    b:Destroy()
+    a:SetSize(360, 280)
+    b = create("plugin-b:tracker")
+    expectRect(b.root, 500, 100, 360, 280, "absent plugin follows changes to its saved group")
+    expect(a._nisGroup, b._nisGroup, "plugin remount rejoins its saved group")
+    a:Undock()
+    expect(saved("plugin-a:tracker").group, nil, "explicit undock persists")
+    a:Destroy()
+    b:Destroy()
+    restart()
+    a = create("plugin-a:tracker", { dockTo = "plugin-b:tracker" })
+    b = create("plugin-b:tracker", { dockTo = "plugin-a:tracker" })
+    expect(a._nisGroup, nil, "new defaults cannot reset a previously declared panel")
+    expect(b._nisGroup, nil, "saved standalone state overrides default docking")
+    a:Destroy()
+    b:Destroy()
+
+    a = create("late:a", { dockTo = "late:b" })
+    b = create("late:b", { x = 500, width = 300, height = 240 })
+    expect(a._nisGroup, b._nisGroup, "first-use default docking waits for the target")
+    expect(a._nisGroup.active, a, "default docking selects the incoming panel")
+    expectRect(a.root, 500, 100, 300, 240, "default docking adopts target bounds")
+    local c = create("late:c", { dockTo = "late:b" })
+    expect(#c._nisGroup.members, 3, "first-use defaults can extend a saved group")
+    c:Hide()
+    expect(saved("late:c").group, nil, "hiding a panel persists its explicit removal")
+    c:Destroy()
+    b:Destroy()
+    a:Destroy()
+    restart()
+    a = create("late:a")
+    c = create("late:c", { dockTo = "late:b" })
+    b = create("late:b")
+    expect(c._nisGroup, nil, "hidden panel's old default is not reapplied")
+    expect(#a._nisGroup.members, 2, "remaining group survives shutdown and a missing member")
+    a:Destroy()
+    b:Destroy()
+    c:Destroy()
+
+    locked = false
+    a = create("drag:a")
+    begin(a)
+    move(a, 450, 450)
+    expect(saved("drag:a").x, 100, "drag preview never persists transient coordinates")
+    a:_CancelDrag()
+    expect(saved("drag:a").x, 100, "cancelled drag keeps saved coordinates")
+    begin(a)
+    move(a, 450, 450)
+    release(a)
+    expect(saved("drag:a").x, a.root.x, "drag release persists committed position")
+    expect(saved("drag:a").y, a.root.y, "drag release persists committed vertical position")
+    a:Destroy()
+    restart()
+    a = create("drag:a")
+    expectRect(a.root, 320, 444, 260, 180, "dragged position restores after restart")
+    a:Destroy()
+
+    a = create("pending:a", { dockTo = "pending:b" })
+    a:Undock()
+    b = create("pending:b")
+    expect(a._nisGroup, nil, "explicit undock cancels an unresolved first-use default")
+    a:Destroy()
+    b:Destroy()
+
+    -- A saved target may be absent when a new default member is declared.
+    a = create("absent:target", { x = 500, width = 300, height = 240 })
+    a:Destroy()
+    b = create("absent:source", { dockTo = "absent:target" })
+    expectRect(b.root, 500, 100, 300, 240, "first-use docking adopts an absent target's saved bounds")
+    b:Destroy()
+    a = create("absent:target")
+    b = create("absent:source")
+    expect(a._nisGroup, b._nisGroup, "absent target eventually restores the default group")
+    expectRect(a.root, 500, 100, 300, 240, "waiting member teardown cannot reset saved target geometry")
+    a:Destroy()
+    b:Destroy()
+
+    -- Tab tear-out is transactional: only a valid drop forgets the old group.
+    a = create("gesture:a")
+    b = create("gesture:b", { x = 500, height = 240 })
+    expect(a:DockTo(b), true, "persistent tab gesture starts grouped")
+    local originalGroup = saved("gesture:a").group
+    for _, commit in ipairs({ false, true }) do
+        local tab = a._nisTabs.tabs[2].hit
+        local pointer = { x = tab.x + 12, y = tab.y + 12 }
+        Mouse.GetPosition = function() return pointer end
+        fire(tab, ui.Hook.ONCLICK, 12, 12)
+        pointer = { x = 200, y = 500 }
+        fire(tab, ui.Hook.ONHOLD, 12, 100)
+        expect(saved("gesture:a").group, originalGroup, "tab tear-out preview retains saved nesting")
+        if commit then fire(tab, ui.Hook.ONRELEASE)
+        else emit("KeyDown", { gameKey = GameKey.ESCAPE }) end
+        expect(saved("gesture:a").group == nil, commit, "tab gesture saves only committed nesting")
+    end
+    Mouse.GetPosition = function() return nil end
+    a:Destroy()
+    b:Destroy()
+    restart()
+    a = create("gesture:a", { dockTo = "gesture:b" })
+    b = create("gesture:b")
+    expect(a._nisGroup, nil, "committed tab tear-out remains standalone after restart")
+    expect(b._nisGroup, nil, "tear-out survivor remains standalone after restart")
+    a:Destroy()
+    b:Destroy()
+
+    -- Constructor limits continue to apply to a restored layout.
+    a = create("limits:a")
+    b = create("limits:b", { x = 500, width = 300, height = 240 })
+    expect(a:DockTo(b), true, "limits scenario starts grouped")
+    a:Destroy()
+    b:Destroy()
+    restart()
+    a = create("limits:a", { maxWidth = 280 })
+    b = create("limits:b", { maxWidth = 270 })
+    expect(a._nisGroup, b._nisGroup, "compatible changed limits retain nesting")
+    expect(a.root.width, 270, "restored width obeys the tightest current limit")
+    expect(b.root.width, 270, "restored members retain common constrained width")
+    a:Destroy()
+    b:Destroy()
+
+    a = create("selection:absent", { x = 500, height = 240 })
+    b = create("selection:remaining")
+    c = create("selection:detached")
+    expect(b:DockTo(a), true, "selection scenario forms its first group")
+    expect(c:DockTo(b), true, "selection scenario adds a third member")
+    a:Destroy()
+    c:Undock()
+    b:Destroy()
+    c:Destroy()
+    restart()
+    a = create("selection:absent")
+    b = create("selection:remaining")
+    expect(a._nisGroup.active, b, "undocking selects the visible survivor, not an absent plugin")
+    a:Destroy()
+    b:Destroy()
+
+    a = create("close:a", { onClose = function(owner) owner:Destroy() end })
+    b = create("close:b", { x = 500, height = 240 })
+    expect(a:DockTo(b), true, "close callback scenario starts grouped")
+    begin(a)
+    move(a, 200, 500)
+    a:Close()
+    expect(saved("close:a").group, nil, "close remains an explicit removal when its callback destroys the panel")
+    expect(saved("close:a").x, 500, "close cancels the drag before saving bounds")
+    b:Destroy()
+
+    -- Plugins may receive distinct Lua handles for one native game-area parent.
+    local originalParent = parent
+    local alias = setmetatable({}, { __index = originalParent })
+    alias.parentStatic = alias
+    b = create("aliases:b", { x = 500, width = 300, height = 240 })
+    parent = alias
+    a = create("aliases:a")
+    parent = originalParent
+    expect(a:DockTo(b), true, "distinct handles for the same native parent permit docking")
+    a:SetSize(320, 260)
+    a:Destroy()
+    b:Destroy()
+    restart()
+    b = create("aliases:b")
+    parent = alias
+    a = create("aliases:a")
+    parent = originalParent
+    expect(a._nisGroup, b._nisGroup, "saved grouping restores across native parent aliases")
+    expect(a._nisGroup.active, a, "parent aliases retain the saved active tab")
+    expectRect(a.root, 500, 100, 320, 260, "parent aliases retain shared saved bounds")
+    a:Destroy()
+    b:Destroy()
 end
 
 -- Active unload must take the full destruction path without touching native handles.

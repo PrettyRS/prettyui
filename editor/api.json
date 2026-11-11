@@ -154,6 +154,8 @@
     },
     "NisPanel": {
       "options": {
+        "id": "string",
+        "dockTo": "string",
         "x": "number",
         "y": "number",
         "xAnchor": "number",

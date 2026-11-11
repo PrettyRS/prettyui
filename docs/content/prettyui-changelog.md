@@ -27,12 +27,15 @@ hero:
 - Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
-- Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface.
+- Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default.
 - Added a `placement` option to tooltips, allowing control over their position relative to the target element.
 
 
 ### Fixed
 - Improved hover feedback on keybind fields and restored the missing clear sprite for resetting keybinds.
+- Fixed automatic component-ID collisions when plugins use different Lua handles for the same native parent. NIS panel docking and layout restoration also recognize these parent aliases.
+- Fixed NIS panel startup and demo launcher errors by keeping native component-identity comparison in the existing table-exported Components module.
+- Fixed allocations beneath static components that have a static ancestor. Ordinary controls and reserved groups now check the supplied static component's namespace instead of its ancestor's, preventing cross-plugin NIS panel collisions.
 
 ## 1.3.0 (published, awaiting approval) {#v1-3-0}
 

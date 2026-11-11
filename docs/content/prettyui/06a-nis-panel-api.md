@@ -19,6 +19,7 @@ NisPanel.new(parent, options)
 ```lua
 local gameArea = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
 local panel = prettyui.NisPanel.new(gameArea, {
+    id = "my-plugin:encounter",
     categoryID = "auto",
     x = 80,
     y = 80,
@@ -39,6 +40,17 @@ panel:Destroy()
 {{% api-card %}}
 
 ### Options
+
+`id`
+: Stable, globally unique ID, such as **"my-plugin:encounter"**. PrettyUI saves
+  bounds, tab membership, order, and the active tab in its own persistent DB.
+  Omit for a transient panel. Duplicate live IDs are rejected.
+
+`dockTo`
+: Another panel's **id**, used as a first-declaration docking default. The target
+  may be created later, including by another plugin. Requires **id**.
+
+Saved layouts override constructor position, size, anchors, and **dockTo**.
 
 `categoryID`
 : Optional **"auto"** allocation. See [Component IDs](#component-ids).
@@ -61,7 +73,7 @@ panel:Destroy()
 `onBoundsChange(panel, x, y, width, height)`
 : Receives changed, committed bounds after dragging, resizing, `SetSize`, or
   parent-driven repositioning. Coordinates are parent-relative interface units.
-  Save all four values and restore them as constructor options without anchors.
+  Identified panels are saved automatically; no persistence callback is needed.
 
 `onClose(panel)`
 : Called by `Close()` before hiding or destroying the panel.
@@ -116,9 +128,10 @@ panels share bounds and retain their own content and scroll state.
   false unless both panels are visible, unlocked, on the same parent, and the
   target's size satisfies every member's limits. Group minimum height is **49**.
   For existing groups, pass their active panels; docking merges both groups.
+  This is an explicit layout change; use the **dockTo** option for startup defaults.
 
 `Undock()`
-: Detaches this panel without changing its bounds.
+: Detaches this panel without changing its bounds and saves it as standalone.
 
 `SelectTab()`
 : Selects this panel within its group.
@@ -137,7 +150,9 @@ panels share bounds and retain their own content and scroll state.
   button, which is visible only while the interface is unlocked.
 
 `Destroy()`
-: Removes the panel, managed content, and retained handlers. Call during plugin shutdown.
+: Removes the panel, managed content, and retained handlers without forgetting its
+  saved group. Call during plugin shutdown; `Hide()` and `Close()` instead save
+  the panel's removal from its group.
 
 {{% /api-card %}}
 

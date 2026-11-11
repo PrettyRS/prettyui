@@ -1,5 +1,7 @@
 local Tooltip = require("src/tooltip")
 local NisTabs = require("src/core/nis_tabs")
+local Persistence = require("src/core/nis_persistence")
+local sameComponent = require("src/core/components").sameComponent
 local NisGroup = {}
 
 local panels = setmetatable({}, { __mode = "k" })
@@ -75,6 +77,7 @@ local function restoreLimits(panel)
 end
 
 local function notify(group)
+    Persistence.capture(group.active)
     local snapshot = { table.unpack(group.members) }
     for _, panel in ipairs(snapshot) do
         if loaded(panel) and panel._nisGroup == group then panel:_NotifyBoundsChange() end
@@ -133,7 +136,8 @@ end
 
 local function eligible(source, target)
     if not visible(source) or not visible(target) or source == target
-        or source.parent ~= target.parent or source._nisGroup == target._nisGroup and source._nisGroup then
+        or not sameComponent(source.parent, target.parent)
+        or source._nisGroup == target._nisGroup and source._nisGroup then
         return false
     end
     local sourceGroup, targetGroup = source._nisGroup, target._nisGroup
@@ -193,6 +197,7 @@ function NisGroup.select(panel)
     newView.panel, oldView.panel = active, panel
     group.active = panel
     refresh(group)
+    Persistence.capture(panel)
 end
 
 function NisGroup.reorder(panel, pointerX)
@@ -312,19 +317,27 @@ function NisGroup.snapshot(panel)
     }
 end
 
-function NisGroup.restore(snapshot)
+function NisGroup.restore(snapshot, notifyCallbacks)
     if not snapshot then return false end
     local owner = snapshot.members[1]
     for _, panel in ipairs(snapshot.members) do
-        if not loaded(panel) or panel._nisHidden or panel.parent ~= owner.parent then return false end
+        if not loaded(panel) or panel._nisHidden or not sameComponent(panel.parent, owner.parent) then
+            return false
+        end
     end
+    local minWidth, minHeight, maxWidth, maxHeight = limits(snapshot.members)
+    if not minWidth then return false end
+    local width = math.max(minWidth, math.min(maxWidth, snapshot.width))
+    local height = math.max(minHeight, math.min(maxHeight, snapshot.height))
+    local x = math.max(0, math.min(snapshot.x, owner.parent.width - width))
+    local y = math.max(0, math.min(snapshot.y, owner.parent.height - height))
     for _, panel in ipairs(snapshot.members) do NisGroup.undock(panel) end
     local group = { members = snapshot.members, active = snapshot.active }
     for _, panel in ipairs(group.members) do panel._nisGroup = group end
     setLimits(group)
-    apply(group, snapshot.x, snapshot.y, snapshot.width, snapshot.height, false)
+    apply(group, x, y, width, height, false)
     refresh(group)
-    notify(group)
+    if notifyCallbacks ~= false then notify(group) end
     return true
 end
 

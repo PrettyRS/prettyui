@@ -17,6 +17,7 @@ local NisDrag = require("src/core/nis_drag")
 local NisResize = require("src/core/nis_resize")
 local NisGroup = require("src/core/nis_group")
 local NisTabs = require("src/core/nis_tabs")
+local NisPersistence = require("src/core/nis_persistence")
 local clamp = require("src/core/math").clamp
 
 local NisPanel = {}
@@ -238,6 +239,7 @@ function NisPanel:_NotifyBoundsChange()
     local x, y, width, height = root.x, root.y, root.width, root.height
     if previous[1] == x and previous[2] == y and previous[3] == width and previous[4] == height then return end
     previous[1], previous[2], previous[3], previous[4] = x, y, width, height
+    NisPersistence.bounds(self)
     if self.onBoundsChange then self.onBoundsChange(self, x, y, width, height) end
 end
 
@@ -304,6 +306,7 @@ function NisPanel:Hide()
     self:_CancelDrag()
     NisGroup.clearPanel(self)
     NisGroup.undock(self)
+    NisPersistence.detach(self)
     self._nisHidden = true
     if self.content then Tooltip.hideContextTooltips(self.content) end
     if not loaded(self) then return end
@@ -314,6 +317,9 @@ function NisPanel:Hide()
 end
 
 function NisPanel:Close()
+    self:_CancelDrag()
+    if self.resize then self.resize:Cancel() end
+    NisPersistence.detach(self)
     if self.onClose then self.onClose(self) end
     if self._destroyed then return end
     if self.destroyOnClose then self:Destroy() else self:Hide() end
@@ -322,6 +328,7 @@ end
 function NisPanel:Destroy()
     if self._destroyed then return end
     self:_CancelDrag()
+    NisPersistence.unregister(self)
     self._destroyed = true
     NisGroup.unregister(self)
     NativeInterfaceSettings.unwatchLock(self)
@@ -369,6 +376,7 @@ end
 function NisPanel:Undock()
     self:_CancelDrag()
     NisGroup.undock(self)
+    NisPersistence.detach(self)
 end
 
 function NisPanel:SelectTab()
@@ -586,11 +594,12 @@ local function buildPanel(parent, options, policy)
     NisGroup.register(self)
     NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
     self._lastBounds = { self.root.x, self.root.y, self.root.width, self.root.height }
+    NisPersistence.register(self, options, NisGroup)
     return self
 end
 
 function NisPanel.new(parent, options)
-    options = options or {}
+    options = NisPersistence.prepare(options or {})
     local policy = Components.checkContentParent(parent, options)
     return Components.withBatch(parent, function()
         return buildPanel(parent, options, policy)
