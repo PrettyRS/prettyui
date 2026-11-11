@@ -1,4 +1,5 @@
 local Components = require("src/core/components")
+local Layout = require("src/core/layout")
 local SimpleView = require("src/simple_view")
 local Wheel = require("src/core/wheel")
 
@@ -6,15 +7,15 @@ local Table = {}
 Table.__index = Table
 
 --[[ 
-    I've left some comments in the code, however will be documenting it inside the Docs anyway.
-    Just saves having them open while editing this if your lost anywhere. 
+    I've left some comments in the code mainly explaining some things for anyone that will edit this file,
+    I plan to add more comments soon when I get around to it. 
 
     Theres also other features that could be added in like maybe row selecting (Highlight selected row?)
     But this is a solid foundation for tables for the time being. 
 ]]
 
 --[[
-    Table, A scrollable column based grid with sizeable columns 
+    Table is a scrollable column based grid with sizeable columns 
 
     Features Lazy loading (Maybe we need a better name for this?)
         Lazy Loading: Your scroll content is sized for every row (Ensures the Scrollbar is right) 
@@ -28,7 +29,7 @@ Table.__index = Table
         label    - Column headers text.
         width    - Column width (default 100)
         stretch  - False keeps this column at its width when the table stretches (default true)
-        format   - optional function(value, row, rowIndex) -> Allows 
+        format   - optional function(value, rowData, rowIndex) -> Allows
                     you to modify the Text without changing the underlying data (Text Columns only)
         render   - optional function(cell, rowData, width, height, rowIndex) -> 
                    Builds custom content (buttons, sprites etc.) inside the cell layer.
@@ -104,6 +105,8 @@ local function layoutColumns(columns, available, stretch)
 
     if not stretch or spare <= 0 or stretchTotal <= 0 then return widths, total end
 
+    --We spread out the spare space among the columns based on there original width. 
+
     local given, lastStretchable = 0, nil
 
     for i, col in ipairs(columns) do
@@ -133,8 +136,17 @@ local function cleanupHandle(handle)
     end
 end
 
---[[ Constructor
+
+function Table.getSize(options)
+    options = options or {}
+
+    return options.width or 600, options.height or 400
+end
+
+--[[ 
+    Constructor
     parent  - Parent we attach to same for all UI.
+
     options
         columns        - See Column options above.
         rows           - initial row data. 
@@ -144,7 +156,7 @@ end
         stretch        - True allows columns to stretch to fill in remaing width. (default false)
         rowHeight      - default 36
         headerHeight   - default 28
-        scrollbarWidth - space reserved for the scrollbar (default 18, bar + gap)
+        scrollbarGap   - space between the last column and the scrollbar
         padding        - horizontal text padding inside cells (default 8)
         overscan       - extra rows built above/below the visable rows. (default 2)
         emptyText      - shown when there is now row data (default "Nothing to show.")
@@ -168,12 +180,14 @@ function Table.new(parent, options)
         self.height = options.height or 400
         self.rowHeight = options.rowHeight or 36
         self.headerHeight = options.headerHeight or 28
-        self.scrollbarWidth = options.scrollbarWidth or 18
+        self.scrollbarGap = options.scrollbarGap or 18
         self.stretch = options.stretch == true
         self.padding = options.padding or 8
         self.overscan = options.overscan or 2
         self.emptyText = options.emptyText or "Nothing to show."
         self.colours = mergeColours(options.colours)
+
+        self.parentWheel = options._onScrollWheel
 
         self.renderedRows = {}
         self.firstRendered = nil
@@ -199,6 +213,7 @@ end
 
 function Table:SetColumns(columns)
     assert(columns and #columns > 0, "Table needs at least one column")
+
     self.columns = columns
     self:Rebuild()
 end
@@ -210,17 +225,27 @@ function Table:SetPos(x, y)
     if self.root ~= nil then self.root:SetPos(self.x, self.y) end
 end
 
+-- Resizes in place no rebuild, so it's cheap enough to call on every step of a window drag.
 function Table:SetSize(width, height)
-    self.width = width or self.width
-    self.height = height or self.height
+    width = width or self.width
+    height = height or self.height
 
-    self:Rebuild(true)
+    if width == self.width and height == self.height then return end
+
+    self.width = width
+    self.height = height
+
+    self:_Relayout()
 end
 
 function Table:SetStretch(stretch)
-    self.stretch = stretch == true
+    stretch = stretch == true
 
-    self:Rebuild(true)
+    if stretch == self.stretch then return end
+
+    self.stretch = stretch
+
+    self:_Relayout()
 end
 
 function Table:SetRowHeight(rowHeight, headerHeight)
@@ -239,6 +264,15 @@ end
 function Table:Rebuild(keepScroll)
     local scrollY = keepScroll and self.scrollView and self.scrollView.scrollY or 0
 
+    if self.flowOwner ~= nil and self.root ~= nil and interfaceLoaded(self.interfaceID) then
+        Layout.resize(self.flowOwner, self, self.height)
+    end
+
+    if self.root ~= nil and interfaceLoaded(self.interfaceID) then
+        self.x = self.root.x or self.x
+        self.y = self.root.y or self.y
+    end
+
     self:_Teardown()
 
     Components.withBatch(self.parent, function()
@@ -249,15 +283,104 @@ function Table:Rebuild(keepScroll)
     if scrollY > 0 then self.scrollView:SetScrollPosition(scrollY) end
 end
 
+function Table:BindFlow(owner)
+    self.flowOwner = owner
+    return self
+end
+
 function Table:Destroy()
     self:_Teardown()
 end
 
+--[[
+    Applies the current width/height/stretch to the existing components.
+    Text cells are moved and resized where they are. Rows are only rebuilt when a
+    render column changed width, because whatever render() built was laid out for
+    the old width. 
+    Growing taller just builds the extra rows that come into view.
+]]
+function Table:_Relayout()
+    if self.root == nil or not interfaceLoaded(self.interfaceID) then return end
+
+    if self.flowOwner ~= nil then Layout.resize(self.flowOwner, self, self.height) end
+
+    local oldWidths = self.columnWidths
+
+    self:_ComputeLayout()
+
+    local rerender = false
+
+    for i, col in ipairs(self.columns) do
+        if col.render ~= nil and self.columnWidths[i] ~= oldWidths[i] then
+            rerender = true
+            break
+        end
+    end
+
+    self.root:SetSize(self.frameWidth, self.height)
+    self.headerArea:SetSize(self.frameWidth, self.headerHeight)
+    self.bodyArea:SetSize(self.frameWidth, self.height - self.headerHeight)
+    self.headerBackground:SetSize(self.rowWidth, self.headerHeight)
+
+    local currentX = 0
+
+    for i, headerLabel in ipairs(self.headerLabels) do
+        local colWidth = self.columnWidths[i]
+
+        headerLabel:SetPos(currentX + self.padding, 0)
+        headerLabel:SetSize(colWidth - (self.padding * 2), self.headerHeight)
+
+        currentX = currentX + colWidth
+    end
+
+    if self.emptyLabel ~= nil then self.emptyLabel:SetSize(self.rowWidth - 24, self.rowHeight) end
+
+    -- Rows
+    if rerender then
+        self:_ClearRenderedRows()
+    else
+        for _, rendered in pairs(self.renderedRows) do self:_LayoutRow(rendered) end
+    end
+
+    -- Scroll view. Hold rendering until it's fully sized, then build only what's new.
+    local view = self.scrollView
+    local viewHeight = self.height - self.headerHeight
+
+    self.suspendRender = true
+    view:SetSize(self.frameWidth, viewHeight)
+    view:SetContentHeight(math.max(viewHeight, #self.rows * self.rowHeight))
+    self.suspendRender = false
+
+    self:_RenderVisibleRows()
+end
+
+-- Moves/resizes an already built row's cells to the current column widths.
+function Table:_LayoutRow(rendered)
+    rendered.layer:SetSize(self.rowWidth, self.rowHeight)
+    rendered.background:SetSize(self.rowWidth, self.rowHeight)
+
+    local currentX = 0
+
+    for i, colWidth in ipairs(self.columnWidths) do
+        local cell = rendered.cells[i]
+
+        if cell.isText then
+            cell.component:SetPos(currentX + self.padding, 0)
+            cell.component:SetSize(colWidth - (self.padding * 2), self.rowHeight)
+        else
+            cell.component:SetPos(currentX, 0)
+            cell.component:SetSize(colWidth, self.rowHeight)
+        end
+
+        currentX = currentX + colWidth
+    end
+end
+
 function Table:_ComputeLayout()
-    local available = math.max(0, self.width - self.scrollbarWidth)
+    local available = math.max(0, self.width - self.scrollbarGap)
 
     self.columnWidths, self.rowWidth = layoutColumns(self.columns, available, self.stretch)
-    self.frameWidth = math.min(self.width, self.rowWidth + self.scrollbarWidth)
+    self.frameWidth = math.min(self.width, self.rowWidth + self.scrollbarGap)
 end
 
 function Table:_BuildFrame()
@@ -287,12 +410,16 @@ function Table:_BuildFrame()
     local headerBackground = rectangle(self.headerArea, 0, 0, self.rowWidth, self.headerHeight, self.colours.header)
     headerBackground.clickthrough = true
 
+    -- Kept so SetSize/SetStretch can move them without a rebuild
+    self.headerBackground = headerBackground
+    self.headerLabels = {}
+
     local currentX = 0
 
     for i, col in ipairs(self.columns) do
         local colWidth = self.columnWidths[i]
 
-        label(
+        self.headerLabels[i] = label(
             self.headerArea,
             col.label or "",
             currentX + self.padding,
@@ -306,7 +433,7 @@ function Table:_BuildFrame()
         currentX = currentX + colWidth
     end
 
-    -- Category ordering can paint the background above the labels, so keep it behind.
+    -- Ensure this stays at the back and doesnt end up at the front. 
     headerBackground:MoveToBack()
 end
 
@@ -321,6 +448,7 @@ function Table:_EnsureScrollView()
         contentHeight = viewHeight,
         scrollable = true,
         scrollStep = self.rowHeight,
+        _onScrollWheel = self.parentWheel,
     })
 
     local previousOnLayout = self.scrollView.onLayout
@@ -389,6 +517,8 @@ function Table:_RenderVisibleRows()
 
     self.rendering = true
 
+    local built = {}
+
     local ok, err = pcall(function()
         for rowIndex in pairs(self.renderedRows) do
             if rowIndex < first or rowIndex > last then
@@ -400,16 +530,28 @@ function Table:_RenderVisibleRows()
             for rowIndex = first, last do
                 if self.renderedRows[rowIndex] == nil then
                     self:_BuildRowAt(rowIndex)
+                    built[#built + 1] = rowIndex
                 end
             end
         end)
     end)
 
-    self.firstRendered = first
-    self.lastRendered = last
     self.rendering = false
 
-    if not ok then error(err, 0) end
+    if not ok then
+        for _, rowIndex in ipairs(built) do
+            for _, handle in ipairs(self.renderedRows[rowIndex].handles) do cleanupHandle(handle) end
+            self.renderedRows[rowIndex] = nil
+        end
+
+        self.firstRendered = nil
+        self.lastRendered = nil
+
+        error(err, 0)
+    end
+
+    self.firstRendered = first
+    self.lastRendered = last
 end
 
 function Table:_BuildRowAt(rowIndex)
@@ -419,6 +561,7 @@ function Table:_BuildRowAt(rowIndex)
     local bgColour = (rowIndex % 2 == 1) and self.colours.rowOdd or self.colours.rowEven
     local wheel = { _onScrollWheel = view._onScrollWheel }
     local handles = {}
+    local cells = {}
 
     local rowLayer = Components.newContent(view.content)
 
@@ -444,6 +587,8 @@ function Table:_BuildRowAt(rowIndex)
             local handle = col.render(cell, rowData, colWidth, self.rowHeight, rowIndex)
 
             if handle ~= nil then table.insert(handles, handle) end
+
+            cells[i] = { component = cell, isText = false }
         else
             local value = rowData[col.key]
 
@@ -461,6 +606,8 @@ function Table:_BuildRowAt(rowIndex)
             )
 
             Wheel.bind(text, wheel)
+
+            cells[i] = { component = text, isText = true }
         end
 
         currentX = currentX + colWidth
@@ -468,7 +615,7 @@ function Table:_BuildRowAt(rowIndex)
 
     background:MoveToBack()
 
-    self.renderedRows[rowIndex] = { layer = rowLayer, handles = handles }
+    self.renderedRows[rowIndex] = { layer = rowLayer, background = background, cells = cells, handles = handles }
 end
 
 function Table:_DestroyRenderedRow(rowIndex)
@@ -512,6 +659,8 @@ function Table:_Teardown()
 
     self.headerArea = nil
     self.bodyArea = nil
+    self.headerBackground = nil
+    self.headerLabels = nil
 end
 
 return Table
