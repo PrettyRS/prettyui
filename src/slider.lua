@@ -5,6 +5,7 @@ local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local InterfaceMouse = require("src/core/mouse")
+local Scroll = require("src/core/scroll")
 
 local Slider = {}
 Slider.__index = Slider
@@ -170,6 +171,8 @@ function Slider.new(parent, options)
 
     self:SetValue(options.value == nil and self.min or options.value, false)
     self:SetDisabled(self.disabled)
+    self.widthScroll = Scroll.findContaining(Tooltip.getContext(parent))
+    if self.widthScroll then self.widthScroll:RegisterWidthTarget(self) end
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
 end
@@ -258,6 +261,16 @@ function Slider:_LayoutValue()
     if self.dragStart == nil then self:_LayoutThumbDrag() end
 end
 
+-- Places the marker and filled bar based on the track's current width.
+function Slider:Refresh()
+    if self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    self:_LayoutValue()
+end
+
+function Slider:_OnContentWidthChanged()
+    self:Refresh()
+end
+
 function Slider:_LayoutThumbDrag()
     if self.thumbDrag == nil or self.root == nil then return end
     self.thumbDrag:SetPos(
@@ -321,6 +334,10 @@ function Slider:SetTooltip(value)
 end
 
 function Slider:Destroy()
+    if self.widthScroll then
+        self.widthScroll:UnregisterWidthTarget(self)
+        self.widthScroll = nil
+    end
     self:_StopDrag()
     Tooltip.unbind(self)
     local loaded = ui.Interfaces:GetInterface(self.interfaceID) ~= nil

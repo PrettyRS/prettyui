@@ -56,6 +56,10 @@ local function component(parent, kind, categoryID, dynamicID)
         w, h, aw, ah = width, height, widthAnchor or 0, heightAnchor or 0
         self:ResolveGeometry()
     end
+    function result:SetX(x)
+        px = x
+        self:ResolveGeometry()
+    end
     function result:SetWidth(width, anchor)
         w, aw = width, anchor or 0
         self:ResolveGeometry()
@@ -335,6 +339,11 @@ end
 local flowHost = Window.new(parent, { title = "Inline resize", width = 800, height = 600 })
 local flowPanel = flowHost:AddPanel({ resizable = true, popout = true, width = 300, height = 200 })
 local inlineSibling = flowHost:AddPanel({ inline = true, width = 100, height = 160 })
+expect(flowPanel.dockTooltipContext.parentContext, flowHost.tooltipContext,
+    "a docked panel's tooltip context links to its window's")
+expect(flowPanel.dock.scroll.ownerWindow, flowHost, "a docked panel's scroll finds its window")
+expect(flowPanel.dock.scroll.parentScroll, flowHost._scroll, "a docked panel's scroll links to its window's")
+expect(flowPanel.overlay.scroll.parentScroll, nil, "a popout's scroll has its own viewport")
 local flowHandle = begin(flowPanel.dockResize, "e", flowPanel.root)
 fire(flowHandle, ui.Hook.ONHOLD, 42, 2)
 finish(flowPanel.dockResize, flowHandle)
@@ -708,6 +717,34 @@ legacyResize:Destroy()
 autoOwner:Destroy()
 legacyOwner:Destroy()
 autoPhysicalHost:Destroy()
+
+-- A slider several scrolls deep follows a resize of the outermost window: each scroll
+-- finds the one around it through the tooltip contexts, and refreshes its children.
+-- Panels can't hold panels directly, so the deepest nesting is window, panel, tab page, panel.
+local deepWindow = Window.new(parent, { title = "Deep", width = 600, height = 500 })
+local outerPanel = deepWindow:AddPanel({ height = 400 })
+local deepPage = outerPanel:AddTabs({ "Page" }, { height = 300 }).dock:GetPage(1)
+local innerPanel = deepPage:AddPanel({ height = 200 })
+local deepSliders = {
+    deepWindow:AddSlider({ value = 100 }),
+    outerPanel:AddSlider({ value = 100 }).dock,
+    deepPage:AddSlider({ value = 100 }),
+    innerPanel:AddSlider({ value = 100 }).dock,
+}
+expect(innerPanel.dock.scroll.parentScroll, deepPage._scroll, "the inner panel links to the tab page")
+expect(deepPage._scroll.parentScroll, outerPanel.dock.scroll, "the tab page links to the outer panel")
+expect(outerPanel.dock.scroll.parentScroll, deepWindow._scroll, "the outer panel links to the window")
+local deepest = deepSliders[4]
+local deepWidth = deepest.track.width
+for _, width in ipairs({ 760, 520 }) do
+    deepWindow:SetSize(width, 500)
+    expect(deepest.track.width, deepWidth + width - 600, "the deepest track stretches with the window")
+    for index, slider in ipairs(deepSliders) do
+        expect(slider.thumb.x, slider.track.width - slider.thumb.width,
+            "slider " .. index .. "'s marker stays at its track end")
+    end
+end
+deepWindow:Destroy()
 
 -- A vanished native interface must be detected before touching any stale handle.
 local unloadedWindow, unloadedRoot, unloadedResize = createSurface("titled", parent)

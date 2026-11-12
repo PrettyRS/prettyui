@@ -2019,6 +2019,9 @@
             "disabled": "boolean"
           }
         },
+        "Refresh": {
+          "params": {}
+        },
         "SetTooltip": {
           "params": {
             "value": "string|PrettyUI.TooltipOptions|nil"
