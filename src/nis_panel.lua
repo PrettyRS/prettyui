@@ -18,6 +18,7 @@ local NisResize = require("src/core/nis_resize")
 local NisGroup = require("src/core/nis_group")
 local NisTabs = require("src/core/nis_tabs")
 local NisPersistence = require("src/core/nis_persistence")
+local NisNative = require("src/core/nis_native")
 local clamp = require("src/core/math").clamp
 
 local NisPanel = {}
@@ -51,7 +52,7 @@ end
 
 function NisPanel:_SyncDragLayer()
     if not loaded(self) or self.dragLayer == nil then return end
-    local visible = self.root.hidden ~= true and not self.locked
+    local visible = not self._nisNative and self.root.hidden ~= true and not self.locked
         and (not self._nisGroup or self._nisGroup.active == self)
     self.dragLayer.hidden = not visible
     self.dragLayer.enabled = visible
@@ -76,7 +77,7 @@ function NisPanel:_SyncOverlays(hidden)
     if self._nisTabs then self._nisTabs:Sync(hidden) end
     self:_SyncDragLayer()
     if self.resize then
-        self.resize:SetEnabled(not self.locked and not hidden and self.dragState == nil
+        self.resize:SetEnabled(not self._nisNative and not self.locked and not hidden and self.dragState == nil
             and self._nisTabPress == nil and (not self._nisGroup or self._nisGroup.active == self))
         self.resize:Refresh()
     end
@@ -96,7 +97,7 @@ end
 
 function NisPanel:_SyncChrome()
     if not loaded(self) then return end
-    local visible = not self.locked and self.root.hidden ~= true
+    local visible = not self._nisNative and not self.locked and self.root.hidden ~= true
     self.headerLeft.hidden = not visible
     self.headerRight.hidden = not visible
     self.headerTop.hidden = not visible or self.root.width == MIN_WIDTH
@@ -121,6 +122,7 @@ function NisPanel:_SetLocked(value)
         NisGroup.clearPanel(self)
     end
     self.locked = locked
+    NisNative.lockChanged(self, locked)
     if not loaded(self) then return end
     self:_LayoutBody()
     self:RefreshRowBackgrounds()
@@ -134,6 +136,26 @@ end
 
 function NisPanel:_LayoutBody()
     if not loaded(self) then return end
+    if self._nisNative then
+        self.root.clickthrough = false
+        for _, key in ipairs(FRAME_PARTS) do self.surface[key].hidden = true end
+        self.surface.background.hidden = true
+        self.tabBackground.hidden = true
+        self.bottomLeftHit.hidden = true
+        self.bottomRightHit.hidden = true
+        self.bottomHit.hidden = true
+        if self._tabGapHit then self._tabGapHit.hidden = true end
+        self.surface.container:SetPos(0, 0)
+        self.surface.container:SetSize(0, 0, 1, 1)
+        self._scroll:SetSize(0, 0, 1, 1)
+        self._nisTabs:Refresh(nil)
+        return
+    end
+    for _, key in ipairs(FRAME_PARTS) do self.surface[key].hidden = false end
+    self.surface.background.hidden = false
+    self.bottomLeftHit.hidden = false
+    self.bottomRightHit.hidden = false
+    self.bottomHit.hidden = false
     -- Tab inputs are siblings: the group's backdrop must not mask their band.
     -- The content container remains input-blocking below the tabs.
     local grouped = self._nisGroup ~= nil
@@ -246,6 +268,7 @@ end
 function NisPanel:SetSize(width, height)
     self:_CancelDrag()
     if self.resize then self.resize:Cancel() end
+    if self._nisNative then return end -- The native frame owns docked dimensions.
     local minWidth, minHeight, maxWidth, maxHeight = NisGroup.limits(self)
     local targetWidth = dimension(width, self.width, minWidth, maxWidth)
     local targetHeight = dimension(height, self.height, minHeight, maxHeight)
@@ -287,6 +310,10 @@ end
 function NisPanel:Show()
     if not loaded(self) then return end
     self._nisHidden = false
+    if self._nisNative then
+        NisNative.select(self)
+        return
+    end
     if self._nisGroup then
         NisGroup.select(self)
         if loaded(self) and not self.root.hidden then
@@ -304,6 +331,7 @@ end
 
 function NisPanel:Hide()
     self:_CancelDrag()
+    NisNative.detach(self)
     NisGroup.clearPanel(self)
     NisGroup.undock(self)
     NisPersistence.detach(self)
@@ -328,6 +356,7 @@ end
 function NisPanel:Destroy()
     if self._destroyed then return end
     self:_CancelDrag()
+    NisNative.detach(self)
     NisPersistence.unregister(self)
     self._destroyed = true
     NisGroup.unregister(self)
@@ -370,16 +399,22 @@ NisDrag.install(NisPanel)
 
 function NisPanel:DockTo(target)
     self:_CancelDrag()
-    return NisGroup.dock(self, target)
+    if type(target) == "table" and target.root then
+        if target._nisNative then return NisNative.dock(self, target._nisNative) end
+        return NisGroup.dock(self, target)
+    end
+    return NisNative.dock(self, target)
 end
 
 function NisPanel:Undock()
     self:_CancelDrag()
+    NisNative.detach(self)
     NisGroup.undock(self)
     NisPersistence.detach(self)
 end
 
 function NisPanel:SelectTab()
+    if self._nisNative then return NisNative.select(self) end
     NisGroup.select(self)
 end
 
@@ -567,7 +602,7 @@ local function buildPanel(parent, options, policy)
         minWidth = self.minWidth, minHeight = self.minHeight,
         maxWidth = self.maxWidth, maxHeight = self.maxHeight,
         isVisible = function()
-            return not self.locked and self.root.hidden ~= true
+            return not self._nisNative and not self.locked and self.root.hidden ~= true
                 and self.dragState == nil and self._nisTabPress == nil
                 and (not self._nisGroup or self._nisGroup.active == self)
         end,

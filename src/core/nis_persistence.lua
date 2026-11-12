@@ -35,7 +35,7 @@ local function loaded(panel)
 end
 
 local function busy(panel)
-    return panel.dragState or panel._nisTabPress or panel._nisTabTransaction
+    return panel._nisNative or panel._nisNativeTransaction or panel.dragState or panel._nisTabPress or panel._nisTabTransaction
         or panel.resize and panel.resize.dragState
 end
 

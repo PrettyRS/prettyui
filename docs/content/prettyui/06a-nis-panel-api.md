@@ -123,21 +123,60 @@ Drag onto another compatible `NisPanel` to form a tab group. Click tabs to switc
 drag within the tab strip to reorder, or drag a tab out to detach it. Grouped
 panels share bounds and retain their own content and scroll state.
 
+Panels mounted directly on `TOPLEVEL_V2__GAME_AREA` can also be dropped onto a
+native NIS tab band. Their existing content becomes an own page in that row;
+drag the own tab out to restore an independent panel. Escape or focus loss
+cancels the drag. Native tabs keep their original handlers and select native
+pages normally. Native movement and resizing control the docked viewport.
+Lock/unlock handling retains the existing controls and scroll state. Own tab
+selection remains enabled; dragging, undocking by gesture, and resizing remain
+disabled while locked.
+
+**Locking safety:** the latest live result still showed invisible nested pages
+and a client crash on tab interaction, including after the owned-layer workaround.
+Artwork now uses GAME_AREA rather than native-frame descendants, but this
+replacement is not yet client-verified. Do not interact with obscured/invisible
+panels.
+
+Native bindings are session-only: saved panel layouts retain standalone bounds,
+not native component handles. Compatible native tab rebuilds, reorders, and
+group merges/splits retain the existing PrettyUI page and its selected content.
+Temporary loss of native frame selection suspends own content/input without
+discarding membership; it resumes when native selection becomes visible again.
+Closing every host or changing to an unsupported arrangement restores raised,
+standalone PrettyUI panels and releases borrowed native state.
+
+**Stacking limitation:** retained content and added tab artwork use the GAME_AREA
+overlay fallback. They can draw above overlapping native windows; this is not
+native-equivalent occlusion. Inactive pages hide their content, tooltips and
+sibling input overlays; only the current native frame's own tab artwork is shown.
+
+Grouped hosts are discovered from named native components and matching native
+tab membership, not matching screen rectangles. Standalone Notes supports a
+synthetic native/PrettyUI row by insetting its embedded whole wrapper. Other
+standalone hosts are not supported. Incompatible bounds or insufficient tab
+space are rejected without changing native layout.
+
 `DockTo(target)`
 : Joins the target's group, adopts its bounds, and selects this panel. Returns
   false unless both panels are visible, unlocked, on the same parent, and the
   target's size satisfies every member's limits. Group minimum height is **49**.
   For existing groups, pass their active panels; docking merges both groups.
   This is an explicit layout change; use the **dockTo** option for startup defaults.
+  A native frame component or packed frame component ID is also accepted, such as
+  `ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__NOTES_WINDOW)`.
+  Native targets require a direct GAME_AREA mount and a compatible native host.
 
 `Undock()`
-: Detaches this panel without changing its bounds and saves it as standalone.
+: Detaches this panel and saves it as standalone. Native docking restores the
+  retained standalone rectangle; PrettyUI-only groups keep their current bounds.
 
 `SelectTab()`
 : Selects this panel within its group.
 
 `SetSize(width, height)`
-: Resizes the panel, or its entire group, within the configured size limits.
+: Resizes the panel, or its entire PrettyUI group, within the configured size
+  limits. While docked natively, the native frame owns sizing; this is a no-op.
 
 `Show()`
 : Shows and raises the panel, selecting its tab if grouped.
@@ -153,6 +192,8 @@ panels share bounds and retain their own content and scroll state.
 : Removes the panel, managed content, and retained handlers without forgetting its
   saved group. Call during plugin shutdown; `Hide()` and `Close()` instead save
   the panel's removal from its group.
+  Destroying a native member also removes its tab and restores native state when
+  the last PrettyUI member leaves. Library shutdown restores native overrides.
 
 {{% /api-card %}}
 

@@ -13,9 +13,18 @@ local function removeChild(parent, child)
     end
 end
 
+local function removeRenderChild(parent, child)
+    if not parent then return false end
+    for index, candidate in ipairs(parent.renderChildren) do
+        if candidate == child then table.remove(parent.renderChildren, index); return true end
+    end
+    return false
+end
+
 local function component(parent, kind, categoryID, dynamicID)
     local result = {
-        parent = parent, kind = kind, children = {}, subscriptions = {}, namedSubscriptions = {},
+        parent = parent, kind = kind, children = {}, renderChildren = {},
+        subscriptions = {}, namedSubscriptions = {},
         x = 0, y = 0, width = 0, height = 0, hidden = false,
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
         cursorConfig = {},
@@ -78,17 +87,23 @@ local function component(parent, kind, categoryID, dynamicID)
     end
     function result:MoveToFront()
         if not parent then return end
+        assert(removeRenderChild(parent, self), "cannot reorder an absent native render entry")
+        self.frontMoves = (self.frontMoves or 0) + 1
         removeChild(parent, self)
         parent.children[#parent.children + 1] = self
+        parent.renderChildren[#parent.renderChildren + 1] = self
     end
     function result:MoveToBack()
         if not parent then return end
+        assert(removeRenderChild(parent, self), "cannot reorder an absent native render entry")
         removeChild(parent, self)
         table.insert(parent.children, 1, self)
+        table.insert(parent.renderChildren, 1, self)
     end
     function result:Destroy()
         while #self.children > 0 do self.children[#self.children]:Destroy() end
         removeChild(parent, self)
+        removeRenderChild(parent, self)
         self.destroyed = true
     end
     setmetatable(result, { __index = function(self, key)
@@ -96,7 +111,10 @@ local function component(parent, kind, categoryID, dynamicID)
         local origin = parent and parent.xyGlobal or { x = 0, y = 0 }
         return { x = origin.x + self.x, y = origin.y + self.y }
     end })
-    if parent then parent.children[#parent.children + 1] = result end
+    if parent then
+        parent.children[#parent.children + 1] = result
+        parent.renderChildren[#parent.renderChildren + 1] = result
+    end
     return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
@@ -186,8 +204,8 @@ local function fire(target, hook, ...)
 end
 
 local function hitAt(area, x, y)
-    for index = #area.children, 1, -1 do
-        local child = area.children[index]
+    for index = #area.renderChildren, 1, -1 do
+        local child = area.renderChildren[index]
         if not child.hidden and child.enabled ~= false and
             x >= child.x and x < child.x + child.width and
             y >= child.y and y < child.y + child.height then
@@ -1233,7 +1251,7 @@ do
     end
     local function restart()
         for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
-            "src/core/nis_drag", "src/core/nis_persistence" }) do
+            "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence" }) do
             package.loaded[name] = nil
         end
         NisPanel = require("src/nis_panel")
@@ -1448,6 +1466,503 @@ do
     expectRect(a.root, 500, 100, 320, 260, "parent aliases retain shared saved bounds")
     a:Destroy()
     b:Destroy()
+end
+
+-- Native groups retain the actual panel tree through selection and drag-out.
+do
+    local oldParent, oldGet, oldInterface = parent, ui.Interfaces.GetComponent, ui.Interfaces.GetInterface
+    local nativeNodes = {}
+    local function nativeNode(interfaceID, staticID, owner, x, y, width, height)
+        local node = component(nil, "native")
+        node.type = 20
+        node.interfaceID, node.staticID = interfaceID, staticID
+        node.parentStatic = nil
+        Interfaces.component(node)
+        node.parent = owner
+        if owner then
+            owner.children[#owner.children + 1] = node
+            owner.renderChildren[#owner.renderChildren + 1] = node
+        end
+        node.position = { x = x, y = y, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 }
+        node.size = { width = width, height = height, widthParentPc = 0, heightParentPc = 0 }
+        node.nativeShown = true
+        setmetatable(node, { __index = function(self, key)
+            if key == "xyGlobal" then
+                local origin = self.parent and self.parent.xyGlobal or { x = 0, y = 0 }
+                return { x = origin.x + self.x, y = origin.y + self.y }
+            elseif key == "visibleGlobal" then
+                return self.nativeShown and self.visible ~= false and not self.hidden
+                    and (not self.parent or self.parent.visibleGlobal ~= false)
+            end
+        end })
+        function node:SetPos(px, py, xp, yp, xs, ys)
+            self.position = { x = px, y = py, xParentPc = xp or 0, yParentPc = yp or 0,
+                xSelfPc = xs or 0, ySelfPc = ys or 0 }
+            self.x = px + (self.parent and self.parent.width or 0) * (xp or 0) + self.width * (xs or 0)
+            self.y = py + (self.parent and self.parent.height or 0) * (yp or 0) + self.height * (ys or 0)
+        end
+        function node:SetSize(w, h, wp, hp)
+            self.size = { width = w, height = h, widthParentPc = wp or 0, heightParentPc = hp or 0 }
+            self.width = w + (self.parent and self.parent.width or 0) * (wp or 0)
+            self.height = h + (self.parent and self.parent.height or 0) * (hp or 0)
+            for _, child in ipairs(self.children) do child:Relayout() end
+            self:EmitResize()
+        end
+        function node:Relayout()
+            local p, s = self.position, self.size
+            self:SetPos(p.x, p.y, p.xParentPc, p.yParentPc, p.xSelfPc, p.ySelfPc)
+            self:SetSize(s.width, s.height, s.widthParentPc, s.heightParentPc)
+        end
+        function node:IterateStaticComponents(callback)
+            for _, child in ipairs(self.children) do
+                if child.categoryID == -1 and callback(child, child.visibleGlobal) then return end
+            end
+        end
+        function node:MoveToFront()
+            if not self.parent then return end
+            removeChild(self.parent, self)
+            assert(removeRenderChild(self.parent, self), "native frame remains in its parent's render list")
+            self.parent.children[#self.parent.children + 1] = self
+            self.parent.renderChildren[#self.parent.renderChildren + 1] = self
+        end
+        node.x, node.y, node.width, node.height = x, y, width, height
+        local retired = nativeNodes[(interfaceID << 16) | staticID]
+        if retired then
+            removeChild(retired.parent, retired)
+            removeRenderChild(retired.parent, retired)
+            retired.destroyed = true
+        end
+        nativeNodes[(interfaceID << 16) | staticID] = node
+        return node
+    end
+    local function rendered(node)
+        while node do
+            if node.hidden or node.visibleGlobal == false then return false end
+            local owner, found = node.parent, false
+            if owner then
+                for _, child in ipairs(owner.renderChildren) do
+                    if child == node then found = true; break end
+                end
+                if not found then return false end
+            end
+            node = owner
+        end
+        return true
+    end
+    local function drawable(label, owner)
+        if not rendered(label) then return false end
+        local top = label.y - owner.scrollY
+        return label.width > 0 and label.height > 0 and owner.viewport.width > 0
+            and top < owner.viewport.height and top + label.height > 0
+    end
+    local area = nativeNode(1477, 61, nil, 80, 40, 1000, 700)
+    local frames = {}
+    function area:IterateStaticComponents(callback)
+        for _, frame in ipairs(frames) do if callback(frame, frame.visibleGlobal) then break end end
+    end
+    local function host(first, name, shown, icons)
+        local frame = nativeNode(1477, first, area, 500, 100, 379, 357)
+        frame.nativeShown = shown
+        frames[#frames + 1] = frame
+        local body = nativeNode(1477, first + 2, frame, 4, 44, 371, 309)
+        nativeNode(1477, first + 3, frame, 4, 44, 371, 309)
+        local scroll = nativeNode(1477, first + 4, frame, 4, 44, 371, 309)
+        nativeNode(1477, first + 7, frame, 0, 16, 379, 28)
+        local tabs = nativeNode(1477, first + 8, frame, 4, 16, 371, 28)
+        tabs.visible = true
+        nativeNode(1477, first + 9, frame, 4, 16, 371, 28)
+        local prefix, suffix = name == "NOTES" and "NOTES_WINDOW" or "ABILITY_WINDOW",
+            name == "NOTES" and "" or "_" .. name
+        id.Component["TOPLEVEL_V2__" .. prefix .. suffix] = (1477 << 16) | first
+        id.Component["TOPLEVEL_V2__" .. prefix .. "_CONTENT" .. suffix] = (1477 << 16) | (first + 2)
+        id.Component["TOPLEVEL_V2__" .. prefix .. "_SCROLL" .. suffix] = (1477 << 16) | (first + 4)
+        id.Component["TOPLEVEL_V2__" .. prefix .. "_TABS" .. suffix] = (1477 << 16) | (first + 8)
+        id.Component["TOPLEVEL_V2__" .. prefix .. "_TAB_BACKGROUND" .. suffix] = (1477 << 16) | (first + 7)
+        local result = { frame = frame, body = body, scroll = scroll, tabs = tabs }
+        function result:rebuild(order, selected)
+            for _, child in ipairs({ table.unpack(tabs.children) }) do child:Destroy() end
+            self.backgrounds = {}
+            for index, iconID in ipairs(order) do
+                local background = component(tabs, "sprite", 0, (index - 1) * 4)
+                background.type, background.visible, background.nativeShown = 3, true, true
+                setmetatable(background, getmetatable(tabs))
+                background:SetPos((index - 1) * 44, 0)
+                background:SetSize(44, 28)
+                background.spriteID = index == selected
+                    and id.Sprite.RS3_CHILD_TAB_SELECTED or id.Sprite.RS3_CHILD_TAB_UNSELECTED
+                self.backgrounds[index] = background
+                local icon = component(tabs, "sprite", 0, (index - 1) * 4 + 1)
+                icon.type, icon.visible, icon.nativeShown = 3, true, true
+                setmetatable(icon, getmetatable(tabs))
+                icon:SetPos((index - 1) * 44 + 10, 2)
+                icon:SetSize(24, 24)
+                icon.spriteID = iconID
+            end
+        end
+        result:rebuild(icons or { 9001, 9002 }, icons and 1 or (shown and 1 or 2))
+        return result
+    end
+    local notes = host(545, "NOTES", true)
+    local ranged = host(158, "RANGED", false)
+    local magic = host(2000, "MAGIC", false, { 9003 })
+    magic.frame:SetPos(50, 200)
+    local wrapper = nativeNode(1417, 3, notes.body, 0, 0, 371, 309)
+    wrapper:SetSize(0, 0, 1, 1)
+    id.Component.NOTES_CHILD__WRAPPER = (1417 << 16) | 3
+    setmetatable(id.Component, { __pairs = function(values)
+        local name
+        return function()
+            name = next(values, name)
+            if name then return values[name], name end
+        end
+    end })
+    function ui.Interfaces:GetComponent(first, second, ...)
+        if select("#", ...) == 0 then
+            local packed = second and ((first << 16) | second) or first
+            if nativeNodes[packed] then return nativeNodes[packed] end
+        end
+        return oldGet(self, first, second, ...)
+    end
+    function ui.Interfaces:GetInterface(number)
+        local loaded = oldInterface(self, number)
+        if loaded and (number == 1477 or number == 1417) then
+            -- Interface wrappers need not have stable Lua object identity.
+            return setmetatable({ id = number }, { __index = loaded })
+        end
+        return loaded
+    end
+    parent = area
+    local nativePanel = NisPanel.new(area, {
+        categoryID = "auto", x = 50, y = 450, width = 280, height = 180, id = "native:retained",
+    })
+    local title = nativePanel:AddTitle("Retained native page")
+    local rows = {}
+    for index = 1, 30 do rows[index] = nativePanel:AddText("Native retained row " .. index) end
+    local root, content = nativePanel.root, nativePanel.content
+    local overlay = component(area, "overlay")
+    nativePanel:_RegisterOverlay(overlay, function() return true end)
+    begin(nativePanel); move(nativePanel, 650, 250)
+    expect(nativePanel.dragState.nativeTarget == nil, true, "native body overlap is not a tab-band drop target")
+    nativePanel:_CancelDrag()
+    local bounded = NisPanel.new(area, { categoryID = "auto", maxWidth = 300 })
+    expect(bounded:DockTo(notes.frame), false, "native viewport exceeding member limits is rejected")
+    expect(notes.body.hidden, false, "rejected native docking leaves native content visible")
+    bounded:Destroy()
+    begin(nativePanel)
+    move(nativePanel, 650, 130)
+    expectRect(nativePanel.dragFeedback.active, 500, 100, 379, 357, "native band previews its actual frame")
+    release(nativePanel)
+    expect(nativePanel._nisNative ~= nil, true, "header drop joins the native group")
+    expect(nativePanel.root, root, "native docking retains the original root")
+    expect(nativePanel.content, content, "native docking retains consumer content")
+    expect(nativePanel.surface.container.y, 0, "native body has no nested panel inset")
+    expect(nativePanel.dragLayer.hidden, true, "docked panel has no standalone header capture")
+    expect(notes.body.hidden, true, "selected own tab conceals native content")
+    emit("Logic")
+    expect(drawable(title, nativePanel), true, "native docking keeps an actual title visible inside the viewport")
+    expectRect(nativePanel.viewport, 0, 0, 353, 309, "native docking retains a nonzero clipped content viewport")
+    local bodyIndex, overlayIndex
+    for index, child in ipairs(area.children) do
+        if child == root then bodyIndex = index end
+        if child == overlay then overlayIndex = index end
+    end
+    expect(overlayIndex > bodyIndex, true, "selected native body's input overlays remain above its body")
+    notes.frame:SetPos(520, 120)
+    emit("Logic")
+    expectRect(nativePanel.root, 524, 164, 371, 309, "retained native body follows host movement in parent units")
+    notes.frame:SetPos(500, 100)
+    emit("Logic")
+    local function nativeClick(tabs)
+        for _, callback in pairs(tabs.namedSubscriptions[ui.Hook.ONCLICK] or {}) do
+            expect(callback(tabs, 10, 10), true, "native observer preserves native handling")
+        end
+        emit("Logic")
+    end
+    local function nativeLock(value, repaintBeforeNotification, repaintAfterLogic)
+        local function repaint()
+            -- Native lock can remove addon render attachments while public
+            -- handles, IDs and the logical geometry tree remain available.
+            local function retireAddonRenderEntries(node)
+                local kept = {}
+                for _, child in ipairs(node.children) do
+                    retireAddonRenderEntries(child)
+                    if child.nativeShown ~= nil then kept[#kept + 1] = child end
+                end
+                node.renderChildren = kept
+            end
+            for index, host in ipairs({ notes, ranged }) do
+                local tabTop, bodyTop = value and 4 or 16, value and 32 or 44
+                local height = value and 321 or 309
+                host.tabs:SetPos(4, tabTop)
+                nativeNodes[(1477 << 16) | (host.frame.staticID + 7)]:SetPos(0, tabTop)
+                host.body:SetPos(4, bodyTop)
+                host.body:SetSize(371, height)
+                host.scroll:SetPos(4, bodyTop)
+                host.scroll:SetSize(371, height)
+                host.body.hidden, host.scroll.hidden = false, false
+                for slot, background in ipairs(host.backgrounds) do
+                    background.spriteID = slot == index
+                        and id.Sprite.RS3_CHILD_TAB_SELECTED or id.Sprite.RS3_CHILD_TAB_UNSELECTED
+                end
+                retireAddonRenderEntries(host.frame)
+                if host.frame.visibleGlobal then host.frame:MoveToFront() end
+            end
+        end
+        if repaintBeforeNotification then repaint() end
+        locked = value; transmit(12)
+        if repaintAfterLogic then emit("Logic") end
+        if not repaintBeforeNotification then repaint() end
+        emit("Logic")
+    end
+    nativePanel:SetScrollPosition(80)
+    local lockedPeer = NisPanel.new(area, { categoryID = "auto", x = 20, y = 20 })
+    expect(lockedPeer:DockTo(nativePanel), true, "lock scenario starts with multiple own native tabs")
+    nativePanel:SelectTab()
+    local nativeBinding = nativePanel._nisNative
+    nativeLock(true, true)
+    expect(nativePanel._nisNative, nativeBinding, "locking retains native membership")
+    expect(drawable(rows[4], nativePanel), true, "locking native chrome does not discard the selected content")
+    expect(lockedPeer.root.hidden, true, "locking does not reveal an inactive nested page")
+    expectRect(nativePanel.root, 504, 132, 371, 321, "locked native body follows its reflowed slot")
+    local target = hitAt(area, root.x + 10, root.y + 100)
+    while target and target ~= root do target = target.parent end
+    expect(target, root, "locked body input reaches its visible retained content above native chrome")
+    local frontMoves = root.frontMoves
+    emit("Logic")
+    expect(root.frontMoves, frontMoves, "idle native ticks do not continually raise the body")
+    expect(nativePanel.headerLeft.hidden, true, "native locking cannot reveal nested standalone chrome")
+    expect(nativePanel.dragLayer.hidden, true, "native locking keeps the standalone capture suppressed")
+    local lockedTab = nativeBinding.tabs[nativeBinding.group.current].hit
+    expect(hitAt(area, lockedTab.x + 10, lockedTab.y + 10), lockedTab,
+        "locked synthetic tab input stays above native chrome")
+    local visibleTab = nativeBinding.tabs[nativeBinding.group.current]
+    expect(rendered(visibleTab.background), true, "locked tab artwork remains drawn with its input target")
+    local artOrigin, frameOrigin = visibleTab.visual.xyGlobal, visibleTab.host.frame.xyGlobal
+    expect(artOrigin.x, frameOrigin.x + visibleTab.visual.x, "locked artwork follows the native frame origin")
+    expect(artOrigin.y, frameOrigin.y + visibleTab.host.tabs.y, "locked artwork follows native header reflow")
+    fire(lockedTab, ui.Hook.ONCLICK, 10, 10)
+    fire(lockedTab, ui.Hook.ONHOLD, 200 - lockedTab.x, 450 - lockedTab.y)
+    fire(lockedTab, ui.Hook.ONRELEASE)
+    expect(nativePanel._nisNative, nativeBinding, "locked tab input cannot undock a nested page")
+    expect(nativePanel.dragState, nil, "locked nested tabs cannot start placement")
+    expect(nativePanel._nisTabPress, nil, "locked nested tabs cannot retain a drag press")
+    lockedPeer:SelectTab()
+    expect(drawable(rows[4], nativePanel), false, "locked own-tab switching hides the previous content")
+    nativePanel:SelectTab()
+    expect(drawable(rows[4], nativePanel), true, "own tabs remain selectable while locked")
+    nativeClick(notes.tabs)
+    expect(nativePanel.root.hidden, true, "real native tabs remain selectable while locked")
+    nativeLock(false, false)
+    expect(nativePanel.root.hidden, true, "unlocking does not replace the selected native page")
+    nativePanel:SelectTab()
+    nativeLock(true, false, true)
+    expect(drawable(rows[4], nativePanel), true, "a repaint after the lock notification retains own selection")
+    expect(rendered(nativeBinding.tabs[nativeBinding.group.current].background), true,
+        "late native repaint cannot discard the visible synthetic tab")
+    expect(notes.body.hidden, true, "late native repaint cannot reveal native content over the own page")
+    expect(hitAt(area, lockedTab.x + 10, lockedTab.y + 10), lockedTab,
+        "late native repaint leaves matching visible tab input above native chrome")
+    nativeLock(false, true)
+    expect(drawable(rows[4], nativePanel), true, "unlocking retains the selected nested content")
+    expect(nativePanel.scrollY, 80, "lock and unlock retain scroll position")
+    expect(notes.backgrounds[1].spriteID, id.Sprite.RS3_CHILD_TAB_UNSELECTED,
+        "unlock repaint restores exclusive PrettyUI tab highlighting")
+    lockedPeer:Destroy()
+    nativeLock(true, false)
+    local failedBinding = nativePanel._nisNative
+    local failedTab = failedBinding.tabs[failedBinding.group.current].hit
+    local moveRoot = root.MoveToFront
+    root.MoveToFront = function() error("injected body ordering failure") end
+    fire(failedTab, ui.Hook.ONCLICK, 10, 10)
+    expect(failedTab.destroyed, nil, "selection failure cannot destroy its currently dispatching input target")
+    expect(nativePanel._nisNative, failedBinding, "selection failure waits for Logic before native teardown")
+    root.MoveToFront = moveRoot
+    emit("Logic")
+    expect(nativePanel._nisNative, nil, "Logic tears down the failed native binding")
+    expect(failedTab.destroyed, true, "deferred teardown releases input after dispatch")
+    nativeLock(false, false)
+    expect(nativePanel:DockTo(notes.frame), true, "failed native selection leaves retained content usable")
+    nativePanel:SetScrollPosition(80)
+    local scrollY = nativePanel.scrollY
+    local function retainedPage(reason)
+        expect(nativePanel._nisNative ~= nil, true, reason .. " keeps native membership")
+        expect(nativePanel.root, root, reason .. " retains the actual panel root")
+        expect(nativePanel.content, content, reason .. " retains consumer controls")
+        expect(nativePanel.scrollY, scrollY, reason .. " preserves scroll position")
+        expect(drawable(rows[4], nativePanel), true, reason .. " leaves real content drawable")
+    end
+    local sameIDBackground = notes.backgrounds[1]
+    notes:rebuild({ 9001, 9002 }, 1)
+    ranged:rebuild({ 9001, 9002 }, 2)
+    emit("Logic")
+    retainedPage("unchanged-ID native tab replacement")
+    expect(next(sameIDBackground.namedSubscriptions[ui.Hook.ONCLICK] or {}), nil,
+        "unchanged-ID replacement releases the retired observer")
+    nativeClick(notes.backgrounds[1])
+    expect(nativePanel.root.hidden, true, "rebuilt same-ID native tab clicks still select native content")
+    nativePanel:SelectTab()
+    local retiredBackground = notes.backgrounds[1]
+    notes:rebuild({ 9002, 9001 }, 2)
+    ranged:rebuild({ 9002, 9001 }, 1)
+    emit("Logic")
+    retainedPage("native tab rebuild/reorder")
+    expect(next(retiredBackground.namedSubscriptions[ui.Hook.ONCLICK] or {}), nil,
+        "native rebuild removes observers from retired tab children")
+    local badge = component(notes.tabs, "sprite", 0, 12)
+    badge.visible = false
+    emit("Logic")
+    retainedPage("native badge membership change")
+    badge:Destroy()
+    emit("Logic")
+    notes.frame.nativeShown = false
+    emit("Logic")
+    expect(nativePanel._nisNative ~= nil, true, "transient native drag visibility does not discard the own page")
+    expect(drawable(rows[4], nativePanel), false, "transient native drag suspends the retained page's drawing")
+    expect(overlay.hidden, true, "transient native drag removes the own page's sibling input overlays")
+    expect(rendered(nativePanel._nisNative.tabs[nativePanel._nisNative.group.current].background), false,
+        "transient native visibility loss hides overlay artwork as well as input")
+    notes.frame.nativeShown = true
+    emit("Logic")
+    retainedPage("native drag visibility return")
+    notes:rebuild({ 9002, 9001, 9003 }, 2)
+    ranged:rebuild({ 9002, 9001, 9003 }, 1)
+    magic:rebuild({ 9002, 9001, 9003 }, 3)
+    magic.frame:SetPos(500, 100)
+    emit("Logic")
+    retainedPage("native group merge")
+    notes.frame.nativeShown, magic.frame.nativeShown = false, true
+    nativeClick(magic.tabs)
+    expect(nativePanel.root.hidden, true, "a newly merged native page keeps native selection authority")
+    nativePanel:SelectTab()
+    retainedPage("own page selected from newly merged native frame")
+    notes:rebuild({ 9001, 9003 }, 1)
+    magic:rebuild({ 9001, 9003 }, 2)
+    ranged:rebuild({ 9002 }, 1)
+    ranged.frame:SetPos(40, 200)
+    emit("Logic")
+    retainedPage("native group split")
+    expect(ranged.body.hidden, false, "split-away native host has its original body visibility")
+    notes:rebuild({ 9001, 9002 }, 1)
+    ranged:rebuild({ 9001, 9002 }, 2)
+    ranged.frame:SetPos(500, 100)
+    magic:rebuild({ 9003 }, 1)
+    magic.frame:SetPos(50, 200)
+    notes.frame.nativeShown, magic.frame.nativeShown = true, false
+    emit("Logic")
+    retainedPage("native arrangement restored")
+    nativeClick(notes.tabs)
+    expect(nativePanel.root.hidden, true, "same-selected native click hides the own page")
+    expect(overlay.hidden, true, "native return suppresses sibling popouts")
+    expect(notes.body.hidden, false, "native return restores its body")
+    expect(drawable(rows[4], nativePanel), false, "native return prevents the retained row drawing through its hidden page")
+    nativePanel:SelectTab()
+    expect(nativePanel.scrollY, scrollY, "native selection round-trip retains scroll")
+    expect(drawable(rows[4], nativePanel), true, "own-tab return makes the retained scrolled row drawable again")
+    ranged.body = nativeNode(1477, 160, ranged.frame, 4, 44, 371, 309)
+    notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+    emit("Logic")
+    expect(nativePanel.root.hidden, true, "native frame selection restores native page authority")
+    nativePanel:SelectTab()
+    expect(ranged.body.hidden, true, "own page can be selected from the other native frame")
+    expect(nativePanel.content, content, "native frame changes do not rebuild content")
+    local function captureTab()
+        for _, child in ipairs(area.children) do
+            if child ~= overlay and child ~= nativePanel.dragLayer and not child.hidden
+                and child.width == 40 and child.height == 28 and child.subscriptions[ui.Hook.ONHOLD] then
+                return child
+            end
+        end
+        error("native tab exposes no drag capture")
+    end
+    local capture = captureTab()
+    fire(capture, ui.Hook.ONCLICK, 10, 10)
+    local captureX, captureY = capture.x, capture.y
+    fire(capture, ui.Hook.ONHOLD, 200 - captureX, 450 - captureY)
+    expect(nativePanel._nisNative, nil, "dragging out detaches native membership")
+    expect(nativePanel.dragState ~= nil, true, "drag-out enters normal placement")
+    emit("KeyDown", { gameKey = GameKey.ESCAPE })
+    expect(nativePanel._nisNative ~= nil, true, "escape restores the native membership")
+    expect(nativePanel.content, content, "cancelled drag-out retains content")
+    expect(ranged.body.hidden, true, "cancelled drag restores native concealment")
+    capture = captureTab()
+    fire(capture, ui.Hook.ONCLICK, 10, 10)
+    captureX, captureY = capture.x, capture.y
+    fire(capture, ui.Hook.ONHOLD, 200 - captureX, 450 - captureY)
+    fire(capture, ui.Hook.ONRELEASE, 200, 450)
+    expect(nativePanel._nisNative, nil, "valid drop commits a standalone panel")
+    expect(nativePanel.root, root, "committed native drag-out retains the root")
+    expect(nativePanel.content, content, "committed native drag-out retains content")
+    expect(ranged.body.hidden, false, "dragging the last tab out restores native content")
+    expect(capture.destroyed, true, "committed drag-out releases the retained capture")
+    local freeX, freeY, freeWidth, freeHeight = root.x, root.y, root.width, root.height
+    begin(nativePanel); move(nativePanel, 650, 130); release(nativePanel)
+    expect(nativePanel._nisNative ~= nil, true, "detached panel can be dragged back into the native group")
+    local peer = NisPanel.new(area, { categoryID = "auto", x = 20, y = 20 })
+    expect(peer:DockTo(nativePanel), true, "another panel can join the same native group")
+    expect(nativePanel.root.hidden, true, "selecting the new own tab hides the previous body")
+    expect(peer.root.hidden, false, "incoming native member is selected")
+    nativePanel:SelectTab()
+    peer:Destroy()
+    expect(nativePanel.root.hidden, false, "destroying an inactive native member preserves selection")
+    expect(ranged.body.hidden, true, "removing one own tab preserves native concealment for the survivor")
+    notes.frame.visible, ranged.frame.visible = false, false
+    emit("Logic")
+    expect(nativePanel._nisNative, nil, "closing every native host restores a standalone panel")
+    expect(drawable(rows[4], nativePanel), true, "closed native group cannot make retained consumer content disappear")
+    expectRect(nativePanel.root, freeX, freeY, freeWidth, freeHeight, "closed native group restores standalone bounds")
+    local restoredIndex, nativeIndex
+    for index, child in ipairs(area.children) do
+        if child == root then restoredIndex = index end
+        if child == ranged.frame then nativeIndex = index end
+    end
+    expect(restoredIndex > nativeIndex, true, "automatic native detach raises the restored standalone body")
+    notes.frame.visible, ranged.frame.visible = true, true
+    expect(nativePanel:DockTo(ranged.frame), true, "reopened native group accepts the retained panel again")
+    nativePanel:Undock()
+    expect(nativePanel._nisNative, nil, "explicit undock removes native binding")
+    expectRect(nativePanel.root, freeX, freeY, freeWidth, freeHeight,
+        "native undock restores the last standalone placement, not the docking ghost")
+    expect(ranged.body.hidden, false, "last member restores the native body")
+    expect(nativePanel.surface.left.hidden, false, "undock restores standalone frame artwork")
+    expect(nativePanel.dragLayer.hidden, false, "undock restores the standalone gesture")
+    expect(next(notes.tabs.namedSubscriptions[ui.Hook.ONCLICK] or {}), nil, "undock removes native click observers")
+    notes.frame.nativeShown, ranged.frame.nativeShown = true, false
+    notes.tabs.visible = false
+    notes.body:SetPos(4, 16)
+    notes.body:SetSize(371, 337)
+    notes.scroll:SetPos(4, 16)
+    notes.scroll:SetSize(371, 337)
+    begin(nativePanel); move(nativePanel, 300, 500); move(nativePanel, 650, 130); release(nativePanel)
+    expect(nativePanel._nisNative ~= nil, true, "standalone Notes synthesizes a native and own tab row")
+    expect(wrapper.y, 28, "standalone docking reserves one band in the embedded wrapper")
+    expect(wrapper.height, 309, "standalone wrapper shrinks without moving individual native controls")
+    expect(notes.body.y, 16, "standalone docking does not rewrite the script-owned outer slot")
+    expect(wrapper.hidden, true, "own selection conceals the whole standalone native wrapper")
+    nativePanel:Undock()
+    expect(wrapper.y, 0, "standalone detach restores the native wrapper origin")
+    expect(wrapper.height, 337, "standalone detach restores the native wrapper height")
+    expect(wrapper.size.heightParentPc, 1, "standalone detach preserves the original height anchor")
+    expect(wrapper.hidden, false, "standalone detach restores the native wrapper visibility")
+    begin(nativePanel); move(nativePanel, 300, 500); move(nativePanel, 650, 130); release(nativePanel)
+    expect(wrapper.hidden, true, "shutdown scenario starts with a concealed native page")
+    require("src/core/nis_native").shutdown()
+    expect(nativePanel._nisNative, nil, "library shutdown detaches retained native members")
+    expect(wrapper.y, 0, "library shutdown restores the native wrapper inset")
+    expect(wrapper.hidden, false, "library shutdown restores native visibility")
+    expect(nativePanel.content, content, "library shutdown does not destroy consumer controls")
+    nativePanel:_UnregisterOverlay(overlay)
+    overlay:Destroy()
+    nativePanel:Destroy()
+    expect(next(events.Logic), nil, "native teardown removes its logic observer")
+    parent, ui.Interfaces.GetComponent = oldParent, oldGet
+    ui.Interfaces.GetInterface = oldInterface
+    setmetatable(id.Component, nil)
+    for name in pairs(id.Component) do
+        if name:match("^TOPLEVEL_V2__NOTES_") or name:match("^TOPLEVEL_V2__ABILITY_") then
+            id.Component[name] = nil
+        end
+    end
+    id.Component.NOTES_CHILD__WRAPPER = nil
 end
 
 -- Active unload must take the full destruction path without touching native handles.

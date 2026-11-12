@@ -11,6 +11,7 @@ local PrettyMiniMenu = require("src/minimenu")
 local OverheadBar = require("src/overhead_bar")
 local CategoryGroups = require("src/core/category_groups")
 local Components = require("src/core/components")
+local NisNative = require("src/core/nis_native")
 
 local resources = Plugin.resources
 TextField.SetDefaultSprite(resources and (resources.input_default or resources["input_default.png"]))
@@ -64,6 +65,7 @@ PrettyUI.version = "1.4.0"
 PrettyMiniMenu.Start()
 
 function PluginShutdown()
+    NisNative.shutdown()
     KeybindField.Shutdown()
     PrettyMiniMenu.Shutdown()
     Dialog.Shutdown()

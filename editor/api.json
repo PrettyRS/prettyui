@@ -201,7 +201,7 @@
           "returns": ["PrettyUI.NisPanel"]
         },
         "SetSize": { "params": { "width": "number", "height": "number" }, "returns": ["nil"] },
-        "DockTo": { "params": { "target": "PrettyUI.NisPanel" }, "returns": ["boolean"] },
+        "DockTo": { "params": { "target": "PrettyUI.NisPanel|number|userdata" }, "returns": ["boolean"] },
         "Undock": { "params": {}, "returns": ["nil"] },
         "SelectTab": { "params": {}, "returns": ["nil"] },
         "Show": { "params": {}, "returns": ["nil"] },

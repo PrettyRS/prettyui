@@ -135,7 +135,8 @@ function NisGroup.clearPanel(panel)
 end
 
 local function eligible(source, target)
-    if not visible(source) or not visible(target) or source == target
+    if source._nisNative or target._nisNative
+        or not visible(source) or not visible(target) or source == target
         or not sameComponent(source.parent, target.parent)
         or source._nisGroup == target._nisGroup and source._nisGroup then
         return false
