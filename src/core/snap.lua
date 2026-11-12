@@ -1,7 +1,8 @@
 local Snap = {}
 
--- a prettyui windows visible edge sits 2 units inside its box and game windows dont have this
-local VISIBLE_EDGE_OFFSET = 2
+-- a prettyui window's visible edge sits inside its box by window.edgeOffsets on each side, and
+-- game windows dont have this
+
 -- the games own windows snap from about this far away too
 local SNAP_DISTANCE = 12
 local windows = setmetatable({}, { __mode = "k" })
@@ -18,23 +19,24 @@ local function addPosition(list, at, from, to)
     list[#list + 1] = { at = at, from = from, to = to }
 end
 
-function Snap.positions(rects, width, height, parentWidth, parentHeight, edgeOffset)
+-- Offests compensate for the difference between a window's box and its visible edge
+function Snap.positions(rects, width, height, parentWidth, parentHeight, offsets)
     local across, down = {}, {}
-    addPosition(across, 0, -math.huge, math.huge)
-    addPosition(across, parentWidth - width, -math.huge, math.huge)
-    addPosition(down, 0, -math.huge, math.huge)
-    addPosition(down, parentHeight - height, -math.huge, math.huge)
+    addPosition(across, -offsets.left, -math.huge, math.huge)
+    addPosition(across, parentWidth - width + offsets.right, -math.huge, math.huge)
+    addPosition(down, -offsets.top, -math.huge, math.huge)
+    addPosition(down, parentHeight - height + offsets.bottom, -math.huge, math.huge)
     for _, rect in ipairs(rects) do
         local left, top = rect.x, rect.y
         local right, bottom = rect.x + rect.width, rect.y + rect.height
-        addPosition(across, left - width + edgeOffset, top, bottom)
-        addPosition(across, right - edgeOffset, top, bottom)
-        addPosition(across, left - edgeOffset, top, bottom)
-        addPosition(across, right - width + edgeOffset, top, bottom)
-        addPosition(down, top - height + edgeOffset, left, right)
-        addPosition(down, bottom - edgeOffset, left, right)
-        addPosition(down, top - edgeOffset, left, right)
-        addPosition(down, bottom - height + edgeOffset, left, right)
+        addPosition(across, left - width + offsets.right, top, bottom)
+        addPosition(across, right - offsets.left, top, bottom)
+        addPosition(across, left - offsets.left, top, bottom)
+        addPosition(across, right - width + offsets.right, top, bottom)
+        addPosition(down, top - height + offsets.bottom, left, right)
+        addPosition(down, bottom - offsets.top, left, right)
+        addPosition(down, top - offsets.top, left, right)
+        addPosition(down, bottom - height + offsets.bottom, left, right)
     end
     return { across = across, down = down }
 end
@@ -72,13 +74,13 @@ local function addRegisteredWindows(rects, movingWindow)
     local parentOrigin = movingWindow.parent.xyGlobal
     for other in pairs(windows) do
         if isSnapTarget(other, movingWindow) then
-            local root = other.root
+            local root, offsets = other.root, other.edgeOffsets
             local rootOrigin = root.xyGlobal
             rects[#rects + 1] = {
-                x = rootOrigin.x - parentOrigin.x + VISIBLE_EDGE_OFFSET,
-                y = rootOrigin.y - parentOrigin.y + VISIBLE_EDGE_OFFSET,
-                width = root.width - 2 * VISIBLE_EDGE_OFFSET,
-                height = root.height - 2 * VISIBLE_EDGE_OFFSET,
+                x = rootOrigin.x - parentOrigin.x + offsets.left,
+                y = rootOrigin.y - parentOrigin.y + offsets.top,
+                width = root.width - offsets.left - offsets.right,
+                height = root.height - offsets.top - offsets.bottom,
             }
         end
     end
@@ -107,7 +109,7 @@ function Snap.start(movingWindow)
     local rects = {}
     addRegisteredWindows(rects, movingWindow)
     addLayoutWindows(rects, movingWindow)
-    return Snap.positions(rects, root.width, root.height, parent.width, parent.height, VISIBLE_EDGE_OFFSET)
+    return Snap.positions(rects, root.width, root.height, parent.width, parent.height, movingWindow.edgeOffsets)
 end
 
 return Snap
