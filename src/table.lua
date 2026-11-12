@@ -37,6 +37,8 @@ Table.__index = Table
 
 local DEFAULT_COLOURS = {
     header = 0x2A231BFF,
+    headerHighlight = 0x3A3024FF,
+    headerBorder = 0x6B5530FF,
     headerText = 0xF2C66DFF,
     rowOdd = 0x13110EFF,
     rowEven = 0x181510FF,
@@ -45,7 +47,7 @@ local DEFAULT_COLOURS = {
 }
 
 local DEFAULT_FONT = id.Font.MUSEO_SANS_13PT_REGULAR
-local HEADER_FONT = id.Font.MUSEO_SANS_13PT_BOLD
+local HEADER_FONT = id.Font.MUSEO_SANS_15PT_BOLD
 
 
 local function mergeColours(overrides)
@@ -178,7 +180,7 @@ function Table.new(parent, options)
         self.y = options.y or 0
         self.width = options.width or 600
         self.height = options.height or 400
-        self.rowHeight = options.rowHeight or 36
+        self.rowHeight = options.rowHeight or 44
         self.headerHeight = options.headerHeight or 28
         self.scrollbarGap = options.scrollbarGap or 18
         self.stretch = options.stretch == true
@@ -321,6 +323,8 @@ function Table:_Relayout()
     self.headerArea:SetSize(self.frameWidth, self.headerHeight)
     self.bodyArea:SetSize(self.frameWidth, self.height - self.headerHeight)
     self.headerBackground:SetSize(self.rowWidth, self.headerHeight)
+    self.headerHighlight:SetSize(self.rowWidth, 1)
+    self.headerBorder:SetSize(self.rowWidth, 2)
 
     local currentX = 0
 
@@ -400,6 +404,12 @@ function Table:_BuildFrame()
     self.headerArea:SetPos(0, 0)
     self.headerArea:SetSize(self.frameWidth, self.headerHeight)
     self.headerArea.clickthrough = true
+
+    self.headerHighlight = rectangle(self.headerArea, 0, 0, self.rowWidth, 1, self.colours.headerHighlight)
+    self.headerHighlight.clickthrough = true
+
+    self.headerBorder = rectangle(self.headerArea, 0, self.headerHeight - 2, self.rowWidth, 2, self.colours.headerBorder)
+    self.headerBorder.clickthrough = true
 
     self.bodyArea = Components.newContent(self.root)
 

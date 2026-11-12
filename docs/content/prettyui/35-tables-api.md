@@ -102,6 +102,8 @@ Some Text here
 
     - header = 0x2A231BFF
     - headerText = 0xF2C66DFF
+    - headerHighlight = 0x3A3024FF 
+    - headerBorder = 0x6B5530FF
     - rowOdd = 0x13110EFF
     - rowEven = 0x181510FF
     - text = 0xE7D7B0FF
