@@ -83,7 +83,7 @@ Some Text here
 : When **true** columns stretch to fill any remaining width. The spare space is shared between stretchable columns in proportion to their starting `width`, so wider columns get more. Defaults to **false**.
 
 `rowHeight`
-: Sets the height of each row. Default height is **36**
+: Sets the height of each row. Default height is **44**
 
 `headerHeight`
 : Sets the height of the header. Default height is **28**

@@ -180,8 +180,7 @@ local headers = childrenOfKind(t.headerArea, "Text")
 expect(#headers, 3, "one header label per column")
 expect(headers[1].content, "Name", "headers are in column order")
 expect(headers[3].content, "Price", "headers are in column order")
-expect(childrenOfKind(t.headerArea, "Rectangle")[1].movedToBack, true,
-    "header background sits behind the labels")
+expect(t.headerBackground.movedToBack, true, "header background sits behind the labels")
 
 expect(childrenOfKind(t.scrollView.content, "Text")[1].content, "Nothing to show.",
     "empty table shows the empty text")
@@ -205,25 +204,25 @@ s:Destroy()
 
 t:SetRows(makeRows(100))
 
-expect(t.scrollView.contentHeight, 3600, "scroll area is sized for ALL rows")
-expect(#liveRows(t), 13, "only 13 of 100 rows are built")
-expect(rowShowing(t, "Item 13") ~= nil, true, "row 13 (overscan) is built")
-expect(rowShowing(t, "Item 14"), nil, "row 14 is not built")
+expect(t.scrollView.contentHeight, 4400, "scroll area is sized for ALL rows")
+expect(#liveRows(t), 11, "only 11 of 100 rows are built")
+expect(rowShowing(t, "Item 11") ~= nil, true, "row 11 (overscan) is built")
+expect(rowShowing(t, "Item 12"), nil, "row 12 is not built")
 expect(rowShowing(t, "Nothing to show."), nil, "empty text is gone once there are rows")
 
 local row1 = rowShowing(t, "Item 1")
-t.scrollView:SetScrollPosition(1764)
+t.scrollView:SetScrollPosition(49 * 44) 
 
 expect(row1.destroyed, true, "rows scrolled out of view are destroyed")
-expect(#liveRows(t), 15, "still only a handful of rows built")
+expect(#liveRows(t), 13, "still only a handful of rows built")
 expect(rowShowing(t, "Item 47"), nil, "row above the overscan is not built")
 expect(rowShowing(t, "Item 48") ~= nil, true, "first overscan row is built")
-expect(rowShowing(t, "Item 62") ~= nil, true, "last overscan row is built")
-expect(rowShowing(t, "Item 63"), nil, "row below the overscan is not built")
-expect(rowShowing(t, "Item 50").y, 49 * 36, "rows are positioned by index")
+expect(rowShowing(t, "Item 60") ~= nil, true, "last overscan row is built")
+expect(rowShowing(t, "Item 61"), nil, "row below the overscan is not built")
+expect(rowShowing(t, "Item 50").y, 49 * 44, "rows are positioned by index")
 
 local row50 = rowShowing(t, "Item 50")
-t.scrollView:SetScrollPosition(1765)
+t.scrollView:SetScrollPosition(49 * 44 + 1)
 expect(rowShowing(t, "Item 50"), row50, "tiny scroll does not rebuild rows")
 
 
@@ -301,7 +300,7 @@ expect(rowShowing(t, "Item 30"), row30, "SetSize keeps existing rows")
 expect(t.root.height, 500, "root gets the new height")
 expect(t.root.x, 25, "SetSize keeps the position")
 expect(t.scrollView.scrollY, 1000, "SetSize keeps the scroll position")
-expect(rowShowing(t, "Item 43") ~= nil, true, "growing taller builds the newly visible rows")
+expect(rowShowing(t, "Item 36") ~= nil, true, "growing taller builds the newly visible rows")
 
 
 t.root.height = 1

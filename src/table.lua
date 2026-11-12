@@ -156,7 +156,7 @@ end
         width, height  - size (default 600 x 400). Without stretch table shrinks scroll bar & table to
                             max column width.
         stretch        - True allows columns to stretch to fill in remaing width. (default false)
-        rowHeight      - default 36
+        rowHeight      - default 44
         headerHeight   - default 28
         scrollbarGap   - space between the last column and the scrollbar
         padding        - horizontal text padding inside cells (default 8)
