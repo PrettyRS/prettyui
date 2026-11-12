@@ -23,11 +23,7 @@ hero:
 ## Unreleased {#unreleased}
 
 ### Added
-- Added [Table](index.html#tables-api) component.
-  - Resizable columns, with optional stretching to fill the available width.
-  - `format` callbacks for text cells and `render` callbacks for custom cell content (buttons, sprites, etc.).
-  - Lazy Row rendering. Only rows in view are built, so large tables stay cheap and keep ID counts down.
-  - Flow layout support, resizing a table pushes following components down or pulls them up.
+- Added [Table](index.html#tables-api) component, this can be used to easily display data in a responsive table format.
 
 
 ## 1.3.0 (published, awaiting approval) {#v1-3-0}
