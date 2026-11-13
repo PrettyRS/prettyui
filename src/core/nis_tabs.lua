@@ -290,6 +290,10 @@ function NisTabs:Refresh(members, active, previewPanel)
     self.parts.clickthrough = true
 
     local art = Sprites.NIS_PANEL
+    local buffer = sprite(self, self.parts, art.tabBufferTile)
+    buffer:SetSize(bandWidth, NisTabs.HEIGHT - CORNER)
+    buffer.isTiling = true
+
     local bar = sprite(self, self.parts, art.tabBarTile)
     bar:SetPos(0, NisTabs.HEIGHT - CORNER)
     bar:SetSize(bandWidth, CORNER)

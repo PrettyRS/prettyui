@@ -12,6 +12,9 @@ local NisGroup = require("src/core/nis_group")
 local Native = {}
 local groups, byFrame = {}, {}
 local subscribed = false
+local pending = {}
+local restoring = false
+local restorePending
 local EVENT_ID = "prettyui_nis_native"
 local nextHook = 0
 local HEIGHT, WIDTH, SEAM, MAX_TABS = 28, 40, 4, 128
@@ -54,7 +57,8 @@ local function indexSpecs()
     end
     for name, spec in pairs(specs) do
         spec.frame = id.Component[name]
-        if spec.frame and spec.CONTENT and spec.SCROLL and spec.TABS and spec.TAB_BACKGROUND then
+        if type(spec.frame) == "number" and spec.frame >= 0
+            and spec.CONTENT and spec.TABS and spec.TAB_BACKGROUND then
             specByID[spec.frame] = spec
         else
             specs[name] = nil
@@ -143,46 +147,183 @@ local function strip(tabs)
     return backgrounds, children, table.concat(signature, "/"), right
 end
 
+-- Client-hidden native strips need not reflow when the standalone content does.
+local function tabBand(host)
+    return host.grouped and host.tabs or host.content
+end
+
 local function capture(spec, area, allowHidden)
     local frame = component(spec.frame)
     if not frame or not same(frame.parent, area) or frame.hidden then return nil end
     local content, scroll, tabs, backdrop = component(spec.CONTENT), component(spec.SCROLL),
         component(spec.TABS), component(spec.TAB_BACKGROUND)
-    if not content or not scroll or not tabs or not backdrop
-        or not same(content.parent, frame) or not same(scroll.parent, frame)
+    if not content or not tabs or not backdrop or spec.SCROLL and not scroll
+        or not same(content.parent, frame) or scroll and not same(scroll.parent, frame)
         or not same(tabs.parent, frame) or not same(backdrop.parent, frame)
-        or tabs.height ~= HEIGHT or tabs.width < WIDTH * 2
         or content.width <= 0 or content.height <= HEIGHT
-        or content.x ~= tabs.x or backdrop.y ~= tabs.y
-        or not allowHidden and (content.hidden or scroll.hidden) then return nil end
+        or not allowHidden and (content.hidden or scroll and scroll.hidden) then return nil end
     local grouped = tabs.visible == true
-    local backgrounds, children, signature, used
+    local frameKey = identity(frame)
+    local backgrounds, children, signature, used, nativeIcon
     if grouped then
+        if tabs.height ~= HEIGHT or tabs.width < WIDTH * 2
+            or content.x ~= tabs.x or backdrop.y ~= tabs.y then return nil end
         backgrounds, children, signature, used = strip(tabs)
         if not backgrounds or used + WIDTH > tabs.width or content.y < tabs.y + HEIGHT then return nil end
     else
-        -- Standalone native strips are client-hidden and need not contain tabs.
-        -- Notes' icon and whole-wrapper inset are established by the live probe.
-        if spec.name ~= "TOPLEVEL_V2__NOTES_WINDOW" or not frame.visibleGlobal
-            or content.y ~= tabs.y then return nil end
+        if not frame.visibleGlobal or content.width < WIDTH * 2 then return nil end
+        -- Standalone strips stay client-hidden, but their single native tab
+        -- usually still exposes the correct icon. Notes may have no children.
+        local entries = strip(tabs)
+        if entries and #entries == 1 then
+            nativeIcon = entries[1].icon
+        elseif spec.name == "TOPLEVEL_V2__NOTES_WINDOW" then
+            nativeIcon = id.Sprite.CHILD_TAB_ICON_NOTES
+        end
+        -- A lock rebuild can clear a hidden strip. Retain only an icon already
+        -- captured for this bound frame; new hosts still require discovery.
+        local bound = byFrame[frameKey]
+        if not nativeIcon and bound and not bound.grouped then
+            for _, previous in ipairs(bound.hosts) do
+                if previous.key == frameKey then nativeIcon = previous.nativeIcon; break end
+            end
+        end
+        if not nativeIcon then return nil end
         backgrounds, children, signature, used = {}, {}, "", WIDTH
     end
     return { frame = frame, content = content, scroll = scroll, tabs = tabs,
-        backdrop = backdrop, key = identity(frame), owner = frame.interfaceID,
+        backdrop = backdrop, key = frameKey, owner = frame.interfaceID,
         backgrounds = backgrounds, children = children, signature = signature,
         used = used, grouped = grouped, spec = spec,
-        nativeIcon = not grouped and id.Sprite.CHILD_TAB_ICON_NOTES or nil }
+        nativeIcon = nativeIcon }
 end
 
--- A standalone inset is allowed only for a full, anchored embedded wrapper
--- with actual parent ancestry into this content slot. Merely matching bounds
--- or a similarly named (unrendered) interface does not establish ownership.
+-- Whole rendered roots captured from standalone hosts. Prayer's separate
+-- LISTENERS_AND_TIMERS root must remain live; it is not part of the page.
+local standaloneRoots = {
+    TOPLEVEL_V2_INVENTORY__MAIN_LAYER = true,
+    TOPLEVEL_V2_PRAYER__MAIN_LAYER = true,
+    TOPLEVEL_V2_WORN__CONTENT_LAYER = true,
+    CHATDEFAULT__CHAT_CONTAINER = true,
+    STATS_CHILD__CANVAS = true,
+    EMOTES2__MAIN_LAYER = true,
+    TELEMETRY__TELEMETRY_WINDOW_CONTENT = true,
+    DROPLOG__DROPLOG_WINDOW_CONTENT = true,
+    GRAPH__GRAPH_WINDOW_CONTENT = true,
+    FRIENDS2__MAIN = true,
+    GROUP_CHILD__BASE = true,
+    TOPLEVEL_V2_PLUGIN_CONTENT__MAIN_LAYER = true,
+    CHEEVO_TRACKER__ACTIVITY_TRACKER_ROOT = true,
+    CHEEVO_PATHS__CHEEVO_PATHS_ROOT = true,
+}
+
+-- These standalone pages have no common wrapper. Preserve each captured
+-- root's anchors and relative geometry while reserving the same header band.
+local splitRoots = {
+    TOPLEVEL_V2__QUESTLIST_WINDOW = {
+        { name = "QUESTLIST_V4__LIST_MAIN", layout = { 0, 30, 0, 0, 0, 0, 0, -30, 1, 1 } },
+        { name = "QUESTLIST_V4__CONTROLS_LAYER", layout = { 4, 2, 0, 0, 0, 0, -8, 30, 1, 0 } },
+        { name = "QUESTLIST_V4__CONTROLS_FILTERS_LAYER", layout = { 4, 32, 0, 0, 0, 0, -30, 130, 1, 0 } },
+    },
+    TOPLEVEL_V2__CLAN_LIST_WINDOW = {
+        { name = "CLAN_CHAT__MAIN_CONTENT_LAYER", layout = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1 } },
+        { name = "CLAN_CHAT__TOOLTIP", layout = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1 } },
+    },
+}
+
+local function snapshotRoot(child, original, inset)
+    return { component = child, owner = child.interfaceID, key = identity(child),
+        packed = (child.interfaceID << 16) | child.staticID,
+        original = original, inset = inset, hidden = child.hidden, changed = false }
+end
+
+-- Familiar availability swaps an embedded page for native edit-block children.
+-- Keep their captured layouts separate; never resize the outer edit container.
+local familiarPlaceholder = {
+    { kind = 1, layout = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1 } },
+    { kind = 2, layout = { 5, 5, 0, 0, 0, 0, -10, -10, 1, 1 } },
+    { kind = 3, layout = { 0, 20, 0.5, 0, 0.5, 0, 64, 64, 0, 0 } },
+}
+
+local function familiarRootsFor(host, previous)
+    local roots, retained = {}, {}
+    for _, saved in ipairs(previous or {}) do retained[saved.key] = saved end
+    local function include(child, expected, parent, kind)
+        if not child then return true end
+        if not same(child.parent, parent) or kind and child.type ~= kind then return false end
+        local saved = retained[identity(child)]
+        if saved then
+            saved.component = child
+        else
+            local original = layout(child)
+            if not original or child.hidden then return false end
+            for index, value in ipairs(expected) do
+                if original[index] ~= value then return false end
+            end
+            local inset = { table.unpack(original) }
+            inset[2], inset[8] = inset[2] + HEIGHT, inset[8] - HEIGHT * inset[10]
+            if parent.width * inset[9] + inset[7] <= 0
+                or parent.height * inset[10] + inset[8] <= 0 then return false end
+            saved = snapshotRoot(child, original, inset)
+        end
+        roots[#roots + 1] = saved
+        return true
+    end
+    local packed = id.Component.LORE_STATS_SIDE__CONTENT_LAYER
+    local page = type(packed) == "number" and packed >= 0 and component(packed) or nil
+    -- The client keeps 662:0 alive but unparented while unavailable. A loaded
+    -- interface is not necessarily a page mounted in this native host.
+    if page and not same(page.parent, host.content) then page = nil end
+    -- The full-size familiar page has the same centered anchors as Equipment.
+    if not include(page, { 0, 0, 0.5, 0.5, 0.5, 0.5, 0, 0, 1, 1 }, host.content) then return nil end
+    if page and not retained[identity(page)] then
+        -- Normalize both parent/self anchors when shrinking a centered root.
+        roots[#roots].inset = { 0, HEIGHT, 0, 0, 0, 0, 0, -HEIGHT, 1, 1 }
+    end
+    local edit = component(host.spec.EDIT_BLOCK)
+    if not edit or not same(edit.parent, host.frame) then return nil end
+    for index, schema in ipairs(familiarPlaceholder) do
+        local child = ui.Interfaces:GetComponent(edit.interfaceID, edit.staticID, 0, index - 1)
+        if not include(child, schema.layout, edit, schema.kind) then return nil end
+    end
+    -- A bound host may briefly have neither page during the native swap.
+    if #roots == 0 and not previous then return nil end
+    return roots
+end
+
+-- A standalone inset requires actual parentage and full-size anchored content,
+-- not a matching rectangle or an unrendered interface with a similar name.
 local wrappers
-local function wrapperFor(host)
+local function nativeRootsFor(host)
+    if host.spec.name == "TOPLEVEL_V2__LORE_WINDOW" then return familiarRootsFor(host) end
+    local schema = splitRoots[host.spec.name]
+    if schema then
+        local roots = {}
+        for _, entry in ipairs(schema) do
+            local packed = id.Component[entry.name]
+            if type(packed) ~= "number" or packed < 0 then return nil end
+            local child = component(packed)
+            if not child or child.hidden or not same(child.parent, host.content) then return nil end
+            local original = layout(child)
+            if not original then return nil end
+            for index, value in ipairs(entry.layout) do
+                if original[index] ~= value then return nil end
+            end
+            local inset = { table.unpack(original) }
+            inset[2] = inset[2] + HEIGHT
+            inset[8] = inset[8] - HEIGHT * inset[10]
+            if host.content.width * inset[9] + inset[7] <= 0
+                or host.content.height * inset[10] + inset[8] <= 0 then return nil end
+            roots[#roots + 1] = snapshotRoot(child, original, inset)
+        end
+        return roots
+    end
     if not wrappers then
         wrappers = {}
         for packed, name in pairs(id.Component) do
-            if type(name) == "string" and name:match("_WRAPPER$") and type(packed) == "number" then
+            if type(name) == "string" and type(packed) == "number"
+                and (name:match("_WRAPPER$") or standaloneRoots[name]
+                    or name:match("^TOPLEVEL_V2_WINDOW_ABILITY_BOOK_.+__MAIN_LAYER$")) then
                 wrappers[#wrappers + 1] = packed
             end
         end
@@ -191,19 +332,18 @@ local function wrapperFor(host)
     for _, packed in ipairs(wrappers) do
         local child = component(packed)
         if child and same(child.parent, host.content) then
-            if chosen then return nil end
+            if chosen and not same(chosen, child) then return nil end
             chosen = child
         end
     end
     if not chosen or chosen.hidden or chosen.x ~= 0 or chosen.y ~= 0
         or chosen.width ~= host.content.width or chosen.height ~= host.content.height then return nil end
     local saved = layout(chosen)
-    if not saved or saved[1] ~= 0 or saved[2] ~= 0 or saved[3] ~= 0 or saved[4] ~= 0
-        or saved[5] ~= 0 or saved[6] ~= 0 or saved[7] ~= 0 or saved[8] ~= 0
+    if not saved or saved[1] ~= 0 or saved[2] ~= 0
+        or saved[7] ~= 0 or saved[8] ~= 0
         or saved[9] ~= 1 or saved[10] ~= 1 then return nil end
-    return { component = chosen, owner = chosen.interfaceID, key = identity(chosen),
-        packed = (chosen.interfaceID << 16) | chosen.staticID,
-        original = saved, hidden = chosen.hidden, changed = false }
+    -- Normalizing full-size roots also handles Equipment's centered anchors.
+    return { snapshotRoot(chosen, saved, { 0, HEIGHT, 0, 0, 0, 0, 0, -HEIGHT, 1, 1 }) }
 end
 
 local function discover(area)
@@ -221,6 +361,7 @@ local function related(host, other)
     -- Hidden frame copies may keep their previous bounds while the visible
     -- frame moves/resizes. Membership is the native tab signature, not geometry.
     return other.grouped and other.owner == host.owner and other.signature == host.signature
+        and (other.key == host.key or not (host.frame.visibleGlobal and other.frame.visibleGlobal))
 end
 
 local function resolve(host)
@@ -286,9 +427,11 @@ function Native.candidate(panel, x, y)
     local best, found = nil, discover(area)
     for _, host in ipairs(found) do
         if host.frame.visibleGlobal then
-            local top = host.tabs.xyGlobal
-            if px >= top.x and px < top.x + host.tabs.width
-                and py >= top.y and py < top.y + HEIGHT then
+            local band = tabBand(host)
+            local top = band.xyGlobal
+            local targetY = host.grouped and top.y or host.frame.xyGlobal.y
+            if px >= top.x and px < top.x + band.width
+                and py >= targetY and py < top.y + HEIGHT then
                 local relatedHosts = {}
                 for _, other in ipairs(found) do
                     if related(host, other) then relatedHosts[#relatedHosts + 1] = other end
@@ -297,7 +440,7 @@ function Native.candidate(panel, x, y)
                 local extra = panel._nisGroup and #panel._nisGroup.members or 1
                 local capacity = true
                 for _, item in ipairs(relatedHosts) do
-                    if item.used + WIDTH * ((occupied and #occupied.members or 0) + extra) > item.tabs.width then
+                    if item.used + WIDTH * ((occupied and #occupied.members or 0) + extra) > tabBand(item).width then
                         capacity = false
                     end
                 end
@@ -307,9 +450,9 @@ function Native.candidate(panel, x, y)
                         or host.content.width > (member.maxWidth or math.huge)
                         or height > (member.maxHeight or math.huge) then capacity = false end
                 end
-                if capacity and (#relatedHosts >= 2 or not host.grouped)
-                    and (occupied or not host.content.hidden and not host.scroll.hidden)
-                    and (occupied or host.grouped or wrapperFor(host)) then
+                if capacity
+                    and (occupied or not host.content.hidden and (not host.scroll or not host.scroll.hidden))
+                    and (occupied or host.grouped or nativeRootsFor(host)) then
                     if best then return nil end
                     best = host
                 end
@@ -332,10 +475,11 @@ end
 local function validHost(group, host)
     if not (live(group) and identity(host.frame) == host.key
         and same(host.frame.parent, group.area)
-        and same(host.content.parent, host.frame) and same(host.scroll.parent, host.frame)
+        and same(host.content.parent, host.frame)
+        and (not host.scroll or same(host.scroll.parent, host.frame))
         and same(host.tabs.parent, host.frame) and host.tabs.visible == host.grouped
-        and host.tabs.width >= host.used + WIDTH * #group.members) then return false end
-    if not group.grouped then return host.content.y == host.tabs.y end
+        and tabBand(host).width >= host.used + WIDTH * #group.members) then return false end
+    if not group.grouped then return true end
     return host.content.y >= host.tabs.y + HEIGHT
 end
 
@@ -568,26 +712,33 @@ local function align(group)
     if not current then error("native group has no unique visible frame") end
     for i, host in ipairs(group.hosts) do
         local show = i == current
+        local band = tabBand(host)
         local chrome = host.chrome
         local x, y, width, height = rectInParent(group.members[1], host.frame)
         if chrome.x ~= x or chrome.y ~= y then chrome:SetPos(x, y) end
         if chrome.width ~= width or chrome.height ~= height then chrome:SetSize(width, height) end
         if chrome.hidden == show then chrome.hidden = not show end
+        if host.tabBuffer then
+            if host.tabBuffer.x ~= band.x or host.tabBuffer.y ~= band.y then
+                host.tabBuffer:SetPos(band.x, band.y)
+            end
+            if host.tabBuffer.width ~= band.width then host.tabBuffer:SetSize(band.width, HEIGHT - SEAM) end
+        end
         if host.nativeTab then
-            alignTab(host.nativeTab, host.tabs.x, host.tabs.y, show)
+            alignTab(host.nativeTab, band.x, band.y, show)
             local nativeSprite = (not group.active and show) and art.tabSelected or art.tabUnselected
             if host.nativeTab.background.spriteID ~= nativeSprite then
                 host.nativeTab.background.spriteID = nativeSprite
             end
         end
         if host.divider then
-            local dx, dy = host.tabs.x, host.tabs.y + HEIGHT - SEAM
+            local dx, dy = band.x, band.y + HEIGHT - SEAM
             if host.divider.x ~= dx or host.divider.y ~= dy then host.divider:SetPos(dx, dy) end
-            if host.divider.width ~= host.tabs.width then host.divider:SetSize(host.tabs.width, SEAM) end
+            if host.divider.width ~= band.width then host.divider:SetSize(band.width, SEAM) end
         end
         for index, panel in ipairs(group.members) do
             local tab = group.bindings[panel].tabs[i]
-            alignTab(tab, host.tabs.x + host.used + (index - 1) * WIDTH, host.tabs.y, show)
+            alignTab(tab, band.x + host.used + (index - 1) * WIDTH, band.y, show)
             local selected = show and group.active == panel
             local value = selected and art.tabSelected or art.tabUnselected
             if tab.background.spriteID ~= value then tab.background.spriteID = value end
@@ -701,16 +852,20 @@ local function createHost(group, host, chrome)
     if edit and not same(edit.parent, host.frame) then
         error("native edit layer is outside its frame")
     end
-    if group.wrapper then
-        host.flags[1] = { component = group.wrapper.component,
-            key = identity(group.wrapper.component), hidden = group.wrapper.hidden }
-    else
-        for _, comp in ipairs({ host.content, host.scroll, edit }) do
+    local function remember(comp)
+        if comp then
             host.flags[#host.flags + 1] = {
                 component = comp, key = identity(comp), hidden = comp.hidden,
             }
         end
     end
+    if group.nativeRoots then
+        for _, saved in ipairs(group.nativeRoots) do remember(saved.component) end
+    else
+        remember(host.content)
+    end
+    remember(host.scroll)
+    remember(edit)
     subscribeHost(group, host.tabs)
     for _, child in ipairs(host.children) do subscribeHost(group, child) end
     if group.grouped then
@@ -719,6 +874,9 @@ local function createHost(group, host, chrome)
         host.seam.isTiling = true
         host.seam.enabled, host.seam.clickthrough, host.seam.hidden = false, true, true
     else
+        host.tabBuffer = ownSprite(host.chrome, art.tabBufferTile)
+        host.tabBuffer:SetSize(tabBand(host).width, HEIGHT - SEAM)
+        host.tabBuffer.isTiling = true
         host.divider = Components.new(ui.Sprite, host.chrome, { _categoryPolicy = "auto" })
         host.divider.spriteID = art.tabBarTile
         host.divider.isTiling = true
@@ -743,6 +901,7 @@ end
 local function matchingHost(a, b)
     if a.key ~= b.key or a.owner ~= b.owner or a.grouped ~= b.grouped
         or a.signature ~= b.signature or a.used ~= b.used
+        or a.nativeIcon ~= b.nativeIcon
         or not same(a.content, b.content) or not same(a.scroll, b.scroll)
         or not same(a.tabs, b.tabs) or not same(a.backdrop, b.backdrop)
         or #a.backgrounds ~= #b.backgrounds or #a.children ~= #b.children then return false end
@@ -760,21 +919,67 @@ end
 local function refreshHost(group, host, current)
     for _, field in ipairs({ "frame", "content", "scroll", "tabs", "backdrop",
         "backgrounds", "children" }) do host[field] = current[field] end
-    local wrapper = group.wrapper
-    if wrapper then
-        local fresh = component(wrapper.packed)
-        if not fresh or identity(fresh) ~= wrapper.key or not same(fresh.parent, host.content) then
-            error("native wrapper retired")
+    local roots = group.nativeRoots
+    if roots and host.spec.name == "TOPLEVEL_V2__LORE_WINDOW" then
+        local currentRoots = familiarRootsFor(host, roots)
+        if not currentRoots then error("unrecognized familiar page layout") end
+        local unavailable = component(host.spec.EDIT_BLOCK).visible == true
+        local availabilityChanged = group.familiarUnavailable ~= unavailable
+        group.familiarUnavailable = unavailable
+        local retained = {}
+        for _, saved in ipairs(currentRoots) do retained[saved.key] = true end
+        for index = #host.flags, 1, -1 do
+            local flag = host.flags[index]
+            for _, saved in ipairs(roots) do
+                if saved.key == flag.key and not retained[saved.key] then
+                    -- Dismissal can unparent a still-live page rather than
+                    -- unload it. Release our inset before a later remount.
+                    local fresh = saved.changed and component(saved.packed)
+                    if fresh and identity(fresh) == saved.key and fresh.parent == nil then
+                        saved.component = fresh
+                        applyLayout(fresh, saved.original)
+                        fresh.hidden = saved.hidden
+                        saved.changed = false
+                    end
+                    table.remove(host.flags, index)
+                    break
+                end
+            end
         end
-        wrapper.component = fresh
+        group.nativeRoots, roots = currentRoots, currentRoots
+        for _, saved in ipairs(roots) do
+            if not saved.changed then
+                saved.changed = true -- setters can partially apply before throwing
+                applyLayout(saved.component, saved.inset)
+                host.flags[#host.flags + 1] = {
+                    component = saved.component, key = saved.key, hidden = saved.hidden,
+                }
+            elseif availabilityChanged then
+                saved.baselineReset = true
+            end
+        end
+    elseif roots then
+        for _, saved in ipairs(roots) do
+            local fresh = component(saved.packed)
+            if not fresh or identity(fresh) ~= saved.key or not same(fresh.parent, host.content) then
+                error("native content root retired")
+            end
+            saved.component = fresh
+        end
     end
     local edit = component(host.spec.EDIT_BLOCK)
     for _, saved in ipairs(host.flags) do
         local fresh
-        if wrapper then fresh = wrapper.component
-        elseif saved.key == identity(host.content) then fresh = host.content
-        elseif saved.key == identity(host.scroll) then fresh = host.scroll
-        elseif saved.key == identity(edit) then fresh = edit end
+        if roots then
+            for _, root in ipairs(roots) do
+                if saved.key == root.key then fresh = root.component; break end
+            end
+        end
+        if not fresh then
+            if saved.key == identity(host.content) then fresh = host.content
+            elseif saved.key == identity(host.scroll) then fresh = host.scroll
+            elseif saved.key == identity(edit) then fresh = edit end
+        end
         if not fresh then error("native concealment component retired") end
         saved.component = fresh
     end
@@ -837,7 +1042,7 @@ local function reconcile(group)
             hosts[#hosts + 1] = host
         end
     end
-    if group.grouped and #hosts < 2 then
+    if group.grouped and #hosts == 1 and #group.hosts > 1 then
         -- Frame copies rebuilt at different moments still share their native
         -- geometry; wait for their tab signatures to agree before adopting them.
         for _, other in ipairs(found) do
@@ -851,7 +1056,6 @@ local function reconcile(group)
                 and other.content.y == anchor.content.y then return nil end
         end
         if not selectedFrame(group) then return nil end
-        error("native group no longer has matching tab copies")
     end
     local changed = #hosts ~= #group.hosts
     if not changed then
@@ -882,7 +1086,7 @@ local function reconcile(group)
     for _, host in ipairs(group.hosts) do
         byFrame[host.key] = nil
         nativeTabs[host.key] = host.nativeTab
-        for _, key in ipairs({ "seam", "divider" }) do
+        for _, key in ipairs({ "tabBuffer", "seam", "divider" }) do
             if host[key] and live(group) then host[key]:Destroy() end
         end
     end
@@ -989,8 +1193,65 @@ local function reconcileLock(group, current)
     return true
 end
 
+local function sameLayout(first, second)
+    if not first then return false end
+    for index = 1, 10 do
+        if first[index] ~= second[index] then return false end
+    end
+    return true
+end
+
+local function reconcileRoots(group)
+    local changed = false
+    if not group.nativeRoots then return changed end
+    for _, saved in ipairs(group.nativeRoots) do
+        if saved.changed then
+            local actual = layout(saved.component)
+            if not actual then error("native content layout retired") end
+            if not sameLayout(actual, saved.inset) then
+                if not saved.baselineReset or not sameLayout(actual, saved.original) then
+                    error("native script overwrote tab inset")
+                end
+                local parent, expected = saved.component.parent, saved.inset
+                if parent.width * expected[9] + expected[7] <= 0
+                    or parent.height * expected[10] + expected[8] <= 0 then
+                    error("native content root resized below its bounds")
+                end
+                -- One baseline reset per lock/familiar-availability transition.
+                -- Keep the allowance across idle ticks for deferred reflow.
+                saved.baselineReset = nil
+                applyLayout(saved.component, expected)
+                if not sameLayout(layout(saved.component), expected) then
+                    error("native reflow did not retain tab inset")
+                end
+                changed = true
+            end
+            if saved.component.width <= 0 or saved.component.height <= 0 then
+                error("native content root resized below its bounds")
+            end
+        end
+    end
+    return changed
+end
+
+local function saveGroup(group)
+    if restoring or group.attaching then return end
+    local frames = {}
+    for _, host in ipairs(group.hosts) do frames[#frames + 1] = host.spec.name end
+    table.sort(frames)
+    for index, panel in ipairs(group.members) do
+        if not panel._nisNativeTransaction then
+            Persistence.native(panel, {
+                frame = group.hosts[group.current].spec.name, frames = frames,
+                index = index, selected = group.active == panel,
+                free = group.bindings[panel].free,
+            })
+        end
+    end
+end
+
 local function stopTick()
-    if subscribed and #groups == 0 then
+    if subscribed and #groups == 0 and next(pending) == nil then
         Event.Logic.Unsubscribe(EVENT_ID)
         subscribed = false
     end
@@ -1016,20 +1277,23 @@ local function finishGroup(group)
     end
     attempt(function() nativePage(group) end)
     attempt(function() releaseObservers(group) end)
-    if group.wrapper and group.wrapper.changed then
-        attempt(function()
-            local saved = group.wrapper
-            if live(group) and identity(saved.component) == saved.key
-                and ui.Interfaces:GetInterface(saved.owner) ~= nil then
-                applyLayout(saved.component, saved.original)
-                saved.component.hidden = saved.hidden
+    if group.nativeRoots then
+        for _, saved in ipairs(group.nativeRoots) do
+            if saved.changed then
+                attempt(function()
+                    if live(group) and identity(saved.component) == saved.key
+                        and ui.Interfaces:GetInterface(saved.owner) ~= nil then
+                        applyLayout(saved.component, saved.original)
+                        saved.component.hidden = saved.hidden
+                    end
+                    saved.changed = false
+                end)
             end
-            saved.changed = false
-        end)
+        end
     end
     for _, host in ipairs(group.hosts) do
         if host.nativeTab then attempt(function() destroyTab(host.nativeTab); host.nativeTab = nil end) end
-        for _, key in ipairs({ "seam", "divider", "chrome" }) do
+        for _, key in ipairs({ "tabBuffer", "seam", "divider", "chrome" }) do
             local owned = host[key]
             if owned then
                 attempt(function()
@@ -1049,6 +1313,16 @@ local function finishGroup(group)
 end
 
 local function tick()
+    for panel in pairs(pending) do
+        if not panel._nisNativePending or panel._destroyed or not panel.root
+            or not ui.Interfaces:GetInterface(panel.interfaceID) then
+            pending[panel] = nil
+        elseif not panel.dragState and not panel._nisTabPress
+            and not (panel.resize and panel.resize.dragState) then
+            restorePending(panel)
+        end
+    end
+    stopTick()
     -- Reconcile one shared group at a time; native clients own frame geometry.
     for index = #groups, 1, -1 do
         local group = groups[index]
@@ -1068,6 +1342,7 @@ local function tick()
                     end
                 end
                 local current = selectedFrame(group)
+                local selectionChanged = group.pending or current ~= group.current
                 if group.pending then nativePage(group) end
                 if current then
                     if group.active and (group.needsConceal
@@ -1077,19 +1352,13 @@ local function tick()
                         nativePage(group)
                     end
                     group.transient = nil
+                    local rootReflow = reconcileRoots(group)
                     local lockReflow = reconcileLock(group, current)
                     local repainted = reconcilePage(group, current)
-                    if group.wrapper and group.wrapper.changed then
-                        local saved, expected = group.wrapper, group.wrapper.inset
-                        local actual = layout(saved.component)
-                        if not actual then error("native wrapper layout retired") end
-                        for i = 1, 10 do
-                            if actual[i] ~= expected[i] then error("native wrapper script overwrote tab inset") end
-                        end
-                    end
                     if group.failure then error(group.failure) end
                     align(group)
-                    if lockReflow or repainted then raiseGroup(group) end
+                    if lockReflow or repainted or rootReflow then raiseGroup(group) end
+                    if changed or selectionChanged then saveGroup(group) end
                 else
                     suspend(group)
                 end
@@ -1123,7 +1392,6 @@ local function buildGroup(host, area)
         end
     end
     if #hosts == 0 then return nil end
-    if host.grouped and #hosts < 2 then return nil end
     local current
     for i, item in ipairs(hosts) do
         if item.frame.visibleGlobal then
@@ -1136,11 +1404,11 @@ local function buildGroup(host, area)
         hosts = hosts, members = {}, bindings = {}, hooks = {}, hookKeys = {},
         grouped = host.grouped, current = current }
     if not host.grouped then
-        group.wrapper = wrapperFor(host)
-        if not group.wrapper then return nil end
-        group.wrapper.inset = { table.unpack(group.wrapper.original) }
-        group.wrapper.inset[2] = group.wrapper.inset[2] + HEIGHT
-        group.wrapper.inset[8] = group.wrapper.inset[8] - HEIGHT
+        group.nativeRoots = nativeRootsFor(host)
+        if not group.nativeRoots then return nil end
+        if host.spec.name == "TOPLEVEL_V2__LORE_WINDOW" then
+            group.familiarUnavailable = component(host.spec.EDIT_BLOCK).visible == true
+        end
     end
     return group
 end
@@ -1178,10 +1446,16 @@ local function abandonMember(group, panel)
 end
 
 function Native.detach(panel)
+    if panel and not restoring then
+        panel._nisNativePending, pending[panel] = nil, nil
+        stopTick()
+    end
     local binding = panel and panel._nisNative
     if not binding then return false end
     local group = binding.group
+    panel._nisNativeDetaching = true
     local ok, problem = pcall(abandonMember, group, panel)
+    panel._nisNativeDetaching = nil
     if not ok then warn(problem); group.failure = problem; return false end
     if #group.members == 0 then return finishGroup(group) end
     for _, host in ipairs(group.hosts) do
@@ -1211,8 +1485,8 @@ local function attach(panel, group, free)
     return binding
 end
 
-function Native.dock(panel, target, savedFree)
-    if not panel or panel._nisNative or panel.locked or not panel.root
+local function dock(panel, target, savedFree)
+    if not panel or panel._nisNative or panel.locked and not restoring or not panel.root
         or not ui.Interfaces:GetInterface(panel.interfaceID) then return false end
     local area = component(id.Component.TOPLEVEL_V2__GAME_AREA)
     if not area then return false end
@@ -1229,17 +1503,17 @@ function Native.dock(panel, target, savedFree)
         local refreshed, settled = pcall(reconcile, group)
         if not refreshed or settled == nil or group.failure or not byFrame[host.key] then return false end
     end
-    if not group and (host.content.hidden or host.scroll.hidden) then return false end
+    if not group and (host.content.hidden or host.scroll and host.scroll.hidden) then return false end
     if not group then group = buildGroup(host, area) end
     if not group then return false end
     local members = panel._nisGroup and { table.unpack(panel._nisGroup.members) } or { panel }
     for _, member in ipairs(members) do
-        if member._nisNative or member.locked or member._nisHidden
+        if member._nisNative or member.locked and not restoring or member._nisHidden
             or not member.root or not same(member.parent, panel.parent)
             or not ui.Interfaces:GetInterface(member.interfaceID) then return false end
     end
     for _, item in ipairs(group.hosts) do
-        if item.used + (#group.members + #members) * WIDTH > item.tabs.width then return false end
+        if item.used + (#group.members + #members) * WIDTH > tabBand(item).width then return false end
         local height = item.content.height - (group.grouped and 0 or HEIGHT)
         for _, member in ipairs(members) do
             if item.content.width < member.minWidth or height < member.minHeight
@@ -1251,27 +1525,34 @@ function Native.dock(panel, target, savedFree)
     local frees = {}
     for index, member in ipairs(members) do frees[index] = member == panel and savedFree or freeRect(member) end
     local created = #group.members == 0
+    group.attaching = true
     local success, problem = pcall(function()
         if created then
             nextHook = nextHook + 1
             group.hookID = "prettyui_nis_native_" .. nextHook
             groups[#groups + 1] = group
-            for _, item in ipairs(group.hosts) do byFrame[item.key] = group end
-            if group.wrapper then
-                group.wrapper.changed = true -- rollback setters that apply then throw
-                applyLayout(group.wrapper.component, group.wrapper.inset)
+            for _, item in ipairs(group.hosts) do
+                byFrame[item.key] = group
+                item.flags = {} -- cleanup is valid even before chrome construction
+            end
+            if group.nativeRoots then
+                for _, saved in ipairs(group.nativeRoots) do
+                    saved.changed = true -- setters can partially apply before throwing
+                    applyLayout(saved.component, saved.inset)
+                end
             end
             for _, item in ipairs(group.hosts) do createHost(group, item) end
         end
         for index, member in ipairs(members) do
             if member._nisGroup then NisGroup.undock(member) end
-            Persistence.detach(member)
+            if not restoring then Persistence.detach(member) end
             attach(member, group, frees[index])
         end
         if not subscribed then startTick() end
         align(group)
         assert(Native.select(panel), "native page selection failed")
     end)
+    group.attaching = nil
     if not success then
         if group.constructingTab then
             local cleanupOK, cleanupError = pcall(destroyTab, group.constructingTab)
@@ -1286,7 +1567,65 @@ function Native.dock(panel, target, savedFree)
         if oldGroup then NisGroup.restore(oldGroup, false) end
         return false
     end
+    saveGroup(group)
     return true
+end
+
+function Native.dock(panel, target, savedFree)
+    return dock(panel, target, savedFree)
+end
+
+-- Rebind by named host identity once the native layout is available. Startup
+-- restoration is allowed while locked; explicit docking still is not.
+restorePending = function(panel)
+    local snapshot = panel._nisNativePending
+    if not snapshot or panel._nisHidden or panel._nisGroup then return end
+    restoring = true
+    local ok, restored = pcall(function()
+        local targets = { snapshot.frame }
+        for _, name in ipairs(snapshot.frames) do
+            if name ~= snapshot.frame then targets[#targets + 1] = name end
+        end
+        for _, name in ipairs(targets) do
+            local target = component(id.Component[name])
+            if target and target.visibleGlobal then
+                local previous = byFrame[identity(target)]
+                local active = previous and previous.active
+                if dock(panel, target, snapshot.free) then
+                    local binding = panel._nisNative
+                    local group = binding.group
+                    binding.restoreIndex = snapshot.index
+                    table.sort(group.members, function(a, b)
+                        return (group.bindings[a].restoreIndex or math.huge)
+                            < (group.bindings[b].restoreIndex or math.huge)
+                    end)
+                    if snapshot.selected then
+                        Native.select(panel)
+                    elseif active then
+                        Native.select(active)
+                    else
+                        nativePage(group)
+                        align(group)
+                    end
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+    restoring = false
+    if ok and restored then
+        panel._nisNativePending, pending[panel] = nil, nil
+    elseif not ok then
+        warn(restored)
+    end
+end
+
+function Native.register(panel)
+    if not panel._nisNativePending then return end
+    pending[panel] = true
+    startTick()
+    restorePending(panel)
 end
 
 function Native.lockChanged(panel, locked)
@@ -1295,6 +1634,9 @@ function Native.lockChanged(panel, locked)
     local group = binding.group
     if group.locked ~= locked then
         group.locked, group.lockTransition = locked, true
+        if group.nativeRoots then
+            for _, saved in ipairs(group.nativeRoots) do saved.baselineReset = true end
+        end
         for _, member in ipairs(group.members) do
             for _, tab in ipairs(group.bindings[member].tabs) do tab.shown = false end
         end
@@ -1311,6 +1653,7 @@ function Native.select(panel)
         local current = selectedFrame(group)
         if not current then return false end
         if not validHost(group, group.hosts[current]) then error("native frame unavailable") end
+        reconcileRoots(group)
         if group.pending then
             nativePage(group)
         elseif group.active and (group.needsConceal
@@ -1331,6 +1674,7 @@ function Native.select(panel)
         align(group)
         -- Show first; only reorder GAME_AREA siblings, never native artwork.
         raiseGroup(group)
+        saveGroup(group)
         return true
     end)
     if not ok then group.failure = selected; warn(selected); return false end
@@ -1346,11 +1690,13 @@ function Native.sync(panel)
         if group.pending then nativePage(group) end
         local current = selectedFrame(group)
         if not current then return end
+        local rootReflow = reconcileRoots(group)
         if group.active and group.needsConceal then moveActive(group, current) end
         local lockReflow = reconcileLock(group, current)
         local repainted = reconcilePage(group, current)
         align(group)
-        if lockReflow or repainted then raiseGroup(group) end
+        if lockReflow or repainted or rootReflow then raiseGroup(group) end
+        saveGroup(group)
     end)
     if not ok then binding.group.failure = problem; warn(problem); return false end
     return true
@@ -1363,9 +1709,10 @@ function Native.contains(panel, x, y)
     local current = selectedFrame(group)
     local host = current and group.hosts[current]
     if not host then return false end
-    local origin, parentOrigin = host.tabs.xyGlobal, panel.parent.xyGlobal
+    local band = tabBand(host)
+    local origin, parentOrigin = band.xyGlobal, panel.parent.xyGlobal
     local left, top = origin.x - parentOrigin.x, origin.y - parentOrigin.y
-    return x >= left and x < left + host.tabs.width and y >= top and y < top + HEIGHT
+    return x >= left and x < left + band.width and y >= top and y < top + HEIGHT
 end
 
 function Native.snapshot(panel)
@@ -1410,6 +1757,8 @@ function Native.restore(panel, snapshot)
 end
 
 function Native.shutdown()
+    for panel in pairs(pending) do panel._nisNativePending = nil end
+    pending = {}
     local complete = true
     local existing = { table.unpack(groups) }
     for _, group in ipairs(existing) do
@@ -1421,8 +1770,7 @@ function Native.shutdown()
             complete = false
         end
     end
-    -- Shutdown must not leave a plugin-owned subscription running, even if a
-    -- native setter failed. Retained snapshots are never replayed on reload.
+    -- Shutdown restores native state, but keeps persisted named memberships.
     if subscribed then Event.Logic.Unsubscribe(EVENT_ID); subscribed = false end
     return complete
 end

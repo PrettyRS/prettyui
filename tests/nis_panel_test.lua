@@ -1498,13 +1498,16 @@ do
         function node:SetPos(px, py, xp, yp, xs, ys)
             self.position = { x = px, y = py, xParentPc = xp or 0, yParentPc = yp or 0,
                 xSelfPc = xs or 0, ySelfPc = ys or 0 }
-            self.x = px + (self.parent and self.parent.width or 0) * (xp or 0) + self.width * (xs or 0)
-            self.y = py + (self.parent and self.parent.height or 0) * (yp or 0) + self.height * (ys or 0)
+            self.x = px + (self.parent and self.parent.width or 0) * (xp or 0) - self.width * (xs or 0)
+            self.y = py + (self.parent and self.parent.height or 0) * (yp or 0) - self.height * (ys or 0)
         end
         function node:SetSize(w, h, wp, hp)
             self.size = { width = w, height = h, widthParentPc = wp or 0, heightParentPc = hp or 0 }
             self.width = w + (self.parent and self.parent.width or 0) * (wp or 0)
             self.height = h + (self.parent and self.parent.height or 0) * (hp or 0)
+            local pos = self.position
+            self.x = pos.x + (self.parent and self.parent.width or 0) * pos.xParentPc - self.width * pos.xSelfPc
+            self.y = pos.y + (self.parent and self.parent.height or 0) * pos.yParentPc - self.height * pos.ySelfPc
             for _, child in ipairs(self.children) do child:Relayout() end
             self:EmitResize()
         end
@@ -1571,10 +1574,14 @@ do
         local tabs = nativeNode(1477, first + 8, frame, 4, 16, 371, 28)
         tabs.visible = true
         nativeNode(1477, first + 9, frame, 4, 16, 371, 28)
-        local prefix, suffix = name == "NOTES" and "NOTES_WINDOW" or "ABILITY_WINDOW",
-            name == "NOTES" and "" or "_" .. name
+        local prefix, suffix = name:match("^(.+_WINDOW)(.*)$")
+        if not prefix then
+            prefix, suffix = name == "NOTES" and "NOTES_WINDOW" or "ABILITY_WINDOW",
+                name == "NOTES" and "" or "_" .. name
+        end
         id.Component["TOPLEVEL_V2__" .. prefix .. suffix] = (1477 << 16) | first
         id.Component["TOPLEVEL_V2__" .. prefix .. "_CONTENT" .. suffix] = (1477 << 16) | (first + 2)
+        id.Component["TOPLEVEL_V2__" .. prefix .. "_EDIT_BLOCK" .. suffix] = (1477 << 16) | (first + 3)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_SCROLL" .. suffix] = (1477 << 16) | (first + 4)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_TABS" .. suffix] = (1477 << 16) | (first + 8)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_TAB_BACKGROUND" .. suffix] = (1477 << 16) | (first + 7)
@@ -1609,6 +1616,52 @@ do
     local wrapper = nativeNode(1417, 3, notes.body, 0, 0, 371, 309)
     wrapper:SetSize(0, 0, 1, 1)
     id.Component.NOTES_CHILD__WRAPPER = (1417 << 16) | 3
+    -- Actual standalone roots and anchors supplied by the user's read-only report.
+    local standaloneHosts = {
+        { label = "Inventory", frame = 103, name = "INVENTORY_WINDOW", icon = 18772,
+            owner = 1473, static = 0, rootName = "TOPLEVEL_V2_INVENTORY__MAIN_LAYER", width = 204, height = 292 },
+        { label = "Prayer", frame = 136, name = "PRAYER_WINDOW", icon = 18774,
+            owner = 1458, static = 4, rootName = "TOPLEVEL_V2_PRAYER__MAIN_LAYER", width = 371, height = 207 },
+        { label = "Equipment", frame = 114, name = "WORN_WINDOW", icon = 18773,
+            owner = 1464, static = 0, rootName = "TOPLEVEL_V2_WORN__CONTENT_LAYER", width = 165, height = 293,
+            centred = true },
+        { label = "Chat", frame = 420, name = "CHAT_WINDOW", icon = 18754,
+            owner = 137, static = 0, rootName = "CHATDEFAULT__CHAT_CONTAINER", width = 536, height = 292 },
+        { label = "Stats", frame = 300, name = "STATS_WINDOW", icon = 24429,
+            owner = 1466, static = 0, rootName = "STATS_CHILD__CANVAS", width = 371, height = 209 },
+    }
+    for _, captured in ipairs(standaloneHosts) do
+        local item = host(captured.frame, captured.name, false, { captured.icon })
+        captured.host = item
+        item.frame:SetSize(captured.width + 8, captured.height + 20)
+        item.tabs.visible = false
+        item.tabs:SetSize(captured.width, 28)
+        item.body:SetPos(4, 16); item.body:SetSize(captured.width, captured.height)
+        item.scroll:SetPos(4, 16); item.scroll:SetSize(captured.width, captured.height)
+        local edit = nativeNodes[(1477 << 16) | (captured.frame + 3)]
+        edit:SetPos(4, 16); edit:SetSize(captured.width, captured.height)
+        captured.root = nativeNode(captured.owner, captured.static, item.body,
+            0, 0, captured.width, captured.height)
+        captured.root:SetSize(0, 0, 1, 1)
+        local anchor = captured.centred and 0.5 or 0
+        captured.root:SetPos(0, 0, anchor, anchor, anchor, anchor)
+        id.Component[captured.rootName] = (captured.owner << 16) | captured.static
+    end
+    local prayerListeners = nativeNode(1458, 1, standaloneHosts[2].host.body, 0, 0, 1, 1)
+    id.Component.TOPLEVEL_V2_PRAYER__LISTENERS_AND_TIMERS = (1458 << 16) | 1
+    -- Captured CHAT_WINDOW_2/3 have no *_SCROLL component at all.
+    local chat = host(431, "CHAT_WINDOW_2", false, { 18755, 18756 })
+    local chatPeer = host(441, "CHAT_WINDOW_3", false, { 18755, 18756 })
+    for _, item in ipairs({ chat, chatPeer }) do
+        local packed = (1477 << 16) | (item.frame.staticID + 4)
+        nativeNodes[packed] = nil
+        removeChild(item.frame, item.scroll)
+        removeRenderChild(item.frame, item.scroll)
+        item.scroll:Destroy()
+        item.scroll = nil
+    end
+    id.Component.TOPLEVEL_V2__CHAT_WINDOW_SCROLL_2 = nil
+    id.Component.TOPLEVEL_V2__CHAT_WINDOW_SCROLL_3 = nil
     setmetatable(id.Component, { __pairs = function(values)
         local name
         return function()
@@ -1953,16 +2006,808 @@ do
     nativePanel:_UnregisterOverlay(overlay)
     overlay:Destroy()
     nativePanel:Destroy()
+
+    do
+        notes.frame.nativeShown = false
+        for _, captured in ipairs(standaloneHosts) do
+            local item, embedded = captured.host, captured.root
+            local panelID = "native-standalone:" .. captured.label
+            local owner = NisPanel.new(area, { id = panelID, categoryID = "auto",
+                x = 30, y = 450, width = 280, height = 180 })
+            local content = owner.content
+            local title = owner:AddTitle(captured.label .. " native host")
+            item.frame.nativeShown = true
+            embedded:SetSize(-10, 0, 1, 1)
+            expect(owner:DockTo(item.frame), false, captured.label .. " partial root cannot establish safe reflow")
+            embedded:SetSize(0, 0, 1, 1)
+            begin(owner)
+            move(owner, item.frame.x + item.tabs.x + 50, item.frame.y + item.tabs.y + 8)
+            release(owner)
+            expect(owner._nisNative ~= nil, true, captured.label .. " standalone band accepts its actual embedded root")
+            expect(owner._nisNative.group.hosts[1].nativeIcon, captured.icon, captured.label .. " retains native icon")
+            expect(item.tabs.visible, false, captured.label .. " client-hidden native tabs stay hidden")
+            expectRect(embedded, 0, 28, captured.width, captured.height - 28,
+                captured.label .. " reserves exactly one complete band")
+            expect(embedded.hidden, true, captured.label .. " own page conceals embedded native content")
+            expect(item.scroll.hidden, true, captured.label .. " own page conceals outer scrollbar input")
+            local edit = nativeNodes[(1477 << 16) | (captured.frame + 3)]
+            expect(edit.hidden, true, captured.label .. " own page conceals the edit layer")
+            expect(prayerListeners.hidden, false, "Prayer timers remain live while its main page is concealed")
+            expectRect(prayerListeners, 0, 0, 1, 1, "Prayer listeners are not inset or resized")
+            emit("Logic")
+            expect(drawable(title, owner), true, captured.label .. " retained consumer content remains drawable")
+            expect(owner.content, content, captured.label .. " docking retains consumer controls")
+            local binding = owner._nisNative
+            fire(binding.group.hosts[1].nativeTab.hit, ui.Hook.ONCLICK)
+            expect(embedded.hidden, false, captured.label .. " native tab restores embedded content")
+            expect(item.scroll.hidden, false, captured.label .. " native tab restores scrollbar visibility")
+            expect(edit.hidden, false, captured.label .. " native tab restores edit visibility")
+            owner:SelectTab()
+            if captured.label == "Prayer" then
+                local retainedBinding, retainedRoot = owner._nisNative, owner.root
+                local nativeWrites = 0
+                local function observeRoot(root)
+                    local setPos = root.SetPos
+                    root.SetPos = function(self, ...)
+                        nativeWrites = nativeWrites + 1
+                        return setPos(self, ...)
+                    end
+                end
+                observeRoot(embedded)
+                local function repaintPrayer(value, rebuild)
+                    local top, height = value and 4 or 16, captured.height + (value and 12 or 0)
+                    item.body:SetPos(4, top); item.body:SetSize(captured.width, height)
+                    item.scroll:SetPos(4, top); item.scroll:SetSize(captured.width, height)
+                    edit:SetPos(4, top); edit:SetSize(captured.width, height)
+                    if rebuild then
+                        embedded = nativeNode(1458, 4, item.body, 0, 0, captured.width, height)
+                        embedded:SetSize(0, 0, 1, 1)
+                        captured.root = embedded
+                        observeRoot(embedded)
+                        item:rebuild({}, 1)
+                        item.tabs:SetSize(0, 0)
+                    else
+                        embedded:SetPos(0, 0); embedded:SetSize(0, 0, 1, 1)
+                    end
+                    if not value then
+                        item.tabs:SetSize(captured.width, 28)
+                        item:rebuild({ captured.icon }, 1)
+                    end
+                    -- The hidden native strip/backdrop deliberately retain y16.
+                    embedded.hidden, item.scroll.hidden, edit.hidden = false, false, false
+                    item.frame:MoveToFront()
+                end
+                local function prayerLock(value, beforeNotification, rebuild)
+                    local active = retainedBinding.group.active
+                    if beforeNotification then repaintPrayer(value, rebuild) end
+                    locked = value; transmit(12)
+                    if not beforeNotification then
+                        emit("Logic"); emit("Logic")
+                        repaintPrayer(value, rebuild)
+                    end
+                    emit("Logic")
+                    expect(owner._nisNative, retainedBinding, "Prayer lock transition retains its native binding")
+                    expect(owner.root, retainedRoot, "Prayer lock transition retains the populated root")
+                    expect(owner.content, content, "Prayer lock transition retains consumer controls")
+                    expect(retainedBinding.group.active, active, "Prayer lock transition preserves selected page")
+                    local top, height = value and 4 or 16, captured.height + (value and 12 or 0)
+                    expectRect(embedded, 0, 28, captured.width, height - 28, "Prayer lock reflow reapplies one native inset")
+                    expectRect(owner.root, item.frame.x + 4, item.frame.y + top + 28,
+                        captured.width, height - 28, "Prayer retained page follows the live content slot")
+                    expect(owner.root.hidden, active ~= owner, "Prayer lock does not change own-page visibility")
+                    expect(prayerListeners.visibleGlobal, true, "Prayer lock leaves listeners and timers active")
+                    expectRect(prayerListeners, 0, 0, 1, 1, "Prayer lock never insets its listener root")
+                    local tab = retainedBinding.tabs[retainedBinding.group.current]
+                    expect(tab.visual.y, top, "Prayer synthetic artwork follows content, not stale hidden strip")
+                    expect(tab.hit.y, item.frame.y + top, "Prayer tab input follows its artwork")
+                    expect(require("src/core/nis_native").contains(owner, tab.hit.x + 10, tab.hit.y + 10),
+                        true, "Prayer tab containment follows the current synthetic row")
+                    expect(rendered(tab.background), true, "Prayer lock retains visible synthetic tab artwork")
+                    if active == owner then
+                        expect(drawable(title, owner), true, "Prayer lock leaves retained content drawable")
+                        expect(hitAt(area, tab.hit.x + 10, tab.hit.y + 10), tab.hit,
+                            "Prayer lock keeps tab input above repainted native chrome")
+                    end
+                    local writes = nativeWrites
+                    emit("Logic"); emit("Logic")
+                    expect(nativeWrites, writes, "idle Prayer ticks do not fight native layout with repeated writes")
+                end
+                prayerLock(true, true, false)
+                fire(retainedBinding.group.hosts[1].nativeTab.hit, ui.Hook.ONCLICK)
+                expect(owner.root.hidden, true, "locked Prayer native tab remains selectable")
+                prayerLock(false, false, false)
+                expect(embedded.hidden, false, "Prayer unlock preserves the selected native page")
+                owner:SelectTab()
+                local peer = NisPanel.new(area, { categoryID = "auto", x = 20, y = 20 })
+                expect(peer:DockTo(owner), true, "Prayer lock regression includes an inactive own tab")
+                owner:SelectTab()
+                prayerLock(true, false, true)
+                expect(peer.root.hidden, true, "Prayer lock rebuild does not reveal inactive retained pages")
+                peer:SelectTab()
+                expect(owner.root.hidden, true, "Prayer own tabs remain selectable while locked")
+                owner:SelectTab()
+                peer:Destroy()
+                prayerLock(false, true, false)
+                embedded:SetPos(1, 28)
+                emit("Logic")
+                expect(owner._nisNative, nil, "unexpected Prayer layout writes still detach safely")
+                expectRect(embedded, 0, 0, captured.width, captured.height, "unsupported Prayer write restores native baseline")
+                expect(owner:DockTo(item.frame), true, "Prayer remains usable after unsupported layout teardown")
+            end
+            item.body:SetSize(captured.width, captured.height + 40)
+            emit("Logic")
+            expectRect(embedded, 0, 28, captured.width, captured.height + 12,
+                captured.label .. " embedded page follows native content resizing")
+            item.body:SetSize(captured.width, captured.height)
+            owner:Undock()
+            expectRect(embedded, 0, 0, captured.width, captured.height, captured.label .. " detach restores full native page")
+            expect(embedded.hidden, false, captured.label .. " detach restores native visibility")
+            expect(item.scroll.hidden, false, captured.label .. " detach restores outer scrollbar")
+            local anchor = captured.centred and 0.5 or 0
+            expect(embedded.position.xParentPc, anchor, captured.label .. " restores parent x anchor")
+            expect(embedded.position.yParentPc, anchor, captured.label .. " restores parent y anchor")
+            expect(embedded.position.xSelfPc, anchor, captured.label .. " restores self x anchor")
+            expect(embedded.position.ySelfPc, anchor, captured.label .. " restores self y anchor")
+            expect(embedded.size.widthParentPc, 1, captured.label .. " restores width anchor")
+            expect(embedded.size.heightParentPc, 1, captured.label .. " restores height anchor")
+            expect(owner:DockTo(item.frame), true, captured.label .. " can redock without double insetting")
+            owner:Destroy()
+            expectRect(embedded, 0, 0, captured.width, captured.height, captured.label .. " teardown restores native anchors")
+            locked = true; transmit(12)
+            owner = NisPanel.new(area, { id = panelID, categoryID = "auto" })
+            expect(owner._nisNative ~= nil, true, captured.label .. " saved standalone host restores while locked")
+            expectRect(embedded, 0, 28, captured.width, captured.height - 28,
+                captured.label .. " reload reserves one band, not two")
+            owner:Undock(); owner:Destroy()
+            expectRect(embedded, 0, 0, captured.width, captured.height, captured.label .. " locked teardown restores native page")
+            item.frame.nativeShown = false
+            locked = false; transmit(12)
+        end
+        local owner = NisPanel.new(area, { categoryID = "auto", x = 30, y = 450,
+            width = 280, height = 180 })
+        local title = owner:AddTitle("Scroll-less native host")
+
+        chat.frame.nativeShown = true
+        begin(owner); move(owner, 650, 130); release(owner)
+        expect(owner._nisNative ~= nil, true, "scroll-less secondary chat band accepts nesting")
+        expect(chat.body.hidden, true, "scroll-less host conceals its content")
+        local edit = nativeNodes[(1477 << 16) | (chat.frame.staticID + 3)]
+        expect(edit.hidden, true, "missing scroll does not skip the edit-layer input blocker")
+        emit("Logic")
+        expect(drawable(title, owner), true, "scroll-less host retains drawable content after reconciliation")
+        chat.frame.nativeShown, chatPeer.frame.nativeShown = false, true
+        emit("Logic")
+        expect(owner._nisNative ~= nil, true, "scroll-less native frame changes retain membership")
+        owner:SelectTab()
+        expect(chatPeer.body.hidden, true, "scroll-less peer conceals its native content")
+        owner:Undock()
+        expect(chat.body.hidden, false, "scroll-less detach restores native content")
+        expect(edit.hidden, false, "scroll-less detach restores the edit layer")
+        chatPeer.frame.nativeShown = false
+        chat.frame.nativeShown = true
+        chat.tabs.visible = false
+        chat.body:SetPos(4, 16)
+        chat:rebuild({ 18755 }, 1)
+        expect(owner:DockTo(chat.frame), false, "standalone native content without a whole wrapper remains untouched")
+        expect(chat.body.y, 16, "unsupported host is not inset speculatively")
+        chat.tabs.visible = true
+        chat.body:SetPos(4, 44)
+        chat:rebuild({ 18755, 18756 }, 1)
+        chat.frame.nativeShown = false
+        notes.frame.nativeShown = true
+        owner:Destroy()
+    end
+
+    -- Native memberships survive complete Lua restarts without retaining handles.
+    do
+        local function restart()
+            for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
+                "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence" }) do
+                package.loaded[name] = nil
+            end
+            NisPanel = require("src/nis_panel")
+        end
+        local function create(name, options)
+            options = options or {}
+            options.id, options.categoryID = "native-restart:" .. name, "auto"
+            options.x, options.y = 30, 450
+            options.width, options.height = 280, 180
+            return NisPanel.new(area, options)
+        end
+        local function saved(name)
+            return savedLayouts["prettyui.nis-layout.v1"].panels["native-restart:" .. name]
+        end
+        local a, b, c = create("a"), create("b"), create("c")
+        expect(a:DockTo(notes.frame), true, "persistent standalone Notes docking")
+        expect(b:DockTo(a), true, "persistent second native member")
+        expect(c:DockTo(a), true, "persistent third native member")
+        b:SelectTab()
+        expect(saved("b").native.frame, "TOPLEVEL_V2__NOTES_WINDOW", "save named native identity")
+        expectRect(saved("a"), 30, 450, 280, 180, "native saves retain free bounds")
+        require("src/core/nis_native").shutdown()
+        b:Destroy(); a:Destroy(); c:Destroy()
+        restart()
+        locked = true; transmit(12)
+        notes.frame.visible = false
+        c = create("c")
+        local restoredTitle = c:AddTitle("Restored native content")
+        emit("Logic")
+        expect(c._nisNative, nil, "unavailable host leaves a usable standalone panel")
+        expect(drawable(restoredTitle, c), true, "pending native restore retains actual content")
+        notes.frame:SetPos(580, 80)
+        notes.frame.visible = true
+        emit("Logic")
+        expect(c._nisNative ~= nil, true, "late native host restores while locked")
+        expect(c._nisNative.group.active, nil, "absent saved selection does not select another own page")
+        a = create("a")
+        b = create("b")
+        local group = b._nisNative.group
+        expect(group.members[1], a, "reverse load order restores first native tab")
+        expect(group.members[2], b, "reverse load order restores second native tab")
+        expect(group.members[3], c, "reverse load order restores third native tab")
+        expect(group.active, b, "late selected plugin restores its own page")
+        expectRect(b.root, 584, 124, 371, 309, "restoration follows current host bounds")
+        expect(a:DockTo(notes.frame), false, "restoration does not enable explicit locked docking")
+        c:SelectTab()
+        expect(drawable(restoredTitle, c), true, "restored native page renders its retained consumer content")
+        b:SelectTab()
+        c:Destroy(); b:Destroy(); a:Destroy()
+        restart()
+        a = create("a"); b = create("b")
+        expect(a._nisNative.group.active, b, "destroy order does not overwrite saved selection")
+        a:Undock()
+        b:Hide()
+        expect(saved("a").native, nil, "explicit undock forgets native membership")
+        expect(saved("b").native, nil, "hide forgets native membership")
+        a:Destroy(); b:Destroy()
+        restart()
+        a = create("a"); b = create("b")
+        expect(a._nisNative, nil, "explicit undock remains standalone after restart")
+        expect(b._nisNative, nil, "hidden native member does not rejoin on restart")
+        a:Destroy(); b:Destroy()
+
+        -- Native selection is saved too; merely restoring tabs must not steal it.
+        locked = false; transmit(12)
+        a = create("a")
+        expect(a:DockTo(notes.frame), true, "native-selection persistence setup")
+        local binding = a._nisNative
+        fire(binding.group.hosts[binding.group.current].nativeTab.hit, ui.Hook.ONCLICK)
+        expect(a.root.hidden, true, "synthetic native tab selects native content")
+        a:Destroy()
+        restart()
+        locked = true; transmit(12)
+        a = create("a")
+        expect(a._nisNative ~= nil, true, "native-selected group restores membership")
+        expect(a._nisNative.group.active, nil, "native selection survives restart")
+        expect(wrapper.hidden, false, "restoring inactive own page leaves native content visible")
+        a:Undock(); a:Destroy()
+
+        -- An explicit change cancels a pending restore, even before a host exists.
+        notes.frame.visible = false
+        c = create("c")
+        expect(c._nisNative, nil, "missing host queues saved membership")
+        c:Undock()
+        notes.frame.visible = true
+        emit("Logic")
+        expect(c._nisNative, nil, "explicit undock cancels deferred restoration")
+        c:Destroy()
+
+        -- Grouped hosts can change which named frame is visible between runs.
+        notes.tabs.visible = true
+        notes.body:SetPos(4, 44); notes.body:SetSize(371, 309)
+        notes.scroll:SetPos(4, 44); notes.scroll:SetSize(371, 309)
+        notes.frame:SetPos(500, 100)
+        notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+        locked = false; transmit(12)
+        c = create("c")
+        expect(c:DockTo(ranged.frame), true, "persistent grouped native docking")
+        c:Destroy()
+        restart()
+        notes.frame.nativeShown, ranged.frame.nativeShown = true, false
+        locked = true; transmit(12)
+        c = create("c")
+        expect(c._nisNative ~= nil, true, "alternate saved native frame restores the group")
+        expect(c._nisNative.group.active, c, "grouped native own selection survives restart")
+        c:Undock(); c:Destroy()
+        locked = false; transmit(12)
+    end
+    do
+        -- A native-tab transfer must be saved before any later click or tick.
+        local prayer = standaloneHosts[2]
+        notes.frame:SetPos(20, 20)
+        prayer.host.frame.nativeShown = true
+        local function create(name)
+            local owner = NisPanel.new(area, { id = "prayer-transfer:" .. name, categoryID = "auto",
+                x = name == "a" and 100 or 50, y = 450, width = 300,
+                height = name == "a" and 200 or 260, minWidth = 64, minHeight = 64 })
+            owner:AddTitle("Retained Prayer page " .. name)
+            return owner
+        end
+        local function saved(name)
+            return savedLayouts["prettyui.nis-layout.v1"].panels["prayer-transfer:" .. name]
+        end
+        local function transfer(owner)
+            local binding = owner._nisNative
+            local hit = binding.tabs[binding.group.current].hit
+            local x, y = hit.x, hit.y
+            fire(hit, ui.Hook.ONCLICK, 10, 10)
+            fire(hit, ui.Hook.ONHOLD, 200 - x, 450 - y)
+            expect(owner.dragState ~= nil, true, "native tab tear-out starts a transfer")
+            local px, py = prayer.host.frame.x + 74, prayer.host.frame.y + 24
+            fire(hit, ui.Hook.ONHOLD, px, py)
+            expect(owner.dragState.nativeTarget ~= nil, true, "transferred native tab previews Prayer")
+            fire(hit, ui.Hook.ONRELEASE, px, py)
+        end
+        local a, b = create("a"), create("b")
+        local freeX, freeY, freeWidth, freeHeight = b.root.x, b.root.y, b.root.width, b.root.height
+        expect(a:DockTo(prayer.host.frame), true, "first retained page docks in Prayer")
+        expect(b:DockTo(notes.frame), true, "second retained page starts in another native host")
+        transfer(b)
+        expect(b._nisNative.group, a._nisNative.group, "native transfer joins both Prayer pages")
+        expect(saved("b").native ~= nil, true, "native transfer immediately saves the moved page")
+        expect(saved("b").native.frame, "TOPLEVEL_V2__PRAYER_WINDOW", "native transfer saves the new host")
+        expect(saved("b").native.selected, true, "native transfer saves the selected page before restart")
+        expect(saved("a").native.selected, false, "native transfer saves the inactive peer")
+        expectRect(saved("b"), freeX, freeY, freeWidth, freeHeight,
+            "native transfer retains the moved page's standalone bounds")
+        for _ = 1, 2 do
+            -- Consumer plugin restart only; the library/native host stays live.
+            a:Destroy(); b:Destroy()
+            a, b = create("a"), create("b")
+            expect(a._nisNative ~= nil and b._nisNative ~= nil, true, "both Prayer pages restore on plugin restart")
+            expect(a._nisNative.group, b._nisNative.group, "restarted Prayer pages share one native group")
+            expect(b._nisNative.group.active, b, "the transferred Prayer page restores as selected")
+            expectRect(a.root, 504, 144, 371, 179, "inactive Prayer page restores the full native viewport")
+            expectRect(b.root, 504, 144, 371, 179, "selected Prayer page restores the full native viewport")
+            expect(a.root.hidden, true, "restarted inactive Prayer page stays hidden")
+            expect(b.root.hidden, false, "restarted selected Prayer page is visible")
+            expect(b.surface.background.hidden, true, "restored native page has no standalone frame fill")
+            expect(b.resize.enabled, false, "restored native page cannot resize independently")
+            expect(prayer.root.hidden, true, "restored own selection conceals native Prayer controls")
+            expect(prayer.host.scroll.hidden, true, "restored own selection conceals Prayer scrollbar input")
+            expectRect(prayer.root, 0, 28, 371, 179, "multiple restored members reserve only one native band")
+            transfer(b)
+            expect(saved("b").native.selected, true, "redropping into the same Prayer group commits selection")
+        end
+        a:Undock(); b:Undock()
+        a:Destroy(); b:Destroy()
+        prayer.host.frame.nativeShown = false
+        notes.frame:SetPos(500, 100)
+    end
     expect(next(events.Logic), nil, "native teardown removes its logic observer")
+    -- Broader user capture: single-root books, compact RuneMetrics chrome,
+    -- and self-contained native tab rows with no matching outer-frame copy.
+    local expandedHosts = {
+        { name = "ABILITY_WINDOW_MELEE", frame = 147, owner = 1460, static = 11,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_MELEE__MAIN_LAYER", width = 112, height = 292 },
+        { name = "ABILITY_WINDOW_RANGED", frame = 158, owner = 1452, static = 6,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_RANGED__MAIN_LAYER", width = 144, height = 292 },
+        { name = "ABILITY_WINDOW_MAGIC", frame = 169, owner = 1461, static = 6,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_MAGIC__MAIN_LAYER", width = 320, height = 291 },
+        { name = "ABILITY_WINDOW_MAGIC_TELEPORT", frame = 202, owner = 1887, static = 6,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_MAGIC_TELEPORT__MAIN_LAYER", width = 371, height = 235 },
+        { name = "ABILITY_WINDOW_DEFENCE", frame = 268, owner = 1449, static = 6,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_DEFENCE__MAIN_LAYER", width = 112, height = 292 },
+        { name = "ABILITY_WINDOW_CONSTITUTION", frame = 279, owner = 1882, static = 6,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_CONSTITUTION__MAIN_LAYER", width = 112, height = 292 },
+        { name = "ABILITY_WINDOW_NECROMANCY_ABILITIES", frame = 235, owner = 1220, static = 6,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_NECROMANCY_ABILITIES__MAIN_LAYER", width = 113, height = 291 },
+        { name = "ABILITY_WINDOW_NECROMANCY_SPELLS", frame = 246, owner = 1221, static = 6,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_NECROMANCY_SPELLS__MAIN_LAYER", width = 93, height = 291 },
+        { name = "ABILITY_WINDOW_NECROMANCY", frame = 224, owner = 1219, static = 6, row = true,
+            rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_NECROMANCY__MAIN_LAYER", width = 206, height = 271 },
+        { name = "EMOTES_WINDOW", frame = 409, owner = 590, static = 13,
+            rootName = "EMOTES2__MAIN_LAYER", width = 371, height = 337 },
+        { name = "TELEMETRY_WINDOW", frame = 343, owner = 1588, static = 0, top = 4, frameScroll = true,
+            rootName = "TELEMETRY__TELEMETRY_WINDOW_CONTENT", width = 129, height = 276 },
+        { name = "DROPLOG_WINDOW", frame = 354, owner = 1678, static = 0,
+            rootName = "DROPLOG__DROPLOG_WINDOW_CONTENT", width = 371, height = 337 },
+        { name = "GRAPH_WINDOW", frame = 365, owner = 1732, static = 20,
+            rootName = "GRAPH__GRAPH_WINDOW_CONTENT", width = 371, height = 235 },
+        { name = "FRIENDS_LIST_WINDOW", frame = 501, owner = 550, static = 0,
+            rootName = "FRIENDS2__MAIN", width = 238, height = 292 },
+        { name = "FRIENDSCHAT_WINDOW", frame = 556, owner = 1427, static = 27,
+            rootName = "FRIENDSCHAT_CHILD__WRAPPER", width = 238, height = 292 },
+        { name = "CLAN_LIST_WINDOW", frame = 512, owner = 1110, static = 0, tooltip = true, icon = 18762,
+            rootName = "CLAN_CHAT__MAIN_CONTENT_LAYER", width = 238, height = 304, recordedTabs = true },
+        { name = "GROUP_LIST_WINDOW", frame = 523, owner = 1519, static = 11, row = true,
+            rootName = "GROUP_CHILD__BASE", width = 238, height = 264 },
+        { name = "MUSIC_WINDOW", frame = 311, owner = 1416, static = 0,
+            rootName = "MUSIC_V3_CHILD__WRAPPER", width = 214, height = 283 },
+        { name = "PLUGIN_CONTENT_WINDOW", frame = 567, owner = 1604, static = 3, listener = true,
+            rootName = "TOPLEVEL_V2_PLUGIN_CONTENT__MAIN_LAYER", width = 371, height = 337 },
+        { name = "CHEEVO_TRACKER_WINDOW", frame = 387, owner = 1854, static = 0, top = 4, frameScroll = true,
+            rootName = "CHEEVO_TRACKER__ACTIVITY_TRACKER_ROOT", width = 242, height = 249 },
+        { name = "CHEEVO_PATHS_WINDOW", frame = 398, owner = 1894, static = 0, icon = 31692,
+            rootName = "CHEEVO_PATHS__CHEEVO_PATHS_ROOT", width = 350, height = 396, recordedTabs = true },
+        { name = "QUESTLIST_WINDOW", frame = 376, owner = 190, static = 0, icon = 32077,
+            rootName = "QUESTLIST_V4__LIST_MAIN", width = 371, height = 337,
+            rootY = 30, heightOffset = -30, recordedTabs = true, quest = true },
+        { name = "LORE_WINDOW", frame = 125, owner = 662, static = 0, icon = 18787, familiar = true,
+            rootName = "LORE_STATS_SIDE__CONTENT_LAYER", width = 286, height = 292 },
+    }
+    notes.frame.nativeShown = false
+    local clanHost, groupHost, familiarHost
+    for index, captured in ipairs(expandedHosts) do
+        captured.icon = captured.icon or 50000 + index
+        local item = host(captured.frame, captured.name, false, { captured.icon })
+        captured.host = item
+        local tabTop = captured.top or 16
+        local bodyTop = captured.row and tabTop + 28 or tabTop
+        item.frame:SetSize(captured.width + 8, captured.height + bodyTop + 4)
+        item.tabs:SetPos(4, tabTop); item.tabs:SetSize(captured.width, 28)
+        item.tabs.visible = captured.row == true
+        nativeNodes[(1477 << 16) | (captured.frame + 7)]:SetPos(0, tabTop)
+        item.body:SetPos(4, bodyTop); item.body:SetSize(captured.width, captured.height)
+        if captured.frameScroll then
+            item.scroll:SetPos(0, 0); item.scroll:SetSize(item.frame.width, item.frame.height)
+        else
+            item.scroll:SetPos(4, bodyTop); item.scroll:SetSize(captured.width, captured.height)
+        end
+        local edit = nativeNodes[(1477 << 16) | (captured.frame + 3)]
+        edit:SetPos(4, bodyTop); edit:SetSize(captured.width, captured.height)
+        captured.root = nativeNode(captured.owner, captured.static, item.body,
+            0, 0, captured.width, captured.height)
+        captured.root:SetSize(0, captured.heightOffset or 0, 1, 1)
+        captured.root:SetPos(0, captured.rootY or 0)
+        if captured.familiar then
+            captured.root:SetPos(0, 0, 0.5, 0.5, 0.5, 0.5)
+            familiarHost = item
+        end
+        id.Component[captured.rootName] = (captured.owner << 16) | captured.static
+        if captured.recordedTabs then
+            for _, child in ipairs(item.tabs.children) do
+                if child.width == 24 and child.height == 24 then
+                    child.position = { x = child.x, y = 0, xParentPc = 0, yParentPc = 0.5,
+                        xSelfPc = 0, ySelfPc = 0.5 }
+                    child.size = { width = 24, height = 24, widthParentPc = 0, heightParentPc = 0 }
+                    child.SetPos, child.SetSize, child.Relayout = item.tabs.SetPos, item.tabs.SetSize, item.tabs.Relayout
+                    child:SetPos(child.x, 0, 0, 0.5, 0, 0.5)
+                end
+            end
+            local badge = component(item.tabs, "sprite", 0, 2)
+            setmetatable(badge, getmetatable(item.tabs))
+            badge.nativeShown, badge.visible, badge.type, badge.spriteID = true, false, 3, 10999
+            badge:SetPos(22, 14); badge:SetSize(12, 12)
+            local count = component(item.tabs, "text", 0, 3)
+            setmetatable(count, getmetatable(item.tabs))
+            count.nativeShown, count.visible, count.type, count.content = true, false, 2, "0"
+            count:SetPos(24, 16); count:SetSize(9, 9)
+        end
+        if captured.name == "CHEEVO_PATHS_WINDOW" then
+            id.Component.QA_PATHS__WRAPPER = (captured.owner << 16) | captured.static
+        end
+        if captured.quest then
+            captured.controls = nativeNode(190, 15, item.body, 4, 2, captured.width - 8, 30)
+            captured.controls:SetSize(-8, 30, 1, 0)
+            captured.filters = nativeNode(190, 14, item.body, 4, 32, captured.width - 30, 130)
+            captured.filters:SetSize(-30, 130, 1, 0)
+            captured.filters.visible = false
+            id.Component.QUESTLIST_V4__CONTROLS_LAYER = (190 << 16) | 15
+            id.Component.QUESTLIST_V4__CONTROLS_FILTERS_LAYER = (190 << 16) | 14
+        end
+        if captured.row then item:rebuild({ captured.icon, captured.icon + 100 }, 1) end
+        if captured.tooltip then
+            captured.tooltip = nativeNode(1110, 186, item.body, 0, 0, captured.width, captured.height)
+            captured.tooltip:SetSize(0, 0, 1, 1)
+            id.Component.CLAN_CHAT__TOOLTIP = (1110 << 16) | 186
+            clanHost = item
+        end
+        if captured.name == "GROUP_LIST_WINDOW" then groupHost = item end
+        if captured.listener then
+            captured.listener = nativeNode(1604, 0, item.body, 0, 0, 1, 1)
+            id.Component.TOPLEVEL_V2_PLUGIN_CONTENT__LISTENERS_AND_TIMERS = (1604 << 16) | 0
+        end
+    end
+    for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
+        "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence" }) do
+        package.loaded[name] = nil
+    end
+    NisPanel = require("src/nis_panel")
+    for _, captured in ipairs(expandedHosts) do
+        local item, embedded = captured.host, captured.root
+        item.frame.nativeShown = true
+        local rootY = captured.rootY or 0
+        local rootHeight = captured.height + (captured.heightOffset or 0)
+        local panelID = "native-expanded:" .. captured.name
+        local owner = NisPanel.new(area, { id = panelID, categoryID = "auto",
+            x = 30, y = 450, width = 280, height = 180 })
+        local title = owner:AddTitle(captured.name)
+        local content = owner.content
+        if captured.quest then
+            item.body:SetSize(captured.width, 50)
+            expect(owner:DockTo(item.frame), false, "Quest rejects an inset that would make the native list nonpositive")
+            expectRect(embedded, 0, 30, 371, 20, "small-host rejection leaves native list dimensions unchanged")
+            item.body:SetSize(captured.width, captured.height)
+            captured.controls:SetPos(5, 2)
+            expect(owner:DockTo(item.frame), false, "unexpected Quest control geometry is rejected before native writes")
+            expectRect(embedded, 0, 30, 371, 307, "rejected Quest layout leaves its list untouched")
+            captured.controls:SetPos(4, 2)
+            local setSize, fail = captured.controls.SetSize, true
+            captured.controls.SetSize = function(self, ...)
+                setSize(self, ...)
+                if fail then fail = false; error("injected second-root setter failure") end
+            end
+            expect(owner:DockTo(item.frame), false, "partial Quest root mutation rolls back the docking transaction")
+            captured.controls.SetSize = setSize
+            expectRect(embedded, 0, 30, 371, 307, "failed Quest docking restores the earlier root")
+            expectRect(captured.controls, 4, 2, 363, 30, "failed Quest docking restores the partially written control root")
+            expectRect(captured.filters, 4, 32, 341, 130, "failed Quest docking does not mutate the remaining root")
+        end
+        begin(owner)
+        move(owner, item.frame.x + item.tabs.x + 50,
+            item.frame.y + (captured.row and item.tabs.y + 8 or 6))
+        release(owner)
+        expect(owner._nisNative ~= nil, true, captured.name .. " accepts native-band docking")
+        expect(#owner._nisNative.group.hosts, 1, captured.name .. " needs no matching outer-frame copy")
+        local inset = captured.row and 0 or 28
+        expectRect(embedded, 0, rootY + inset, captured.width, rootHeight - inset,
+            captured.name .. " reuses existing native band or reserves exactly one")
+        expect(embedded.visibleGlobal, false, captured.name .. " conceals native content")
+        expect(item.scroll.hidden, true, captured.name .. " conceals outer native scrollbar")
+        if captured.tooltip then
+            expect(captured.tooltip.visibleGlobal, false, "Clan tooltip root is concealed with native content")
+            expectRect(captured.tooltip, 0, inset, captured.width, captured.height - inset, "Clan tooltip reserves the same native band")
+        end
+        if captured.listener then
+            expect(captured.listener.visibleGlobal, true, "Plugin listeners remain active")
+            expectRect(captured.listener, 0, 0, 1, 1, "Plugin listener layout is untouched")
+        end
+        if captured.quest then
+            expectRect(captured.controls, 4, 30, 363, 30, "Quest controls move below the tab band without shrinking")
+            expectRect(captured.filters, 4, 60, 341, 130, "Quest filters retain their relative offset and fixed height")
+            expect(captured.controls.visibleGlobal, false, "own page conceals Quest controls")
+            captured.filters.visible = true
+            expect(captured.filters.visibleGlobal, false, "own page suppresses native filter input even after native visibility changes")
+        end
+        emit("Logic")
+        expect(drawable(title, owner), true, captured.name .. " retains drawable consumer controls")
+        expect(owner.content, content, captured.name .. " retains its populated page")
+        if captured.row then
+            nativeClick(item.tabs)
+        else
+            fire(owner._nisNative.group.hosts[1].nativeTab.hit, ui.Hook.ONCLICK)
+        end
+        expect(embedded.visibleGlobal, true, captured.name .. " returns to native page")
+        expect(item.scroll.hidden, false, captured.name .. " restores native scrollbar")
+        if captured.tooltip then expect(captured.tooltip.visibleGlobal, true, "Clan tooltip root returns with native page") end
+        if captured.quest then
+            expect(captured.controls.visibleGlobal, true, "native selection restores Quest controls")
+            expect(captured.filters.visibleGlobal, true, "native selection restores the native-open filter panel")
+        end
+        owner:SelectTab()
+        if captured.quest then
+            item.body:SetSize(captured.width, 50)
+            emit("Logic")
+            expect(owner._nisNative, nil, "Quest resize below native list capacity restores standalone content")
+            expectRect(embedded, 0, 30, 371, 20, "forced Quest detach restores its valid native anchors")
+            item.body:SetSize(captured.width, captured.height)
+            expect(owner:DockTo(item.frame), true, "Quest can redock after the native content grows again")
+        end
+        item.body:SetSize(captured.width, captured.height + 24)
+        emit("Logic")
+        expectRect(embedded, 0, rootY + inset, captured.width, rootHeight + 24 - inset,
+            captured.name .. " reflows on native content resize")
+        item.body:SetSize(captured.width, captured.height)
+        owner:Destroy()
+        expectRect(embedded, 0, rootY, captured.width, rootHeight, captured.name .. " teardown restores native layout")
+        locked = true; transmit(12)
+        owner = NisPanel.new(area, { id = panelID, categoryID = "auto" })
+        expect(owner._nisNative ~= nil, true, captured.name .. " restores membership while locked")
+        expectRect(embedded, 0, rootY + inset, captured.width, rootHeight - inset, captured.name .. " reload does not double inset")
+        owner:Undock()
+        expectRect(embedded, 0, rootY, captured.width, rootHeight, captured.name .. " undock restores the original page")
+        expect(embedded.visibleGlobal, true, captured.name .. " undock restores native visibility")
+        if captured.familiar then
+            expect(embedded.position.xParentPc, 0.5, "familiar undock restores centered parent X")
+            expect(embedded.position.yParentPc, 0.5, "familiar undock restores centered parent Y")
+            expect(embedded.position.xSelfPc, 0.5, "familiar undock restores centered self X")
+            expect(embedded.position.ySelfPc, 0.5, "familiar undock restores centered self Y")
+        end
+        if captured.tooltip then expect(captured.tooltip.visibleGlobal, true, "Clan tooltip restores on teardown") end
+        if captured.quest then
+            expectRect(captured.controls, 4, 2, 363, 30, "Quest undock restores control anchors and dimensions")
+            expectRect(captured.filters, 4, 32, 341, 130, "Quest undock restores filter anchors and dimensions")
+            expect(captured.filters.visible, true, "undock preserves native filter state rather than forcing it closed")
+        end
+        owner:Destroy()
+        item.frame.nativeShown = false
+        locked = false; transmit(12)
+    end
+    do
+        -- Captured unavailable state uses native edit-block children, not 662:0.
+        local item, pageID = familiarHost, (662 << 16)
+        local edit = nativeNodes[(1477 << 16) | 128]
+        local placeholders, nativeWrites = {}, 0
+        local function removePage()
+            local page = nativeNodes[pageID]
+            if page then
+                removeChild(page.parent, page); removeRenderChild(page.parent, page)
+                page.parent = nil
+                page:Relayout()
+            end
+            return page
+        end
+        local function addPage()
+            local page = nativeNodes[pageID]
+            if page then
+                page.parent = item.body
+                item.body.children[#item.body.children + 1] = page
+                item.body.renderChildren[#item.body.renderChildren + 1] = page
+                page:Relayout()
+            else
+                page = nativeNode(662, 0, item.body, 0, 0, 286, 292)
+                page:SetSize(0, 0, 1, 1); page:SetPos(0, 0, 0.5, 0.5, 0.5, 0.5)
+            end
+            return page
+        end
+        local function baseline()
+            placeholders[1]:SetPos(0, 0); placeholders[1]:SetSize(0, 0, 1, 1)
+            placeholders[2]:SetPos(5, 5); placeholders[2]:SetSize(-10, -10, 1, 1)
+            placeholders[3]:SetPos(0, 20, 0.5, 0, 0.5, 0); placeholders[3]:SetSize(64, 64)
+        end
+        local function addPlaceholders()
+            for index, kind in ipairs({ 1, 2, 3 }) do
+                local child = component(edit, "native-placeholder", 0, index - 1)
+                setmetatable(child, getmetatable(edit))
+                child.type, child.nativeShown, child.visible = kind, true, true
+                child.position = { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 }
+                child.size = { width = 0, height = 0, widthParentPc = 0, heightParentPc = 0 }
+                child.SetSize, child.Relayout = edit.SetSize, edit.Relayout
+                child.SetPos = function(self, ...)
+                    nativeWrites = nativeWrites + 1
+                    return edit.SetPos(self, ...)
+                end
+                placeholders[index] = child
+            end
+            placeholders[2].content = "Familiar currently unavailable."
+            placeholders[3].spriteID = 18690
+            baseline()
+        end
+        local function expectInset()
+            expectRect(placeholders[1], 0, 28, 286, 264, "unavailable familiar background reserves native band")
+            expectRect(placeholders[2], 5, 33, 276, 254, "unavailable familiar message stays below native band")
+            expectRect(placeholders[3], 111, 48, 64, 64, "unavailable familiar icon retains horizontal centering")
+            expectRect(edit, 4, 16, 286, 292, "familiar edit container layout is never rewritten")
+        end
+        local parked = removePage()
+        item.frame.nativeShown, edit.visible = true, true
+        addPlaceholders()
+        local owner = NisPanel.new(area, { id = "native-familiar:availability", categoryID = "auto",
+            x = 30, y = 450, width = 280, height = 180 })
+        local title = owner:AddTitle("Familiar companion page")
+        local root, content = owner.root, owner.content
+        placeholders[2]:SetPos(6, 5)
+        expect(owner:DockTo(item.frame), false, "unrecognized familiar placeholder layout rejects docking")
+        expectRect(placeholders[1], 0, 0, 286, 292, "rejected familiar docking leaves other roots untouched")
+        placeholders[2]:SetPos(5, 5)
+        begin(owner); move(owner, item.frame.x + 54, item.frame.y + 6)
+        expect(owner.dragState.nativeTarget ~= nil, true, "unavailable familiar previews docking despite a loaded unparented page")
+        release(owner)
+        expect(owner._nisNative ~= nil, true, "unavailable familiar accepts native header docking")
+        local binding = owner._nisNative
+        expectInset()
+        expectRect(parked, 0, 0, 0, 0, "unavailable docking does not mutate the unmounted familiar page")
+        expect(parked.hidden, false, "unavailable docking does not conceal the unmounted familiar page")
+        expect(placeholders[2].visibleGlobal, false, "own page hides unavailable familiar message")
+        fire(binding.group.hosts[1].nativeTab.hit, ui.Hook.ONCLICK)
+        expect(rendered(placeholders[2]), true, "native page restores the actual unavailable familiar message")
+        owner:SelectTab()
+        locked = true; transmit(12)
+        baseline(); emit("Logic")
+        expect(owner._nisNative, binding, "unavailable familiar lock reflow retains membership")
+        expectInset()
+        edit.visible = false
+        local page = addPage()
+        baseline()
+        emit("Logic")
+        expect(owner._nisNative, binding, "summoning while docked retains membership")
+        expectRect(page, 0, 28, 286, 264, "new familiar page reserves exactly one band")
+        expect(page.hidden, true, "new familiar native page does not steal own selection")
+        expect(owner.root, root, "summoning retains the consumer root")
+        expect(owner.content, content, "summoning retains populated controls")
+        expect(drawable(title, owner), true, "summoning leaves consumer content drawable")
+        fire(binding.group.hosts[1].nativeTab.hit, ui.Hook.ONCLICK)
+        expect(page.visibleGlobal, true, "familiar native tab shows newly summoned familiar")
+        expect(placeholders[2].visibleGlobal, false, "available familiar keeps unavailable message client-hidden")
+        removePage(); edit.visible = true
+        for _, child in ipairs(placeholders) do child:Destroy() end
+        addPlaceholders()
+        emit("Logic")
+        expect(owner._nisNative, binding, "dismissing while native-selected retains membership")
+        expect(binding.group.active, nil, "dismissing preserves native selection")
+        expect(rendered(placeholders[2]), true, "dismissing restores native unavailable message")
+        expectInset()
+        expectRect(page, 0, 0, 0, 0, "dismissing releases the inset of a still-loaded unparented page")
+        expect(page.position.yParentPc, 0.5, "unparenting restores the familiar page's centered anchors")
+        expect(page.size.height, 0, "unparenting restores the familiar page's full-size height offset")
+        owner:SelectTab()
+        edit.visible = false
+        addPage(); emit("Logic")
+        expect(owner._nisNative, binding, "remounting the same familiar root retains docking")
+        expectRect(page, 0, 28, 286, 264, "remounting the same familiar root reserves only one band")
+        expect(page.hidden, true, "remounting preserves own selection")
+        removePage(); edit.visible = true
+        emit("Logic")
+        expect(owner._nisNative, binding, "unparenting an own-selected familiar retains docking")
+        expect(page.hidden, false, "unparenting releases the own-page concealment flag")
+        for _, child in ipairs(placeholders) do child:Destroy() end
+        emit("Logic")
+        expect(owner._nisNative, binding, "temporary empty familiar rebuild retains membership")
+        addPlaceholders()
+        emit("Logic")
+        expect(owner._nisNative, binding, "rebuilt familiar placeholders retain membership")
+        expect(placeholders[2].visibleGlobal, false, "rebuilt unavailable message cannot cover own controls")
+        expectInset()
+        locked = false; transmit(12)
+        baseline(); emit("Logic")
+        expect(owner._nisNative, binding, "unavailable familiar unlock reflow retains membership")
+        expectInset()
+        local beforeIdle = nativeWrites
+        emit("Logic"); emit("Logic")
+        expect(nativeWrites, beforeIdle, "idle familiar reconciliation does not rewrite native layouts")
+        owner:Destroy()
+        expectRect(placeholders[1], 0, 0, 286, 292, "familiar teardown restores unavailable background")
+        expectRect(placeholders[2], 5, 5, 276, 282, "familiar teardown restores unavailable message")
+        expectRect(placeholders[3], 111, 20, 64, 64, "familiar teardown restores unavailable icon anchors")
+        locked = true; transmit(12)
+        owner = NisPanel.new(area, { id = "native-familiar:availability", categoryID = "auto" })
+        expect(owner._nisNative ~= nil, true, "unavailable familiar restores saved membership while locked")
+        expectInset()
+        owner:Undock(); owner:Destroy()
+        expect(rendered(placeholders[2]), true, "explicit undock restores unavailable familiar visibility")
+        item.frame.nativeShown = false
+        locked = false; transmit(12)
+    end
+    -- Exercise Clan's pre-existing native tab-row arrangement as well.
+    clanHost.tabs.visible = true
+    clanHost.body:SetPos(4, 44); clanHost.body:SetSize(238, 276)
+    clanHost.scroll:SetPos(4, 44); clanHost.scroll:SetSize(238, 276)
+    nativeNodes[(1477 << 16) | 515]:SetPos(4, 44)
+    nativeNodes[(1477 << 16) | 515]:SetSize(238, 276)
+    -- Identical row artwork does not merge two independently visible windows.
+    clanHost:rebuild({ 60001, 60002 }, 1)
+    groupHost:rebuild({ 60001, 60002 }, 1)
+    clanHost.frame.nativeShown, groupHost.frame.nativeShown = true, true
+    clanHost.frame:SetPos(20, 20)
+    local clanPanel = NisPanel.new(area, { categoryID = "auto" })
+    local groupPanel = NisPanel.new(area, { categoryID = "auto" })
+    expect(clanPanel:DockTo(clanHost.frame), true, "independent Clan native row accepts its own panel")
+    expect(groupPanel:DockTo(groupHost.frame), true, "identical independent Group row accepts a separate panel")
+    expect(clanPanel._nisNative.group == groupPanel._nisNative.group, false, "visible native rows remain separate groups")
+    emit("Logic")
+    nativeClick(clanHost.tabs)
+    expect(clanPanel.root.hidden, true, "Clan native selection only hides its own page")
+    expect(groupPanel.root.hidden, false, "Clan native selection does not hide the independent Group page")
+    clanPanel:Destroy(); groupPanel:Destroy()
+    clanHost.frame.nativeShown, groupHost.frame.nativeShown = false, false
+    for _, captured in ipairs(expandedHosts) do
+        id.Component[captured.rootName] = nil
+        local base, suffix = captured.name:match("^(.+_WINDOW)(.*)$")
+        for _, role in ipairs({ "", "_CONTENT", "_SCROLL", "_EDIT_BLOCK", "_TABS", "_TAB_BACKGROUND" }) do
+            id.Component["TOPLEVEL_V2__" .. base .. role .. suffix] = nil
+        end
+    end
+    id.Component.CLAN_CHAT__TOOLTIP = nil
+    id.Component.TOPLEVEL_V2_PLUGIN_CONTENT__LISTENERS_AND_TIMERS = nil
+    id.Component.QA_PATHS__WRAPPER = nil
+    id.Component.QUESTLIST_V4__CONTROLS_LAYER = nil
+    id.Component.QUESTLIST_V4__CONTROLS_FILTERS_LAYER = nil
+    expect(next(events.Logic), nil, "expanded native host teardown releases its observers")
     parent, ui.Interfaces.GetComponent = oldParent, oldGet
     ui.Interfaces.GetInterface = oldInterface
     setmetatable(id.Component, nil)
     for name in pairs(id.Component) do
-        if name:match("^TOPLEVEL_V2__NOTES_") or name:match("^TOPLEVEL_V2__ABILITY_") then
+        if name:match("^TOPLEVEL_V2__NOTES_") or name:match("^TOPLEVEL_V2__ABILITY_")
+            or name:match("^TOPLEVEL_V2__INVENTORY_") or name:match("^TOPLEVEL_V2__CHAT_")
+            or name:match("^TOPLEVEL_V2__PRAYER_") or name:match("^TOPLEVEL_V2__WORN_")
+            or name:match("^TOPLEVEL_V2__STATS_") then
             id.Component[name] = nil
         end
     end
     id.Component.NOTES_CHILD__WRAPPER = nil
+    for _, captured in ipairs(standaloneHosts) do id.Component[captured.rootName] = nil end
+    id.Component.TOPLEVEL_V2_PRAYER__LISTENERS_AND_TIMERS = nil
 end
 
 -- Active unload must take the full destruction path without touching native handles.

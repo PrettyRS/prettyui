@@ -319,6 +319,9 @@ function NisDrag.install(NisPanel)
         end
         if self.root and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
             if self._nisNative then
+                -- The native-tab transaction is settled above. Save its final
+                -- membership/selection now; intermediate docking skips it.
+                Native.sync(self)
                 self:_SyncOverlays(self.root.hidden == true)
             else
                 self.root:MoveToFront()

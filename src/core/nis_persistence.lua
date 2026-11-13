@@ -35,7 +35,8 @@ local function loaded(panel)
 end
 
 local function busy(panel)
-    return panel._nisNative or panel._nisNativeTransaction or panel.dragState or panel._nisTabPress or panel._nisTabTransaction
+    return panel._nisNative or panel._nisNativeDetaching or panel._nisNativeTransaction
+        or panel.dragState or panel._nisTabPress or panel._nisTabTransaction
         or panel.resize and panel.resize.dragState
 end
 
@@ -107,6 +108,8 @@ local function join(ids, active)
     for _, panelID in ipairs(ordered) do
         state.panels[panelID].group = key
         state.panels[panelID].dockTo = nil
+        state.panels[panelID].native = nil
+        if live[panelID] then live[panelID]._nisNativePending = nil end
     end
     return true
 end
@@ -160,6 +163,7 @@ function Persistence.register(panel, options, groups)
     local affected = {}
     local existing = state.panels[options.id]
     if existing and existing.group then affected[existing.group] = true end
+    panel._nisNativePending = existing and existing.native
     if not state.panels[options.id] then
         local record = { dockTo = options.dockTo }
         geometry(record, panel.root)
@@ -204,6 +208,7 @@ function Persistence.bounds(panel)
     end
     if changed then
         record.dockTo = nil
+        record.native, panel._nisNativePending = nil, nil
         flush()
     end
 end
@@ -227,12 +232,32 @@ function Persistence.capture(panel)
     if changed then flush() end
 end
 
+-- Persist names and standalone bounds only, never native component handles.
+function Persistence.native(panel, snapshot)
+    local panelID = panel._nisPersistenceID
+    if not panelID or restoring then return end
+    local record = state.panels[panelID]
+    local old = record.native
+    local changed = geometry(record, snapshot.free)
+    local same = old and old.frame == snapshot.frame and old.index == snapshot.index
+        and old.selected == snapshot.selected and #old.frames == #snapshot.frames
+    if same then
+        for index, frame in ipairs(snapshot.frames) do
+            if old.frames[index] ~= frame then same = false; break end
+        end
+    end
+    if changed or not same then
+        record.native = snapshot
+        flush()
+    end
+end
+
 function Persistence.detach(panel)
     local panelID = panel._nisPersistenceID
     if not panelID or restoring then return end
     local record = state.panels[panelID]
     local group = record.group and state.groups[record.group]
-    local changed = record.group ~= nil or record.dockTo ~= nil
+    local changed = record.group ~= nil or record.dockTo ~= nil or record.native ~= nil
     if group then
         for index, memberID in ipairs(group.members) do
             if memberID == panelID then table.remove(group.members, index); break end
@@ -253,7 +278,8 @@ function Persistence.detach(panel)
             state.groups[record.group] = nil
         end
     end
-    record.group, record.dockTo = nil, nil
+    record.group, record.dockTo, record.native = nil, nil, nil
+    panel._nisNativePending = nil
     if loaded(panel) then changed = geometry(record, panel.root) or changed end
     if changed then flush() end
 end
@@ -261,7 +287,7 @@ end
 function Persistence.unregister(panel)
     local panelID = panel._nisPersistenceID
     if not panelID then return end
-    Persistence.bounds(panel)
+    if not state.panels[panelID].native then Persistence.bounds(panel) end
     live[panelID] = nil
     panel._nisPersistenceID = nil
 end

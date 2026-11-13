@@ -28,11 +28,24 @@ hero:
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
 - Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default.
-- Added retained NisPanel drag-in/drag-out docking with discoverable native NIS groups, native-row tab selection and reversible native highlight/divider composition. Standalone Notes supports a synthetic tab row. Native bindings are session-only and use the documented GAME_AREA on-top overlay fallback.
+- Added retained NisPanel drag-in/drag-out docking with discoverable native NIS groups, native-row tab selection and reversible native highlight/divider composition. Standalone Notes supports a synthetic tab row. Native bindings use the documented GAME_AREA on-top overlay fallback.
+- Added **Reset panels** to the NisPanel QA plugin's ribbon content. It undocks and shows all three QA panels at their default positions and sizes, clamped to the viewport, and saves the reset layout.
+- Added a read-only **Report standalone hosts** action to NisPanel QA, discovering all visible native tab-capable windows and reporting their embedded roots and anchored layouts, including suffixed ability/spellbook and secondary chat hosts.
 - Added a `placement` option to tooltips, allowing control over their position relative to the target element.
 
 
 ### Fixed
+- Fixed native-tab transfers losing the moved panel's saved host and selection before plugin restart, leaving only the peer restored in hosts such as Prayer. Drag completion now persists the settled native group after clearing transaction state.
+- Matched the native dark tab-strip backdrop for PrettyUI tab groups and synthetic native-host rows using the native buffer sprite. Icons and tab input remain unchanged; existing native rows are not darkened twice.
+- Fixed unavailable Familiar rejecting docking previews when its interface remains loaded with an unparented 0 × 0 root. Only mounted native pages participate; dismissed pages release borrowed layout and visibility before remounting.
+- Added native Familiar nesting with or without a summoned familiar. The centered familiar page and native unavailable-message children reserve the same tab band; availability changes, native placeholder rebuilds, lock transitions and saved membership retain the PrettyUI page. Original anchors and layouts restore on undock. Fixture verification passes; client verification remains pending.
+- Fixed lock-reflow paths that could detach native-docked NisPanels, particularly Prayer: standalone rows follow visible content rather than stale hidden strips, existing bindings retain their icon during strip rebuilds, and one recorded-baseline root reset is tolerated per lock transition. Unexpected overwrites still detach safely. Prayer regressions pass; live verification remains pending.
+- Added coordinated standalone Quest List and Clan Chat page layouts, including native controls, filters and Clan tooltips. Standalone native headers, including Paths, now accept docking instead of requiring a drop on a hidden tab band. Multi-root layout writes restore completely on failure or undock.
+- Expanded native nesting to captured ability/spellbooks, Emotes, RuneMetrics, social, Music, plugin content and achievement windows. Existing native tab rows no longer need a second matching outer frame; independently visible rows stay separate and Clan tooltips hide with native content.
+- Fixed standalone QA reporting classifying tabless HUD widgets as tab-capable when missing component names return a negative ID.
+- Added standalone native docking for Inventory, Prayer, Equipment, Chat and Stats using their captured embedded roots. Equipment's centered anchors restore on undock; Prayer listeners remain live, and outer scrollbar/edit layers hide with the native page.
+- Removed the Notes-only standalone NisPanel docking restriction for hosts with a verified full-size embedded wrapper and native icon. Native groups without a scroll layer, including secondary chat windows, are no longer excluded; optional edit layers are still concealed and restored.
+- Fixed identified NisPanels losing native nesting on restart. Saved native host names, own-tab order and selection restore when a compatible host becomes available, including locked startup; teardown preserves membership while explicit undocking clears it.
 - Moved native-docked NisPanel tab artwork and seams to GAME_AREA alongside
   retained content after the owned-native-layer workaround still crashed on lock.
   Removed seam reorders; native handles/observers refresh across unchanged-ID

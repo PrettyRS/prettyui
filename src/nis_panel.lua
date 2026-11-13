@@ -630,6 +630,7 @@ local function buildPanel(parent, options, policy)
     NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
     self._lastBounds = { self.root.x, self.root.y, self.root.width, self.root.height }
     NisPersistence.register(self, options, NisGroup)
+    NisNative.register(self)
     return self
 end
 
