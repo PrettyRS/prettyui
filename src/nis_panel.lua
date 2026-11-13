@@ -629,7 +629,7 @@ local function buildPanel(parent, options, policy)
     NativeInterfaceSettings.watchTransparency(self, function(transparency)
         self:_SetBackgroundTransparency(transparency)
     end)
-    Snap.register(self, 0)
+    Snap.register(self)
     NisGroup.register(self)
     NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
     self._lastBounds = { self.root.x, self.root.y, self.root.width, self.root.height }
