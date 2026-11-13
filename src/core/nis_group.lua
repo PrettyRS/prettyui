@@ -124,7 +124,7 @@ end
 function NisGroup.register(panel)
     nextOrder = nextOrder + 1
     panel._nisOrder = nextOrder
-    panel._nisHidden = WorldMap.isHidden(panel.root)
+    if panel._nisHidden == nil then panel._nisHidden = WorldMap.isHidden(panel.root) end
     panels[panel] = true
 end
 
@@ -333,6 +333,37 @@ function NisGroup.snapshot(panel)
         active = group.active,
         x = root.x, y = root.y, width = root.width, height = root.height,
     }
+end
+
+-- Rejoin a live peer's current group without losing tabs added while disabled.
+-- Identified panels use the persistent logical group instead of these handles.
+function NisGroup.resume(panel, snapshot)
+    local anchor
+    for _, peer in ipairs(snapshot.members) do
+        if peer ~= panel and loaded(peer) and not peer._nisHidden and not peer._nisNative
+            and sameComponent(peer.parent, panel.parent) then
+            anchor = peer
+            break
+        end
+    end
+    if not anchor then return false end
+    local current = anchor._nisGroup and anchor._nisGroup.members or { anchor }
+    local included, ordered = { [panel] = true }, {}
+    for _, peer in ipairs(current) do included[peer] = true end
+    for _, peer in ipairs(snapshot.members) do
+        if included[peer] then
+            ordered[#ordered + 1] = peer
+            included[peer] = nil
+        end
+    end
+    for _, peer in ipairs(current) do
+        if included[peer] then ordered[#ordered + 1] = peer end
+    end
+    local root = anchor.root
+    return NisGroup.restore({
+        members = ordered, active = panel,
+        x = root.x, y = root.y, width = root.width, height = root.height,
+    }, false)
 end
 
 function NisGroup.restore(snapshot, notifyCallbacks)

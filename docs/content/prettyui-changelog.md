@@ -27,10 +27,13 @@ hero:
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
 - Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default.
+- Restored the [panel ribbon](index.html#ribbon-bar-api) with automatic `NisPanel` buttons using their tab icons. The cog opens ribbon placement and auto-hide settings.
+- Added `NisPanel:SetActive()`, `IsActive()`, and an `active` constructor default. Disabled panels leave no body or tab; reactivation restores their placement, including native hosts. Stable IDs persist enabled state across reloads.
 - Added a `placement` option to tooltips, allowing control over their position relative to the target element.
 
 ### Changed
 - [NisPanel](index.html#nis-panel-api) now uses `buildContent(panel)` and optional cleanup for inactive or hidden content; selection, `Show()`, and undocking rebuild it with saved scroll.
+- `NisPanel:Hide()` and `Close()` now remember tab membership for reopening instead of forgetting it; use `Undock()` to discard membership.
 - PrettyUI components are now hidden while the player is viewing the world map.
 - Added `Refresh()` to [sliders](index.html#slider-api), which can update the marker's position again after the slider's width changes.
 

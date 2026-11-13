@@ -13,6 +13,7 @@ local CategoryGroups = require("src/core/category_groups")
 local Components = require("src/core/components")
 local NisNative = require("src/core/nis_native")
 local WorldMap = require("src/core/world_map")
+local RibbonBar = require("src/ribbon_bar")
 
 local resources = Plugin.resources
 TextField.SetDefaultSprite(resources and (resources.input_default or resources["input_default.png"]))
@@ -46,6 +47,7 @@ local PrettyUI = {
     OverheadBar = OverheadBar,
     Sprites = require("src/core/sprites"),
     RibbonButton = require("src/ribbon_button"),
+    RibbonBar = RibbonBar,
     RadioButton = SelectionButtons.RadioButton,
     SimpleButton = require("src/simple_button"),
     Slider = require("src/slider"),
@@ -64,9 +66,11 @@ local PrettyUI = {
 PrettyUI.version = "1.4.0"
 
 PrettyMiniMenu.Start()
+RibbonBar.Start()
 WorldMap.start(true)
 
 function PluginShutdown()
+    RibbonBar.Shutdown()
     NisNative.shutdown()
     KeybindField.Shutdown()
     PrettyMiniMenu.Shutdown()

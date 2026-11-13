@@ -156,6 +156,7 @@
       "options": {
         "id": "string",
         "dockTo": "string",
+        "active": "boolean",
         "x": "number",
         "y": "number",
         "xAnchor": "number",
@@ -205,6 +206,8 @@
         "DockTo": { "params": { "target": "PrettyUI.NisPanel|number|userdata" }, "returns": ["boolean"] },
         "Undock": { "params": {}, "returns": ["nil"] },
         "SelectTab": { "params": {}, "returns": ["nil"] },
+        "SetActive": { "params": { "active": "boolean" }, "returns": ["nil"] },
+        "IsActive": { "params": {}, "returns": ["boolean"] },
         "Show": { "params": {}, "returns": ["nil"] },
         "Hide": { "params": {}, "returns": ["nil"] },
         "Close": { "params": {}, "returns": ["nil"] },
@@ -2369,6 +2372,15 @@
             "boolean"
           ]
         }
+      }
+    },
+    "RibbonBar": {
+      "description": "Automatic NisPanel ribbon. The cog configures placement and auto-hide; panel buttons toggle enabled state.",
+      "methods": {
+        "SetPosition": { "static": true, "params": { "value": "'left'|'right'|'top'" }, "returns": ["nil"] },
+        "GetPosition": { "static": true, "params": {}, "returns": ["'left'|'right'|'top'"] },
+        "SetAutoHide": { "static": true, "params": { "value": "boolean" }, "returns": ["nil"] },
+        "GetAutoHide": { "static": true, "params": {}, "returns": ["boolean"] }
       }
     },
     "RibbonButton": {

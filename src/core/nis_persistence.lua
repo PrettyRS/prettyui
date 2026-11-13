@@ -58,6 +58,7 @@ function Persistence.prepare(options)
     restored.x, restored.y = record.x, record.y
     restored.width, restored.height = record.width, record.height
     restored.xAnchor, restored.yAnchor = nil, nil
+    restored.active = record.active ~= false
     return restored
 end
 
@@ -166,7 +167,7 @@ function Persistence.register(panel, options, groups)
     if existing and existing.group then affected[existing.group] = true end
     panel._nisNativePending = existing and existing.native
     if not state.panels[options.id] then
-        local record = { dockTo = options.dockTo }
+        local record = { dockTo = options.dockTo, active = not panel._nisHidden }
         geometry(record, panel.root)
         state.panels[options.id] = record
         changed = true
@@ -194,9 +195,25 @@ function Persistence.register(panel, options, groups)
     if changed then flush() end
 end
 
+-- Activation changes runtime membership, not the remembered logical layout.
+function Persistence.setActive(panel, active, groups)
+    local panelID = panel._nisPersistenceID
+    if not panelID then return false end
+    local record = state.panels[panelID]
+    if set(record, "active", active) then flush() end
+    if not active then return false end
+    panel._nisNativePending = record.native
+    if record.group then
+        restore(groups, { [record.group] = true })
+        return true
+    end
+    return false
+end
+
 function Persistence.bounds(panel)
     local panelID = panel._nisPersistenceID
-    if WorldMap.isSuspended() or not panelID or restoring or not loaded(panel) or busy(panel) then return end
+    if WorldMap.isSuspended() or not panelID or restoring or not loaded(panel)
+        or panel._nisHidden or busy(panel) then return end
     local record = state.panels[panelID]
     local group = record.group and state.groups[record.group]
     local changed = false

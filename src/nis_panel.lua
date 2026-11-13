@@ -19,6 +19,7 @@ local NisGroup = require("src/core/nis_group")
 local NisTabs = require("src/core/nis_tabs")
 local NisPersistence = require("src/core/nis_persistence")
 local NisNative = require("src/core/nis_native")
+local RibbonBar = require("src/ribbon_bar")
 local clamp = require("src/core/math").clamp
 local WorldMap = require("src/core/world_map")
 
@@ -386,8 +387,54 @@ function NisPanel:SetTooltip(value)
     return Tooltip.set(self, value)
 end
 
+function NisPanel:IsActive()
+    return not self._destroyed and not self._nisHidden
+end
+
+function NisPanel:SetActive(active)
+    if not loaded(self) or self._destroyed then return end
+    active = active == true
+    if active == self:IsActive() then return end
+    self:_CancelDrag()
+    if self.resize then self.resize:Cancel() end
+    if active then
+        self._nisHidden = false
+        local restored = NisPersistence.setActive(self, true, NisGroup)
+        if not restored and self._nisInactiveGroup then
+            NisGroup.resume(self, self._nisInactiveGroup)
+        end
+        self._nisNativePending = self._nisNativePending or self._nisInactiveNative
+        if self._nisNativePending then
+            NisNative.register(self, true)
+        end
+        self._nisInactiveGroup, self._nisInactiveNative = nil, nil
+        RibbonBar.sync(self)
+        self:Show()
+        NisPersistence.capture(self)
+        return
+    end
+    NisPersistence.capture(self)
+    self._nisInactiveGroup = NisGroup.snapshot(self)
+    self._nisInactiveNative = NisNative.remember(self) or self._nisNativePending
+    self._nisHidden = true
+    NisPersistence.setActive(self, false, NisGroup)
+    local ok, problem = pcall(self._ReleaseContent, self)
+    NisNative.detach(self)
+    NisGroup.clearPanel(self)
+    NisGroup.undock(self)
+    if loaded(self) then
+        Components.setHidden(self.root, true)
+        self:_SyncChrome()
+        self:_SyncOverlays(true)
+        self:_NotifyBoundsChange()
+    end
+    RibbonBar.sync(self)
+    if not ok then error(problem, 0) end
+end
+
 function NisPanel:Show()
     if not loaded(self) then return end
+    if self._nisHidden then return self:SetActive(true) end
     self._nisHidden = false
     if self._nisNative then
         NisNative.select(self)
@@ -410,26 +457,13 @@ function NisPanel:Show()
 end
 
 function NisPanel:Hide()
-    self:_CancelDrag()
-    self._nisHidden = true
-    local ok, problem = pcall(self._ReleaseContent, self)
-    NisNative.detach(self)
-    NisGroup.clearPanel(self)
-    NisGroup.undock(self)
-    NisPersistence.detach(self)
-    if loaded(self) then
-        Components.setHidden(self.root, true)
-        self:_SyncChrome()
-        self:_SyncOverlays(true)
-        self:_NotifyBoundsChange()
-    end
-    if not ok then error(problem, 0) end
+    self:SetActive(false)
 end
 
 function NisPanel:Close()
     self:_CancelDrag()
     if self.resize then self.resize:Cancel() end
-    NisPersistence.detach(self)
+    self:SetActive(false)
     if self.onClose then self.onClose(self) end
     if self._destroyed then return end
     if self.destroyOnClose then self:Destroy() else self:Hide() end
@@ -438,6 +472,7 @@ end
 function NisPanel:Destroy()
     if self._destroyed or self._destroying then return end
     self._destroying = true
+    RibbonBar.unregister(self)
     self._contentReady = false
     local ok, problem = pcall(self._ReleaseContent, self)
     WorldMap.unwatch(self)
@@ -470,6 +505,7 @@ function NisPanel:Destroy()
     end
     self.surface = nil
     self.overlays = {}
+    self._nisInactiveGroup, self._nisInactiveNative = nil, nil
     if not ok then error(problem, 0) end
 end
 
@@ -514,6 +550,7 @@ end
 function NisPanel:Undock()
     self:_CancelDrag()
     NisNative.detach(self)
+    self._nisInactiveGroup, self._nisInactiveNative = nil, nil
     NisGroup.undock(self)
     NisPersistence.detach(self)
 end
@@ -536,6 +573,7 @@ local function buildPanel(parent, options, policy)
     self.tabText = options.tabText
     self.transparencyScale = 1
     self.locked = true
+    self._nisHidden = options.active == false
     self.onClose = options.onClose
     self.onBoundsChange = options.onBoundsChange
     self.destroyOnClose = options.destroyOnClose == true
@@ -568,6 +606,7 @@ local function buildPanel(parent, options, policy)
     })
     self.surface = surface
     self.root = surface.root
+    Components.setHidden(self.root, self._nisHidden)
     self.interfaceID = surface.interfaceID
     self.width, self.height = self.root.width, self.root.height
     surface.background.spriteID = Sprites.NIS_PANEL.content
@@ -741,13 +780,14 @@ local function buildPanel(parent, options, policy)
         end
     end)
     NisPersistence.register(self, options, NisGroup)
-    NisNative.register(self)
+    if not self._nisHidden then NisNative.register(self) end
     self._contentReady = true
     local ok, problem = pcall(function() self:_SyncContent(self.root.hidden ~= true) end)
     if not ok then
         self:Destroy()
         error(problem, 0)
     end
+    if not self._destroyed then RibbonBar.register(self) end
     return self
 end
 

@@ -1137,6 +1137,16 @@ do
     source:Hide()
     expect(target.root.hidden, false, "hiding inactive member leaves survivor visible")
     expect(target.surface.container.y, 16, "hiding member dissolves a two-member group")
+    expect(source:IsActive(), false, "hidden tab is disabled")
+    expect(target:IsActive(), true, "unselected tabs remain enabled until explicitly disabled")
+    locked = true; transmit(12)
+    target:SetSize(380, 280)
+    source:SetActive(true)
+    expect(source._nisGroup, target._nisGroup, "transient tab restores while locked")
+    expect(source._nisGroup.members[2], source, "transient tab returns to its previous slot")
+    expect(source._nisGroup.active, source, "restoring the tab selects its content")
+    sameBounds(source, target, "restored transient tab follows the current group bounds")
+    locked = false; transmit(12)
     endPair(source, target)
 
     local body, bodyClicks, targetBuilds = nil, 0, 0
@@ -1512,6 +1522,31 @@ do
     endPair(source, target)
 end
 
+-- Disabled first-use panels defer content and keep plugin-selected defaults.
+do
+    local builds = 0
+    local owner = NisPanel.new(parent, {
+        categoryID = "auto", active = false, x = 170, y = 230, width = 250, height = 140,
+        buildContent = function(panel)
+            builds = builds + 1
+            panel:AddText("Opened on demand")
+        end,
+    })
+    expect(owner:IsActive(), false, "first-use panel starts disabled on request")
+    expect(owner.root.hidden, true, "disabled first-use panel has no visible shell")
+    expect(owner.content, nil, "disabled first-use panel has no content controls")
+    expect(builds, 0, "disabled first-use panel does not invoke its builder")
+    owner:SetActive(true)
+    expectRect(owner.root, 170, 230, 250, 140, "first activation uses plugin placement")
+    expect(builds, 1, "first activation builds the page once")
+    owner:SetActive(false)
+    owner:SetActive(false)
+    expect(owner.content, nil, "repeated deactivation keeps content absent")
+    owner:SetActive(true)
+    expect(builds, 2, "reactivation rebuilds once")
+    owner:Destroy()
+end
+
 -- Stable IDs retain user layouts across plugin teardown and complete Lua restarts.
 do
     locked = false
@@ -1606,7 +1641,9 @@ do
     local c = create("late:c", { dockTo = "late:b" })
     expect(#c._nisGroup.members, 3, "first-use defaults can extend a saved group")
     c:Hide()
-    expect(saved("late:c").group, nil, "hiding a panel persists its explicit removal")
+    expect(saved("late:c").group, saved("late:a").group, "deactivation retains remembered group membership")
+    expect(saved("late:c").active, false, "deactivation persists disabled state")
+    expect(c._nisGroup, nil, "disabled panel is removed from the runtime tab row")
     c:Destroy()
     b:Destroy()
     a:Destroy()
@@ -1616,6 +1653,14 @@ do
     b = create("late:b")
     expect(c._nisGroup, nil, "hidden panel's old default is not reapplied")
     expect(#a._nisGroup.members, 2, "remaining group survives shutdown and a missing member")
+    expect(c:IsActive(), false, "disabled panel remains disabled after restart")
+    expect(c.root.hidden, true, "disabled startup has no visible body")
+    a:SetSize(320, 260)
+    c:SetActive(true)
+    expect(c._nisGroup, a._nisGroup, "activation rejoins the remembered group after restart")
+    expect(c._nisGroup.members[3], c, "activation restores its previous tab slot")
+    expect(c._nisGroup.active, c, "activation selects the restored page")
+    expectRect(c.root, a.root.x, a.root.y, 320, 260, "activation follows group resizing while disabled")
     a:Destroy()
     b:Destroy()
     c:Destroy()
@@ -1723,7 +1768,8 @@ do
     begin(a)
     move(a, 200, 500)
     a:Close()
-    expect(saved("close:a").group, nil, "close remains an explicit removal when its callback destroys the panel")
+    expect(saved("close:a").active, false, "close persists disabled state even when its callback destroys the panel")
+    expect(saved("close:a").group, saved("close:b").group, "close retains the remembered tab location")
     expect(saved("close:a").x, 500, "close cancels the drag before saving bounds")
     b:Destroy()
 
@@ -2697,6 +2743,25 @@ do
     local peer = NisPanel.new(area, { categoryID = "auto", x = 20, y = 20 })
     expect(peer:DockTo(nativePanel), true, "another panel can join the same native group")
     expect(nativePanel.root.hidden, true, "selecting the new own tab hides the previous body")
+    expect(nativePanel:IsActive(), true, "native background tab is still enabled")
+    do
+        local oldTab = nativePanel._nisNative.tabs[nativePanel._nisNative.group.current]
+        local oldVisual = oldTab.visual
+        local index = nativePanel._nisNative.group.members[1] == nativePanel and 1 or 2
+        local beforeNative = nativePanel._nisNative.beforeNative
+        nativePanel:SetActive(false)
+        expect(oldVisual.destroyed, true, "deactivation destroys background native tab artwork")
+        expect(oldTab.hit, nil, "deactivation releases native tab input")
+        expect(nativePanel._nisNative, nil, "deactivation removes native membership at runtime")
+        expect(peer:IsActive(), true, "disabling a background tab leaves its peer enabled")
+        locked = true; transmit(12)
+        nativePanel:SetActive(true)
+        expect(nativePanel._nisNative.group.members[index], nativePanel, "reactivation restores own-tab order")
+        expect(nativePanel._nisNative.beforeNative, beforeNative, "reactivation restores mixed native insertion")
+        expect(nativePanel._nisNative.group.active, nativePanel, "reactivation selects the native page while locked")
+        locked = false; transmit(12)
+        peer:SelectTab()
+    end
     expect(peer.root.hidden, false, "incoming native member is selected")
     for _, finish in ipairs({ "escape", "release" }) do
         nativePanel:SelectTab()
@@ -3344,12 +3409,19 @@ do
         a:Undock()
         b:Hide()
         expect(saved("a").native, nil, "explicit undock forgets native membership")
-        expect(saved("b").native, nil, "hide forgets native membership")
+        expect(saved("b").native.frame, "TOPLEVEL_V2__NOTES_WINDOW", "hide remembers native membership")
+        expect(saved("b").active, false, "hide saves disabled native state")
         a:Destroy(); b:Destroy()
         restart()
         a = create("a"); b = create("b")
         expect(a._nisNative, nil, "explicit undock remains standalone after restart")
         expect(b._nisNative, nil, "hidden native member does not rejoin on restart")
+        expect(b:IsActive(), false, "native panel stays disabled after restart")
+        expect(b.content, nil, "disabled native startup allocates no page content")
+        b:SetActive(true)
+        expect(b._nisNative ~= nil, true, "activation restores the saved native host while locked")
+        expect(b._nisNative.group.active, b, "activation selects the restored native page")
+        b:Undock()
         a:Destroy(); b:Destroy()
 
         -- Native selection is saved too; merely restoring tabs must not steal it.
@@ -3937,6 +4009,54 @@ do
     id.Component.QA_PATHS__WRAPPER = nil
     id.Component.QUESTLIST_V4__CONTROLS_LAYER = nil
     id.Component.QUESTLIST_V4__CONTROLS_FILTERS_LAYER = nil
+    -- Real ribbon hooks drive real panels, including removal/restoration of a tab.
+    do
+        local RibbonBar = require("src/ribbon_bar")
+        local oldString, oldBool = PersistentDB.GetString, PersistentDB.GetBool
+        PersistentDB.GetString = function() return "left" end
+        PersistentDB.GetBool = function() return false end
+        config.Cursor.CURSOR_OPEN = { id = 7 }
+        RibbonBar.Start()
+        local owner = NisPanel.new(area, {
+            categoryID = "auto", active = false, tabIcon = 910001, tabText = "Ribbon smoke",
+            x = 30, y = 450, width = 250, height = 140,
+            buildContent = function(panel) panel:AddText("Ribbon-mounted content") end,
+        })
+        local peer = NisPanel.new(area, {
+            categoryID = "auto", tabIcon = 910002, x = 400, y = 300, width = 280, height = 180,
+        })
+        local function iconIn(node, spriteID)
+            if node.spriteID == spriteID then return node end
+            for _, child in ipairs(node.children) do
+                local found = iconIn(child, spriteID)
+                if found then return found end
+            end
+        end
+        local cog = assert(iconIn(area, require("src/core/sprites").SPRITE_BUTTONS.SETTINGS.neutral))
+        local ribbon = cog.parent.parent
+        local button = assert(iconIn(ribbon, owner.tabIcon)).parent
+        fire(button, ui.Hook.ONCLICK)
+        expect(owner:IsActive(), true, "ribbon hook activates a first-use panel")
+        expectRect(owner.root, 30, 450, 250, 140, "ribbon first opening uses plugin placement")
+        expect(owner.content ~= nil, true, "ribbon first opening mounts real controls")
+        expect(owner:DockTo(peer), true, "ribbon scenario docks a real panel")
+        peer:SelectTab()
+        fire(button, ui.Hook.ONCLICK)
+        expect(owner:IsActive(), false, "ribbon hook disables an unselected tab")
+        expect(owner._nisGroup, nil, "ribbon hook removes the disabled tab from its group")
+        expect(owner.root.hidden, true, "disabled ribbon page has no visible shell")
+        expect(peer._nisGroup, nil, "disabled ribbon tab leaves no empty tab slot")
+        locked = true; transmit(12)
+        fire(button, ui.Hook.ONCLICK)
+        expect(owner._nisGroup, peer._nisGroup, "ribbon hook restores membership while locked")
+        expect(owner._nisGroup.active, owner, "ribbon restoration selects real content")
+        expectRect(owner.root, peer.root.x, peer.root.y, 280, 180, "ribbon restores previous bounds")
+        owner:Destroy(); peer:Destroy()
+        expect(ribbon.destroyed, true, "last real panel teardown removes the ribbon")
+        RibbonBar.Shutdown()
+        PersistentDB.GetString, PersistentDB.GetBool = oldString, oldBool
+        locked = false; transmit(12)
+    end
     expect(next(events.Logic), nil, "expanded native host teardown releases its observers")
     parent, ui.Interfaces.GetComponent = oldParent, oldGet
     ui.Interfaces.GetInterface = oldInterface

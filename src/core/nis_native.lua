@@ -1927,6 +1927,27 @@ local function reconcileRoots(group)
     return changed
 end
 
+function Native.remember(panel, frames, index)
+    local binding = panel._nisNative
+    if not binding then return nil end
+    local group = binding.group
+    if not frames then
+        frames = {}
+        for _, host in pairs(group.frames) do frames[#frames + 1] = host.spec.name end
+        table.sort(frames)
+    end
+    if not index then
+        for position, member in ipairs(group.members) do
+            if member == panel then index = position; break end
+        end
+    end
+    return {
+        frame = group.hosts[group.current].spec.name, frames = frames,
+        index = index, beforeNative = binding.beforeNative,
+        selected = group.active == panel, free = binding.free,
+    }
+end
+
 local function saveGroup(group)
     if WorldMap.isSuspended() then return end
     if restoring or group.attaching or group.tabDrag or group.nativeSort or group.dockPreview then return end
@@ -1937,12 +1958,7 @@ local function saveGroup(group)
     for _, host in pairs(group.frames) do frames[#frames + 1] = host.spec.name end
     table.sort(frames)
     for index, panel in ipairs(group.members) do
-        Persistence.native(panel, {
-            frame = group.hosts[group.current].spec.name, frames = frames,
-            index = index, beforeNative = group.bindings[panel].beforeNative,
-            selected = group.active == panel,
-            free = group.bindings[panel].free,
-        })
+        Persistence.native(panel, Native.remember(panel, frames, index))
     end
 end
 
@@ -2403,7 +2419,7 @@ end
 
 function Native.detach(panel)
     if panel and not restoring then
-        panel._nisNativePending, pending[panel] = nil, nil
+        panel._nisNativePending, panel._nisNativeActivating, pending[panel] = nil, nil, nil
         stopTick()
     end
     local binding = panel and panel._nisNative
@@ -2584,14 +2600,21 @@ restorePending = function(panel)
                     local group = binding.group
                     binding.restoreIndex = snapshot.index
                     binding.beforeNative = snapshot.beforeNative
-                    table.sort(group.members, function(a, b)
-                        local first, second = beforeNative(group, a, group.hosts[group.current]),
-                            beforeNative(group, b, group.hosts[group.current])
-                        if first ~= second then return first < second end
-                        return (group.bindings[a].restoreIndex or math.huge)
-                            < (group.bindings[b].restoreIndex or math.huge)
-                    end)
-                    if snapshot.selected then
+                    if panel._nisNativeActivating then
+                        for index, member in ipairs(group.members) do
+                            if member == panel then table.remove(group.members, index); break end
+                        end
+                        table.insert(group.members, math.min(snapshot.index, #group.members + 1), panel)
+                    else
+                        table.sort(group.members, function(a, b)
+                            local first, second = beforeNative(group, a, group.hosts[group.current]),
+                                beforeNative(group, b, group.hosts[group.current])
+                            if first ~= second then return first < second end
+                            return (group.bindings[a].restoreIndex or math.huge)
+                                < (group.bindings[b].restoreIndex or math.huge)
+                        end)
+                    end
+                    if panel._nisNativeActivating or snapshot.selected then
                         Native.select(panel)
                     elseif active then
                         Native.select(active)
@@ -2607,14 +2630,15 @@ restorePending = function(panel)
     end)
     restoring = false
     if ok and restored then
-        panel._nisNativePending, pending[panel] = nil, nil
+        panel._nisNativePending, panel._nisNativeActivating, pending[panel] = nil, nil, nil
     elseif not ok then
         warn(restored)
     end
 end
 
-function Native.register(panel)
+function Native.register(panel, activating)
     if not panel._nisNativePending then return end
+    panel._nisNativeActivating = activating == true
     pending[panel] = true
     startTick()
     restorePending(panel)

@@ -52,15 +52,20 @@ panel:Destroy()
 
 `id`
 : Stable, globally unique ID, such as **"my-plugin:encounter"**. PrettyUI saves
-  bounds, tab membership, order, and the active tab in its own persistent DB,
-  including native NIS host membership. Omit for a transient panel. Duplicate
-  live IDs are rejected.
+  enabled state, bounds, tab membership, order, and the selected tab in its own
+  persistent DB, including native NIS host membership. Omit for a transient
+  panel whose enabled state and remembered membership last only this session.
+  Duplicate live IDs are rejected.
 
 `dockTo`
 : Another panel's **id**, used as a first-declaration docking default. The target
   may be created later, including by another plugin. Requires **id**.
 
 Saved layouts override constructor position, size, anchors, and **dockTo**.
+
+`active`
+: Whether the panel starts enabled. Defaults to true; set false to defer its
+  first opening to the ribbon. Saved enabled state overrides this default.
 
 `categoryID`
 : Optional **"auto"** allocation. See [Component IDs](#component-ids).
@@ -77,8 +82,8 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
   are optional.
 
 `tabIcon`, `tabText`
-: Sprite ID and hover text for the panel's tab when grouped. Defaults to a
-  built-in icon and **"Panel"**.
+: Sprite ID and hover text shared by the panel's tab and its automatic ribbon
+  button. Defaults to a built-in icon and **"Panel"**.
 
 `buildContent(panel)`
 : Optional for a panel with no content; required to create content. Called whenever
@@ -92,7 +97,7 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
   Identified panels are saved automatically; no persistence callback is needed.
 
 `onClose(panel)`
-: Called by `Close()` before hiding or destroying the panel.
+: Called by `Close()` after deactivating the panel, before optional destruction.
 
 `destroyOnClose`
 : Destroy instead of hide when true. Defaults to false.
@@ -104,13 +109,14 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
 ### Content lifecycle
 
 Build all content inside **buildContent(panel)**, not after construction. An
-inactive grouped tab or native page, and a panel hidden with **Hide()**, release
-managed controls, tooltip contexts, row backgrounds, the scroll tree, and its
-overlays. The panel shell, root, tab controls, bounds, and membership remain.
-Selection, **Show()**, or undocking remounts active content by calling
+unselected grouped tab or native page releases managed controls, tooltip contexts,
+row backgrounds, the scroll tree, and its overlays while remaining enabled.
+Disabling a panel with **SetActive(false)** or **Hide()** also removes its tab
+from the visible UI. The shell and remembered placement remain for reactivation.
+Selection, **Show()**, or undocking remounts selected content by calling
 **buildContent** again and restores **scrollY**. Resizing, toggling interface
 lock, temporarily hiding a drag preview, and world-map hiding do not rebuild
-content.
+content or change enabled state.
 
 If **buildContent** returns a function, PrettyUI calls it before destroying
 controls on deactivation or **Destroy()**. Use it to unsubscribe content-owned
@@ -190,8 +196,8 @@ standalone bounds, never native component handles. On restart, they rejoin a
 compatible saved host when it becomes available, even while the interface is
 locked. Until then they remain standalone; matching screen position alone does
 not establish native membership. Existing position-only saves require docking
-once to record the native host. Explicit undocking, hiding, closing, or committing
-a new standalone placement clears the saved membership.
+once to record the native host. Explicit undocking or committing a new standalone
+placement clears the saved membership; deactivation and closing remember it.
 Native-tab drag completion saves the settled host, own-tab order and selection
 after clearing its transaction state; no later click or logic tick is needed
 before restarting the consumer plugin. A save that already lost native membership
@@ -278,23 +284,30 @@ client rendering and native script behavior still require verification.
 : Resizes the panel, or its entire PrettyUI group, within the configured size
   limits. While docked natively, the native frame owns sizing; this is a no-op.
 
+`SetActive(active)`, `IsActive()`
+: Enables or disables the panel independently of tab selection. Disabling removes
+  its body, tab, and input overlays, releases content, and remembers placement.
+  Enabling restores its previous group/tab slot or standalone bounds and selects
+  it, including while locked. First activation uses constructor placement and
+  **dockTo** defaults. An unavailable native host restores when it becomes
+  available; until then an enabled panel is standalone.
+
 `Show()`
-: Shows and raises the panel, selecting its tab if grouped and rebuilding
-  content when active.
+: Enables, shows, and raises the panel, restoring remembered placement if disabled
+  and selecting its tab if grouped.
 
 `Hide()`
-: Hides and undocks the panel without calling **onClose**, releasing content
-  while retaining its shell for a later **Show()**.
+: Equivalent to **SetActive(false)**. Does not call **onClose** or forget placement.
 
 `Close()`
-: Calls **onClose**, then hides or destroys the panel. Also used by the close
-  button, which is visible only while the interface is unlocked.
+: Deactivates the panel, calls **onClose**, then optionally destroys it. Also used
+  by the close button, which is visible only while the interface is unlocked.
 
 `Destroy()`
 : Calls the content cleanup before destroying controls, then removes the panel,
-  shell, and retained handlers without forgetting its saved group. Call during
-  plugin shutdown; `Hide()` and `Close()` instead save the panel's removal from
-  its group.
+  ribbon button, shell, and retained handlers without forgetting enabled state or
+  saved membership. Call during plugin shutdown. **Hide()** and **Close()**
+  instead retain a ribbon button for reopening unless **destroyOnClose** is true.
   Destroying a native member also removes its tab and restores native state when
   the last PrettyUI member leaves. Library shutdown restores native overrides
   without forgetting saved native membership.
@@ -302,5 +315,26 @@ client rendering and native script behavior still require verification.
 {{% /api-card %}}
 
 {{% /api-grid %}}
+
+### Panel ribbon {#ribbon-bar-api}
+
+Every live `NisPanel` automatically adds a ribbon button using its **tabIcon**
+and **tabText**. No registration API is needed. A highlighted button means the
+panel is enabled, even when another tab is selected. Click to disable or restore
+the panel; disabled panels have no body or tab but keep their ribbon buttons.
+Destroying a panel removes its button. The ribbon disappears when no panels remain.
+
+The cog opens only **Ribbon settings**: left/right/top placement and auto-hide.
+These settings persist independently of panel layout. The ribbon and settings
+window follow world-map hiding without changing enabled state.
+
+`prettyui.RibbonBar.SetPosition("left" | "right" | "top")`, `GetPosition()`
+: Changes or reads the ribbon edge.
+
+`prettyui.RibbonBar.SetAutoHide(boolean)`, `GetAutoHide()`
+: Changes or reads sliding auto-hide.
+
+This restores the ribbon for panel control, not the removed plugin-registration
+API. Native plugin content/settings layers remain separate entry points.
 
 {{% /doc-section %}}
