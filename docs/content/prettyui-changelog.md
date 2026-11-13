@@ -23,7 +23,7 @@ hero:
 ## Unreleased {#unreleased}
 
 ### Added
-
+- Added [Table](index.html#tables-api) component, this can be used to easily display data in a responsive table format.
 - Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.

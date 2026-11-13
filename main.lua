@@ -50,6 +50,7 @@ local PrettyUI = {
     SpriteButton = require("src/sprite_button"),
     Spinner = require("src/spinner"),
     Tabs = require("src/tabs"),
+    Table = require("src/table"),
     Text = require("src/text"),
     TextField = TextField,
     Tooltip = require("src/tooltip"),

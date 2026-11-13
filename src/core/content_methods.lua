@@ -119,6 +119,7 @@ local COMPONENTS = {
         fillWidth = true,
     },
     { method = "AddList", module = "src/list", optionsIndex = 1, measured = true, fillWidth = true },
+    { method = "AddTable", module = "src/table", optionsIndex = 1, measured = true, bindFlow = true },
     {
         method = "AddRibbonButton",
         module = "src/ribbon_button",
