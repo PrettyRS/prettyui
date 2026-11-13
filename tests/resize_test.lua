@@ -56,6 +56,10 @@ local function component(parent, kind, categoryID, dynamicID)
         w, h, aw, ah = width, height, widthAnchor or 0, heightAnchor or 0
         self:ResolveGeometry()
     end
+    function result:SetX(x)
+        px = x
+        self:ResolveGeometry()
+    end
     function result:SetWidth(width, anchor)
         w, aw = width, anchor or 0
         self:ResolveGeometry()
@@ -335,6 +339,11 @@ end
 local flowHost = Window.new(parent, { title = "Inline resize", width = 800, height = 600 })
 local flowPanel = flowHost:AddPanel({ resizable = true, popout = true, width = 300, height = 200 })
 local inlineSibling = flowHost:AddPanel({ inline = true, width = 100, height = 160 })
+expect(flowPanel.dockTooltipContext.parentContext, flowHost.tooltipContext,
+    "a docked panel's tooltip context links to its window's")
+expect(flowPanel.dock.scroll.ownerWindow, flowHost, "a docked panel's scroll finds its window")
+expect(flowPanel.dock.scroll.parentScroll, flowHost._scroll, "a docked panel's scroll links to its window's")
+expect(flowPanel.overlay.scroll.parentScroll, nil, "a popout's scroll has its own viewport")
 local flowHandle = begin(flowPanel.dockResize, "e", flowPanel.root)
 fire(flowHandle, ui.Hook.ONHOLD, 42, 2)
 finish(flowPanel.dockResize, flowHandle)
@@ -491,7 +500,14 @@ headerWindow:Destroy()
 -- the containing area is too small even for the configured minimum.
 local bounds = component(nil, "bounds")
 bounds:SetSize(600, 400)
-for _, kind in ipairs({ "titled", "standalone", "popout" }) do
+-- A window's box may hang past its parent's edges by the transparent strip in its border sprites,
+-- so its border sits flush. A title bar's top has no strip; an untitled window's top does.
+local NO_EDGES = { left = 0, top = 0, right = 0, bottom = 0 }
+local KIND_EDGES = {
+    titled = { left = 2, top = 0, right = 2, bottom = 2 },
+    untitled = { left = 2, top = 2, right = 2, bottom = 2 },
+}
+for _, kind in ipairs({ "titled", "untitled", "standalone", "popout" }) do
     for _, sample in ipairs({
         { direction = "se_v", delta = 1000, expected = { x = 100, y = 80, width = 360, height = 250 } },
         { direction = "se_v", delta = -1000, expected = { x = 100, y = 80, width = 100, height = 80 } },
@@ -521,13 +537,16 @@ for _, kind in ipairs({ "titled", "standalone", "popout" }) do
         end
         owner:Destroy()
     end
+    local edges = KIND_EDGES[kind] or NO_EDGES
     for _, direction in ipairs({ "se_v", "nw_v" }) do
         local owner, root, controller = createSurface(kind, bounds, { width = 300, height = 200 })
         handle = begin(controller, direction, root)
         local delta = direction == "se_v" and 10000 or -10000
         fire(handle, ui.Hook.ONHOLD, 2 + delta, 2 + delta)
-        expectRect(root, direction == "se_v" and { x = 100, y = 80, width = 500, height = 320 }
-            or { x = 0, y = 0, width = 400, height = 280 }, kind .. " stops at viewport boundary")
+        local expected = direction == "se_v"
+            and { x = 100, y = 80, width = 500 + edges.right, height = 320 + edges.bottom }
+            or { x = -edges.left, y = -edges.top, width = 400 + edges.left, height = 280 + edges.top }
+        expectRect(root, expected, kind .. " stops at viewport boundary")
         expectGold(controller, root)
         finish(controller, handle)
         owner:Destroy()
@@ -538,7 +557,8 @@ for _, kind in ipairs({ "titled", "standalone", "popout" }) do
     })
     handle = begin(controller, "nw_v", root)
     fire(handle, ui.Hook.ONHOLD, 1000, 1000)
-    expectRect(root, { x = 0, y = 0, width = 220, height = 140 }, "undersized viewport retains minimum and pins origin")
+    expectRect(root, { x = -edges.left, y = -edges.top, width = 220, height = 140 },
+        "undersized viewport retains minimum and pins origin")
     expectGold(controller, root)
     finish(controller, handle)
     owner:Destroy()
@@ -732,6 +752,34 @@ legacyResize:Destroy()
 autoOwner:Destroy()
 legacyOwner:Destroy()
 autoPhysicalHost:Destroy()
+
+-- A slider several scrolls deep follows a resize of the outermost window: each scroll
+-- finds the one around it through the tooltip contexts, and refreshes its children.
+-- Panels can't hold panels directly, so the deepest nesting is window, panel, tab page, panel.
+local deepWindow = Window.new(parent, { title = "Deep", width = 600, height = 500 })
+local outerPanel = deepWindow:AddPanel({ height = 400 })
+local deepPage = outerPanel:AddTabs({ "Page" }, { height = 300 }).dock:GetPage(1)
+local innerPanel = deepPage:AddPanel({ height = 200 })
+local deepSliders = {
+    deepWindow:AddSlider({ value = 100 }),
+    outerPanel:AddSlider({ value = 100 }).dock,
+    deepPage:AddSlider({ value = 100 }),
+    innerPanel:AddSlider({ value = 100 }).dock,
+}
+expect(innerPanel.dock.scroll.parentScroll, deepPage._scroll, "the inner panel links to the tab page")
+expect(deepPage._scroll.parentScroll, outerPanel.dock.scroll, "the tab page links to the outer panel")
+expect(outerPanel.dock.scroll.parentScroll, deepWindow._scroll, "the outer panel links to the window")
+local deepest = deepSliders[4]
+local deepWidth = deepest.track.width
+for _, width in ipairs({ 760, 520 }) do
+    deepWindow:SetSize(width, 500)
+    expect(deepest.track.width, deepWidth + width - 600, "the deepest track stretches with the window")
+    for index, slider in ipairs(deepSliders) do
+        expect(slider.thumb.x, slider.track.width - slider.thumb.width,
+            "slider " .. index .. "'s marker stays at its track end")
+    end
+end
+deepWindow:Destroy()
 
 -- A vanished native interface must be detected before touching any stale handle.
 local unloadedWindow, unloadedRoot, unloadedResize = createSurface("titled", parent)

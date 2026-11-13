@@ -34,6 +34,7 @@ local edges = {
 }
 local BORDER = 5
 local CORNER = 35
+local NO_EDGE_OFFSETS = { left = 0, top = 0, right = 0, bottom = 0 }
 
 local function loaded(self)
     return self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
@@ -184,10 +185,12 @@ function Resize:_Move(component, x, y)
     local dx, dy = mouse.x - drag.mouseX, mouse.y - drag.mouseY
     drag.mouseX, drag.mouseY = mouse.x, mouse.y
     local root, parent, edge = self.root, self.parent, edges[drag.edge]
-    local nextX, width = resizeAxis(root.x, root.width, dx, edge.west, edge.east,
-        parent.width, self.minWidth, self.maxWidth)
-    local nextY, height = resizeAxis(root.y, root.height, dy, edge.north, edge.south,
-        parent.height, self.minHeight, self.maxHeight)
+    local offsets = self.edgeOffsets
+    local nextX, width = resizeAxis(root.x + offsets.left, root.width, dx, edge.west, edge.east,
+        parent.width + offsets.left + offsets.right, self.minWidth, self.maxWidth)
+    local nextY, height = resizeAxis(root.y + offsets.top, root.height, dy, edge.north, edge.south,
+        parent.height + offsets.top + offsets.bottom, self.minHeight, self.maxHeight)
+    nextX, nextY = nextX - offsets.left, nextY - offsets.top
     if self.constrainRect then
         local constrainedX, constrainedY, constrainedWidth, constrainedHeight =
             self.constrainRect(nextX, nextY, width, height, edge)
@@ -259,6 +262,7 @@ function Resize.new(parent, root, options)
         minHeight = options.minHeight or 1,
         maxWidth = options.maxWidth or math.huge,
         maxHeight = options.maxHeight or math.huge,
+        edgeOffsets = options.edgeOffsets or NO_EDGE_OFFSETS,
         setRect = options.setRect,
         constrainRect = options.constrainRect,
         isVisible = options.isVisible,

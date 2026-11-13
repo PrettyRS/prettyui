@@ -294,6 +294,7 @@ end
 
 local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     options = options or {}
+    local parentContext = Tooltip.getContext(parent)
     local width, height = Panel.getSize(options)
 
     local self = setmetatable({}, Panel)

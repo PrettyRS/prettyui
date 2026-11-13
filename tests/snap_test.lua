@@ -15,20 +15,24 @@ local function expectPosition(position, at, from, to, message)
 end
 
 local PARENT_WIDTH, PARENT_HEIGHT = 1920, 1080
-local WIDTH, HEIGHT, EDGE_OFFSET = 100, 80, 2
+local WIDTH, HEIGHT = 100, 80
+-- how far a window's box reaches past its visible edge: a title bar's top has no strip
+local UNTITLED = { left = 2, top = 2, right = 2, bottom = 2 }
+local TITLED = { left = 2, top = 0, right = 2, bottom = 2 }
+local NO_OFFSETS = { left = 0, top = 0, right = 0, bottom = 0 }
 local target = { x = 500, y = 300, width = 200, height = 150 }
 
-local function positionsFor(rects, edgeOffset)
-    return Snap.positions(rects, WIDTH, HEIGHT, PARENT_WIDTH, PARENT_HEIGHT, edgeOffset or EDGE_OFFSET)
+local function positionsFor(rects, offsets)
+    return Snap.positions(rects, WIDTH, HEIGHT, PARENT_WIDTH, PARENT_HEIGHT, offsets or UNTITLED)
 end
 
 local empty = positionsFor({})
 expect(#empty.across, 2, "with no targets there are only the parent's left and right edges")
 expect(#empty.down, 2, "with no targets there are only the parent's top and bottom edges")
-expectPosition(empty.across[1], 0, -math.huge, math.huge, "parent left edge")
-expectPosition(empty.across[2], PARENT_WIDTH - WIDTH, -math.huge, math.huge, "parent right edge")
-expectPosition(empty.down[1], 0, -math.huge, math.huge, "parent top edge")
-expectPosition(empty.down[2], PARENT_HEIGHT - HEIGHT, -math.huge, math.huge, "parent bottom edge")
+expectPosition(empty.across[1], -2, -math.huge, math.huge, "parent left edge")
+expectPosition(empty.across[2], PARENT_WIDTH - WIDTH + 2, -math.huge, math.huge, "parent right edge")
+expectPosition(empty.down[1], -2, -math.huge, math.huge, "parent top edge")
+expectPosition(empty.down[2], PARENT_HEIGHT - HEIGHT + 2, -math.huge, math.huge, "parent bottom edge")
 
 local one = positionsFor({ target })
 expect(#one.across, 6, "one target adds four across positions")
@@ -42,10 +46,19 @@ expectPosition(one.down[4], 448, 500, 700, "below the target")
 expectPosition(one.down[5], 298, 500, 700, "flush with the target's top")
 expectPosition(one.down[6], 372, 500, 700, "flush with the target's bottom")
 
-local noOffset = positionsFor({ target }, 0)
+local noOffset = positionsFor({ target }, NO_OFFSETS)
+expect(noOffset.across[1].at, 0, "without edge offsets the box stops at the parent's left edge")
 expect(noOffset.across[3].at, 400, "without an edge offset the window's right side meets the target's left side")
 expect(noOffset.across[4].at, 700, "without an edge offset the window starts at the target's right side")
 expect(noOffset.down[4].at, 450, "without an edge offset the window starts at the target's bottom")
+
+-- A titled window's title bar meets the edge with its box: only its other sides hang over.
+local titled = positionsFor({ target }, TITLED)
+expect(titled.down[1].at, 0, "a titled window's box stops at the parent's top")
+expect(titled.down[3].at, 222, "above the target, a titled window's bottom strip still hangs over")
+expect(titled.down[4].at, 450, "below the target, a titled window's title bar meets the target's bottom")
+expect(titled.down[5].at, 300, "a titled window's title bar lines up with the target's top")
+expect(titled.across[3].at, 402, "a titled window's sides still hang over")
 
 local second = { x = 1200, y = 600, width = 300, height = 200 }
 local two = positionsFor({ target, second })
@@ -68,12 +81,12 @@ expectLanding(one, 415, 320, 415, 320, "a window one unit past the snap distance
 expectLanding(one, 405, 900, 405, 900, "a window far below the target doesn't snap beside it")
 expectLanding(one, 405, 462, 402, 462, "a window the snap distance below the target still snaps beside it")
 expectLanding(one, 405, 463, 405, 463, "a window one unit further below doesn't snap beside it")
-expectLanding(one, 6, 600, 0, 600, "a window near the parent's left edge snaps to it")
-expectLanding(one, 600, 995, 600, 1000, "a window near the parent's bottom edge snaps to it")
+expectLanding(one, 6, 600, -2, 600, "a window near the parent's left edge snaps to it, its border flush")
+expectLanding(one, 600, 995, 600, 1002, "a window near the parent's bottom edge snaps to it, its border flush")
 expectLanding(one, 405, 215, 402, 222, "a window just off the target's corner snaps corner to corner")
 
 local TALL_HEIGHT = 400
-local tall = Snap.positions({ target }, WIDTH, TALL_HEIGHT, PARENT_WIDTH, PARENT_HEIGHT, EDGE_OFFSET)
+local tall = Snap.positions({ target }, WIDTH, TALL_HEIGHT, PARENT_WIDTH, PARENT_HEIGHT, UNTITLED)
 local tallX = Snap.apply(tall, 407, 200, WIDTH, TALL_HEIGHT)
 expect(tallX, 402, "a window taller than the target still snaps beside it")
 
@@ -81,7 +94,7 @@ local nearer = { x = 507, y = 200, width = 50, height = 300 }
 expectLanding(positionsFor({ target, nearer }), 407, 320, 409, 320, "of two positions in range, the nearer one wins")
 
 local tied = { x = 118, y = 300, width = 200, height = 150 }
-expectLanding(positionsFor({ tied }), 10, 320, 0, 320, "on a tie, the parent's edge wins because it comes first")
+expectLanding(positionsFor({ tied }), 9, 320, -2, 320, "on a tie, the parent's edge wins because it comes first")
 
 local function gameWindow(x, y, width, height, shown)
     return { xyGlobal = { x = x, y = y }, width = width, height = height, visibleGlobal = shown }
@@ -117,7 +130,7 @@ ui = {
 local function prettyWindow(x, y, parent)
     parent = parent or buildLayer
     return {
-        parent = parent, interfaceID = parent.interfaceID,
+        parent = parent, interfaceID = parent.interfaceID, edgeOffsets = TITLED,
         root = {
             width = 300, height = 200,
             xyGlobal = { x = parent.xyGlobal.x + x, y = parent.xyGlobal.y + y },
@@ -132,7 +145,7 @@ Snap.register(other)
 
 local started = Snap.start(moving)
 expect(#started.across, 10, "the other window and the minimap each add four across positions")
-expectPosition(started.across[4], 796, 102, 298, "right of the other window's visible edge")
+expectPosition(started.across[4], 796, 100, 298, "right of the other window's visible edge, its title bar at the top")
 expectPosition(started.across[7], 1225, 28, 362, "left of the minimap, in the build layer's coordinates")
 expect(#started.down, 10, "the closed window adds nothing")
 
@@ -146,7 +159,7 @@ local crossParentWindow = prettyWindow(1000, 600, layoutLayer)
 Snap.register(crossParentWindow)
 local crossParent = Snap.start(moving)
 expect(#crossParent.across, 10, "a window in another parent is still a target")
-expectPosition(crossParent.across[4], 1286, 582, 778, "right of a window in another parent, in the build layer's coordinates")
+expectPosition(crossParent.across[4], 1286, 580, 778, "right of a window in another parent, in the build layer's coordinates")
 
 local unloadedLayer = { interfaceID = 1500, xyGlobal = { x = 0, y = 0 } }
 local unloadedWindow = prettyWindow(200, 600, unloadedLayer)
@@ -169,7 +182,8 @@ expect(#Snap.start(moving).across, 10, "a window nothing else holds drops out of
 Snap.unregister(crossParentWindow)
 other.root.hidden = false
 other.root.visibleGlobal = false
-Snap.register(other, 0)
+other.edgeOffsets = nil
+Snap.register(other)
 local storage = { {}, {}, {} }
 local firstEntry = storage[1]
 expect(Snap.collect(moving, storage), storage, "collection returns supplied storage")
@@ -180,11 +194,36 @@ expect(storage[1].width, 300, "zero inset collects the full HUD width")
 expect(#Snap.collect(moving, storage, true), 1, "visible-only excludes globally invisible roots")
 other.root.visibleGlobal = true
 expect(#Snap.collect(moving, storage, true), 2, "visible targets return")
-Snap.register(moving, 0)
+moving.edgeOffsets = nil
+Snap.register(moving)
 expectPosition(Snap.start(moving).across[4], 800, 100, 300, "moving zero inset meets the full target edge")
+other.edgeOffsets = TITLED
 Snap.register(other)
-expectPosition(Snap.start(moving).across[4], 798, 102, 298, "target default inset remains independent")
+expectPosition(Snap.start(moving).across[4], 798, 100, 298, "target titled offsets remain independent")
 unloadedWindow.root = setmetatable({}, { __index = function() error("unloaded root accessed") end })
 Snap.collect(moving, storage, true)
+
+moving.edgeOffsets = TITLED
+Snap.register(moving)
+-- Each target is inset by its own offsets: an untitled window's top has the strip too.
+local function hasPosition(list, at, from, to)
+    for _, position in ipairs(list) do
+        if position.at == at and position.from == from and position.to == to then return true end
+    end
+    return false
+end
+local untitledTarget = prettyWindow(500, 400)
+untitledTarget.edgeOffsets = UNTITLED
+Snap.register(untitledTarget)
+local withUntitled = Snap.start(moving)
+expect(hasPosition(withUntitled.across, 796, 402, 598), true,
+    "right of an untitled window, spanning its visible top and bottom")
+expect(hasPosition(withUntitled.down, 598, 502, 798), true,
+    "below an untitled window, the moving window's title bar meets its bottom border")
+expect(hasPosition(withUntitled.down, 204, 502, 798), true,
+    "above an untitled window, the moving window's bottom border meets its top border")
+expect(hasPosition(withUntitled.down, 402, 502, 798), true,
+    "the moving window's title bar lines up with an untitled window's top border")
+Snap.unregister(untitledTarget)
 
 print("snap_test: ok")

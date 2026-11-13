@@ -1,13 +1,15 @@
 local Snap = {}
 
--- a prettyui windows visible edge sits 2 units inside its box and game windows dont have this
-local VISIBLE_EDGE_OFFSET = 2
+-- a prettyui window's visible edge sits inside its box by window.edgeOffsets on each side, and
+-- game windows dont have this
+
 -- the games own windows snap from about this far away too
 local SNAP_DISTANCE = 12
+local NO_EDGE_OFFSETS = { left = 0, top = 0, right = 0, bottom = 0 }
 local windows = setmetatable({}, { __mode = "k" })
 
-function Snap.register(window, edgeOffset)
-    windows[window] = edgeOffset or VISIBLE_EDGE_OFFSET
+function Snap.register(window)
+    windows[window] = window.edgeOffsets or NO_EDGE_OFFSETS
 end
 
 function Snap.unregister(window)
@@ -18,23 +20,24 @@ local function addPosition(list, at, from, to)
     list[#list + 1] = { at = at, from = from, to = to }
 end
 
-function Snap.positions(rects, width, height, parentWidth, parentHeight, edgeOffset)
+-- Offests compensate for the difference between a window's box and its visible edge
+function Snap.positions(rects, width, height, parentWidth, parentHeight, offsets)
     local across, down = {}, {}
-    addPosition(across, 0, -math.huge, math.huge)
-    addPosition(across, parentWidth - width, -math.huge, math.huge)
-    addPosition(down, 0, -math.huge, math.huge)
-    addPosition(down, parentHeight - height, -math.huge, math.huge)
+    addPosition(across, -offsets.left, -math.huge, math.huge)
+    addPosition(across, parentWidth - width + offsets.right, -math.huge, math.huge)
+    addPosition(down, -offsets.top, -math.huge, math.huge)
+    addPosition(down, parentHeight - height + offsets.bottom, -math.huge, math.huge)
     for _, rect in ipairs(rects) do
         local left, top = rect.x, rect.y
         local right, bottom = rect.x + rect.width, rect.y + rect.height
-        addPosition(across, left - width + edgeOffset, top, bottom)
-        addPosition(across, right - edgeOffset, top, bottom)
-        addPosition(across, left - edgeOffset, top, bottom)
-        addPosition(across, right - width + edgeOffset, top, bottom)
-        addPosition(down, top - height + edgeOffset, left, right)
-        addPosition(down, bottom - edgeOffset, left, right)
-        addPosition(down, top - edgeOffset, left, right)
-        addPosition(down, bottom - height + edgeOffset, left, right)
+        addPosition(across, left - width + offsets.right, top, bottom)
+        addPosition(across, right - offsets.left, top, bottom)
+        addPosition(across, left - offsets.left, top, bottom)
+        addPosition(across, right - width + offsets.right, top, bottom)
+        addPosition(down, top - height + offsets.bottom, left, right)
+        addPosition(down, bottom - offsets.top, left, right)
+        addPosition(down, top - offsets.top, left, right)
+        addPosition(down, bottom - height + offsets.bottom, left, right)
     end
     return { across = across, down = down }
 end
@@ -84,12 +87,12 @@ function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID, native
         end
         rect.x, rect.y, rect.width, rect.height = x, y, width, height
     end
-    for other, inset in pairs(windows) do
+    for other, offsets in pairs(windows) do
         if isSnapTarget(other, movingWindow, visibleOnly) then
             local root = other.root
             local origin = root.xyGlobal
-            add(origin.x - parentOrigin.x + inset, origin.y - parentOrigin.y + inset,
-                root.width - 2 * inset, root.height - 2 * inset)
+            add(origin.x - parentOrigin.x + offsets.left, origin.y - parentOrigin.y + offsets.top,
+                root.width - offsets.left - offsets.right, root.height - offsets.top - offsets.bottom)
         end
     end
     -- Theory: game windows only snap to the layout windows on this layer.
@@ -131,7 +134,7 @@ end
 function Snap.start(movingWindow)
     local root, parent = movingWindow.root, movingWindow.parent
     return Snap.positions(Snap.collect(movingWindow), root.width, root.height,
-        parent.width, parent.height, windows[movingWindow] or VISIBLE_EDGE_OFFSET)
+        parent.width, parent.height, windows[movingWindow] or movingWindow.edgeOffsets or NO_EDGE_OFFSETS)
 end
 
 return Snap

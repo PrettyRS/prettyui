@@ -30,6 +30,11 @@ local CLOSE_RIGHT = 8
 local MIN_WIDTH = 220
 local MIN_HEIGHT = 140
 
+-- Offsets used to compensate for the window's visible edge sitting 2 units inside its box
+local EDGE_STRIP = 2
+local TITLED_EDGE_OFFSETS = { left = EDGE_STRIP, top = 0, right = EDGE_STRIP, bottom = EDGE_STRIP }
+local UNTITLED_EDGE_OFFSETS = { left = EDGE_STRIP, top = EDGE_STRIP, right = EDGE_STRIP, bottom = EDGE_STRIP }
+
 local function sprite(parent, spriteID)
     local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
@@ -44,6 +49,7 @@ local function buildWindow(parent, options)
     self.parent = parent
     self.interfaceID = parent.interfaceID
     self.title = options.title
+    self.edgeOffsets = self.title ~= nil and TITLED_EDGE_OFFSETS or UNTITLED_EDGE_OFFSETS
     self.onClose = options.onClose
     self.hideCloseButton = options.hideCloseButton == true
     self.onPositionChange = options.onPositionChange
@@ -223,8 +229,9 @@ local function buildWindow(parent, options)
                     snappedX, snappedY = Snap.apply(dragStart.snapPositions, rawX, rawY,
                         self.root.width, self.root.height)
                 end
-                local nextX = clamp(snappedX, 0, self.parent.width - self.root.width)
-                local nextY = clamp(snappedY, 0, self.parent.height - self.root.height)
+                local offsets = self.edgeOffsets
+                local nextX = clamp(snappedX, -offsets.left, self.parent.width - self.root.width + offsets.right)
+                local nextY = clamp(snappedY, -offsets.top, self.parent.height - self.root.height + offsets.bottom)
                 if self.root.x ~= nextX or self.root.y ~= nextY then
                     self.root:SetPos(nextX, nextY)
                     self.dragBounds:RememberPosition()
@@ -269,7 +276,7 @@ local function buildWindow(parent, options)
             end
             if self.dragFeedback then self.dragFeedback:Update() end
             self:_SyncOverlays(self.root.hidden == true)
-        end)
+        end, self.edgeOffsets)
     else
         self.topBorder = sprite(self.root, Sprites.BORDER_BOTTOM)
         self.topBorder:SetPos(CORNER_SIZE, 0)
@@ -354,13 +361,14 @@ local function buildWindow(parent, options)
         if not self.dragBounds then
             self.dragBounds = DragBounds.new(self.parent, self.root, function()
                 self:_SyncOverlays(self.root.hidden == true)
-            end)
+            end, self.edgeOffsets)
         end
         self.resize = Resize.new(self.parent, self.root, {
             minWidth = self.minWidth,
             minHeight = self.minHeight,
             maxWidth = self.maxWidth,
             maxHeight = self.maxHeight,
+            edgeOffsets = self.edgeOffsets,
             isVisible = function()
                 return self.root.hidden ~= true and self.root.visibleGlobal ~= false
             end,

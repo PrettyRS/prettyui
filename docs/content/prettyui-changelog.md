@@ -31,6 +31,15 @@ hero:
 
 ### Changed
 - PrettyUI components are now hidden while the player is viewing the world map.
+- Added `Refresh()` to [sliders](index.html#slider-api), which can update the marker's position again after the slider's width changes.
+
+
+### Fixed
+- Improved hover feedback on keybind fields and restored the missing clear sprite for resetting keybinds.
+- [Windows](index.html#window-api) can now be positioned visually flush against the edges of their parents.
+- [Slider](index.html#slider-api) markers now move with the track when the window or panel holding them is resized.
+- Nested panels' content now resizes when the parent being resized causes the panel to be resized.
+- Nested Panels are linked to their parent again, which 1.3.0 had broken.
 
 ## 1.3.0 (published, awaiting approval) {#v1-3-0}
 
