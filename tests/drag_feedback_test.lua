@@ -265,6 +265,43 @@ closingWindow:Close()
 expectRemoved(closingWindow, feedback, "destroy-on-close window")
 expect(closingWindow.root, nil, "destroy-on-close releases the moving surface")
 
+-- Hide ends a move in progress and takes the title bar and resize handles with the window;
+-- Show brings it back movable.
+local hidingWindow = Window.new(parent, { title = "Hide", x = 60, y = 40, resizable = true })
+feedback = startDrag(hidingWindow, hidingWindow.root, hidingWindow.titleDrag)
+hidingWindow:Hide()
+expectRemoved(hidingWindow, feedback, "window Hide")
+expect(hidingWindow.root.hidden, true, "Hide hides the window")
+expect(hidingWindow.titleDrag.hidden, true, "Hide hides the title bar")
+expect(hidingWindow.resize.handles.n.hidden, true, "Hide hides the resize handles")
+local hiddenAt = rect(hidingWindow.root)
+fire(hidingWindow.titleDrag, ui.Hook.ONHOLD, 80, 60)
+expectRect(hidingWindow.root, hiddenAt, "a hidden window ignores holds")
+hidingWindow:Show()
+expect(hidingWindow.titleDrag.hidden, false, "Show restores the title bar")
+expect(hidingWindow.resize.handles.n.hidden, false, "Show restores the resize handles")
+feedback = startDrag(hidingWindow, hidingWindow.root, hidingWindow.titleDrag)
+fire(hidingWindow.titleDrag, ui.Hook.ONRELEASE)
+expectRemoved(hidingWindow, feedback, "a shown window drags again")
+hidingWindow:Destroy()
+
+-- Close is the player closing the window and calls onClose; Hide is the plugin hiding it
+-- and does not. Close then hides the window, or destroys it with destroyOnClose.
+local windowCloses = 0
+local closableWindow = Window.new(parent, {
+    title = "Closable", onClose = function() windowCloses = windowCloses + 1 end,
+})
+closableWindow:Hide()
+expect(windowCloses, 0, "window Hide does not call onClose")
+closableWindow:Show()
+fire(closableWindow.closeButton, ui.Hook.ONCLICK)
+expect(windowCloses, 1, "the close button calls onClose")
+expect(closableWindow.root.hidden, true, "the close button hides the window")
+closableWindow:Show()
+closableWindow:Close()
+expect(windowCloses, 2, "window Close calls onClose")
+closableWindow:Destroy()
+
 local panel = Panel.new(parent, { x = 45, y = 68, width = 270, height = 150 })
 setAlt(true)
 simpleClick(panel, panel.dock.root, panel.dockDragLayer)
@@ -287,6 +324,140 @@ setAlt(true)
 feedback = startDrag(panel, panel.dock.root, panel.dockDragLayer)
 panel:Destroy()
 expectRemoved(panel, feedback, "standalone panel Destroy")
+
+-- Panel:Hide ends a move in progress and takes the drag layer and resize handles with the
+-- panel; Show brings it back movable.
+local hidingPanel = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true })
+setAlt(true)
+feedback = startDrag(hidingPanel, hidingPanel.dock.root, hidingPanel.dockDragLayer)
+hidingPanel:Hide()
+expectRemoved(hidingPanel, feedback, "panel Hide")
+expect(hidingPanel.dock.root.hidden, true, "Hide hides the panel")
+expect(hidingPanel.dockDragLayer.hidden, true, "Hide drops the drag layer")
+expect(hidingPanel.dockResize.handles.n.hidden, true, "Hide hides the resize handles")
+setAlt(true)
+expect(hidingPanel.dockDragLayer.hidden, true, "Alt does not bring back a hidden panel's drag layer")
+hidingPanel:Show()
+expect(hidingPanel.dock.root.hidden, false, "Show shows the panel")
+expect(hidingPanel.dockDragLayer.hidden, false, "Show restores Alt dragging")
+expect(hidingPanel.dockResize.handles.n.hidden, false, "Show restores the resize handles")
+feedback = startDrag(hidingPanel, hidingPanel.dock.root, hidingPanel.dockDragLayer)
+fire(hidingPanel.dockDragLayer, ui.Hook.ONRELEASE)
+expectRemoved(hidingPanel, feedback, "a shown panel drags again")
+hidingPanel:Destroy()
+
+-- The drag layer and resize handles are siblings of the root, so they only take input while
+-- they sit above it.
+local function isAbove(upper, lower)
+    local upperIndex, lowerIndex
+    for index, child in ipairs(upper.parent.children) do
+        if child == upper then upperIndex = index end
+        if child == lower then lowerIndex = index end
+    end
+    return upperIndex > lowerIndex
+end
+
+-- Show while Alt is held leaves the panel draggable without pressing Alt again.
+local raisedPanel = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true })
+raisedPanel:Hide()
+setAlt(true)
+local raiseRoot = raisedPanel.dock.root.MoveToFront
+local rootRaisedHidden = false
+raisedPanel.dock.root.MoveToFront = function(root)
+    if root.hidden then rootRaisedHidden = true end
+    raiseRoot(root)
+end
+raisedPanel:Show()
+expect(rootRaisedHidden, false, "Show does not raise the root while it is hidden")
+expect(raisedPanel.dock.root.hidden, false, "Show leaves the root visible")
+expect(isAbove(raisedPanel.dockDragLayer, raisedPanel.dock.root), true, "Show raises the drag layer")
+expect(isAbove(raisedPanel.dockResize.handles.n, raisedPanel.dock.root), true,
+    "Show raises the resize handles")
+raisedPanel:Show()
+expect(isAbove(raisedPanel.dockDragLayer, raisedPanel.dock.root), true,
+    "Show on a visible panel with Alt held keeps the drag layer on top")
+raisedPanel:Destroy()
+
+local raisedPopout = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true,
+    popout = true, poppedOut = true })
+raisedPopout:Show()
+expect(isAbove(raisedPopout.overlayDragLayer, raisedPopout.overlay.root), true,
+    "Show on a visible popout with Alt held keeps the drag layer on top")
+raisedPopout:SetPoppedOut(false)
+expect(isAbove(raisedPopout.dock.root, raisedPopout.overlay.root), true, "docking raises a standalone panel")
+expect(isAbove(raisedPopout.dockDragLayer, raisedPopout.dock.root), true,
+    "docking with Alt held keeps the drag layer on top")
+raisedPopout:Destroy()
+
+-- A hidden panel gives up its height in a content flow, as a popped-out one does, and takes
+-- it back on Show. A standalone panel has no flow, so it keeps its height.
+local flowWindow = Window.new(parent, { title = "Flow", x = 0, y = 0, width = 400, height = 400 })
+local flowPanel = flowWindow:AddPanel({ height = 90 })
+local panelBelow = flowWindow:AddPanel({ height = 50 })
+local shownY = panelBelow.dock.root.y
+flowPanel:Hide()
+expect(flowPanel.dock.root.height, 0, "a hidden flow panel gives up its height")
+expect(panelBelow.dock.root.y, shownY - 90, "content below a hidden panel moves up")
+flowPanel:SetSize(flowPanel.width, 120)
+expect(flowPanel.dock.root.height, 0, "resizing a hidden flow panel keeps it collapsed")
+flowPanel:Show()
+expect(flowPanel.dock.root.height, 120, "Show restores the flow panel's latest height")
+expect(panelBelow.dock.root.y, shownY + 30, "content below a shown panel moves back down")
+flowWindow:Destroy()
+
+local standalonePanel = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140 })
+standalonePanel:Hide()
+expect(standalonePanel.dock.root.height, 140, "a hidden standalone panel keeps its height")
+standalonePanel:SetSize(260, 160)
+standalonePanel:Show()
+expect(standalonePanel.dock.root.height, 160, "a standalone panel resized while hidden shows at its new height")
+standalonePanel:Destroy()
+
+-- A popped-out panel hides its popout, stays hidden when popped in or out, and Show reveals
+-- whichever surface it is on.
+local hidingPopout = Panel.new(parent, {
+    x = 40, y = 60, width = 240, height = 130, popout = true, poppedOut = true,
+    overlayParent = overlayParent,
+    popoutX = 150, popoutY = 100, popoutWidth = 280, popoutHeight = 160,
+})
+hidingPopout:Hide()
+expect(hidingPopout.overlay.root.hidden, true, "Hide hides the popout")
+expect(hidingPopout.dock.root.hidden, true, "Hide keeps the dock hidden")
+hidingPopout:SetPoppedOut(false)
+expect(hidingPopout.dock.root.hidden, true, "docking a hidden panel keeps it hidden")
+expect(hidingPopout.overlay.root.hidden, true, "docking a hidden panel keeps the popout hidden")
+hidingPopout:Show()
+expect(hidingPopout.dock.root.hidden, false, "Show reveals the docked panel")
+expect(hidingPopout.overlay.root.hidden, true, "Show leaves the unused popout hidden")
+hidingPopout:Hide()
+hidingPopout:SetPoppedOut(true)
+expect(hidingPopout.overlay.root.hidden, true, "popping out a hidden panel keeps it hidden")
+hidingPopout:Show()
+expect(hidingPopout.overlay.root.hidden, false, "Show reveals the popout")
+expect(hidingPopout.dock.root.hidden, true, "Show leaves the unused dock hidden")
+hidingPopout:Destroy()
+
+-- Panel Close calls onClose and hides the panel, or destroys it with destroyOnClose; Hide
+-- does not call onClose.
+local panelCloses = 0
+local closablePanel = Panel.new(parent, {
+    x = 50, y = 70, width = 260, height = 140,
+    onClose = function() panelCloses = panelCloses + 1 end,
+})
+closablePanel:Hide()
+expect(panelCloses, 0, "panel Hide does not call onClose")
+closablePanel:Show()
+closablePanel:Close()
+expect(panelCloses, 1, "panel Close calls onClose")
+expect(closablePanel.dock.root.hidden, true, "panel Close hides the panel")
+closablePanel:Destroy()
+local destroyingPanel = Panel.new(parent, {
+    x = 50, y = 70, width = 260, height = 140, destroyOnClose = true,
+})
+setAlt(true)
+feedback = startDrag(destroyingPanel, destroyingPanel.dock.root, destroyingPanel.dockDragLayer)
+destroyingPanel:Close()
+expectRemoved(destroyingPanel, feedback, "destroy-on-close panel")
 
 local popout = Panel.new(parent, {
     x = 31, y = 48, width = 260, height = 145, popout = true,
@@ -315,7 +486,11 @@ popout:Destroy()
 expectRemoved(popout, feedback, "popout Destroy")
 expect(next(logicCallbacks), nil, "destroyed panels leave no Alt polling subscription")
 
-local function exerciseBounds(owner, root, target, bounds)
+-- A window's box may hang past its parent's edges by its transparent strip, so its border sits flush.
+local NO_EDGES = { left = 0, top = 0, right = 0, bottom = 0 }
+local TITLED_EDGES = { left = 2, top = 0, right = 2, bottom = 2 }
+local function exerciseBounds(owner, root, target, bounds, edges)
+    edges = edges or NO_EDGES
     local initial = rect(root)
     local parentWidth, parentHeight = bounds.width, bounds.height
     fire(target, ui.Hook.ONCLICK, 12, 9)
@@ -328,20 +503,20 @@ local function exerciseBounds(owner, root, target, bounds)
         expectRect(feedback.active, rect(root), "gold frame follows the clamped surface")
         expectRect(feedback.origin, initial, "clamping preserves the original reference")
     end
-    local maxX, maxY = parentWidth - root.width, parentHeight - root.height
-    move(-10000, -10000, 0, 0)
-    move(10000, -10000, maxX, 0)
-    move(-10000, 10000, 0, maxY)
+    local maxX, maxY = parentWidth - root.width + edges.right, parentHeight - root.height + edges.bottom
+    move(-10000, -10000, -edges.left, -edges.top)
+    move(10000, -10000, maxX, -edges.top)
+    move(-10000, 10000, -edges.left, maxY)
     move(10000, 10000, maxX, maxY)
     move(12, 9, initial.x, initial.y)
 
-    -- Bounds are re-read during the drag, with oversized axes pinned to zero.
+    -- Bounds are re-read during the drag, with oversized axes pinned to the leading edge.
     bounds:SetSize(root.width - 20, root.height + 40)
-    move(10000, 10000, 0, 40)
+    move(10000, 10000, -edges.left, 40 + edges.bottom)
     bounds:SetSize(root.width + 50, root.height - 20)
-    move(10000, 10000, 50, 0)
+    move(10000, 10000, 50 + edges.right, -edges.top)
     bounds:SetSize(root.width, root.height)
-    move(-10000, 10000, 0, 0)
+    move(-10000, 10000, -edges.left, edges.bottom)
     bounds:SetSize(parentWidth, parentHeight)
     fire(target, ui.Hook.ONRELEASE)
     owner:Destroy()
@@ -351,7 +526,7 @@ local boundedWindow = Window.new(parent, {
     title = "Bounded window", x = -170, y = -115,
     xAnchor = 0.5, yAnchor = 0.5, width = 340, height = 230,
 })
-exerciseBounds(boundedWindow, boundedWindow.root, boundedWindow.titleDrag, parent)
+exerciseBounds(boundedWindow, boundedWindow.root, boundedWindow.titleDrag, parent, TITLED_EDGES)
 
 local boundedPanel = Panel.new(parent, { x = 40, y = 60, width = 270, height = 150 })
 setAlt(true)
@@ -363,14 +538,18 @@ local boundedPopout = Panel.new(parent, {
 }, true)
 exerciseBounds(boundedPopout, boundedPopout.overlay.root, boundedPopout.overlayDragLayer, overlayParent)
 
--- Relative placement is measured across the available travel, not screen pixels.
+-- Relative placement is measured across the available travel, not screen pixels. A titled
+-- window's travel includes the strip its box may hang past each edge but the top.
+local WINDOW_EDGE = 2
 local area = component(nil, "resizing-parent")
 area:SetSize(1000, 700)
 local centered = Window.new(area, {
-    title = "Centered", x = -150, y = -100, xAnchor = 0.5, yAnchor = 0.5,
+    title = "Centered", x = -150, y = -100 + WINDOW_EDGE / 2, xAnchor = 0.5, yAnchor = 0.5,
     width = 300, height = 200,
 })
-local edged = Window.new(area, { title = "Edge", x = 700, y = 500, width = 300, height = 200 })
+local edged = Window.new(area, {
+    title = "Edge", x = 700 + WINDOW_EDGE, y = 500 + WINDOW_EDGE, width = 300, height = 200,
+})
 edged:Close()
 local corner = Panel.new(area, { x = 0, y = 0, width = 250, height = 150 })
 local fractional = Panel.new(parent, {
@@ -382,12 +561,14 @@ setAlt(false)
 local otherResizeCalls = 0
 area:Subscribe(ui.Hook.ONRESIZE, "consumer", function() otherResizeCalls = otherResizeCalls + 1 end)
 local function expectRelativePlacement()
-    expect(centered.root.x, math.floor((area.width - 300) / 2 + 0.5), "window stays horizontally centered")
-    expect(centered.root.y, math.floor((area.height - 200) / 2 + 0.5), "window stays vertically centered")
+    expect(centered.root.x, math.floor((area.width - 300 + WINDOW_EDGE * 2) / 2 + 0.5) - WINDOW_EDGE,
+        "window stays horizontally centered")
+    expect(centered.root.y, math.floor((area.height - 200 + WINDOW_EDGE) / 2 + 0.5),
+        "window stays vertically centered")
     expect(centered.titleDrag.x, centered.root.x, "title handle follows relative placement")
     expect(centered.titleDrag.y, centered.root.y, "title handle stays aligned vertically")
-    expect(edged.root.x, area.width - 300, "right edge remains attached")
-    expect(edged.root.y, area.height - 200, "bottom edge remains attached")
+    expect(edged.root.x, area.width - 300 + WINDOW_EDGE, "right edge remains attached")
+    expect(edged.root.y, area.height - 200 + WINDOW_EDGE, "bottom edge remains attached")
     expect(corner.root.x, 0, "left edge remains attached")
     expect(corner.root.y, 0, "top edge remains attached")
     expect(fractional.overlay.root.x, math.floor((area.width - 320) / 4 + 0.5), "popout retains quarter-width placement")
@@ -410,29 +591,65 @@ for _ = 1, 10 do
     area:SetSize(1000, 700)
     expectRelativePlacement()
 end
-for _, size in ipairs({ {300, 200}, {100, 80}, {0, 0} }) do
+-- An exact fit leaves a window only its edge strips to travel; an undersized area pins its box
+-- to hang past the leading edges.
+for _, size in ipairs({ {300, 200, 0, 1, WINDOW_EDGE}, {100, 80, -WINDOW_EDGE, 0, -WINDOW_EDGE},
+    {0, 0, -WINDOW_EDGE, 0, -WINDOW_EDGE} }) do
     area:SetSize(size[1], size[2])
-    expect(centered.root.x, 0, "centered window clamps when no horizontal travel remains")
-    expect(centered.root.y, 0, "centered window clamps when no vertical travel remains")
-    expect(edged.root.x, 0, "edge window clamps in undersized viewport")
+    expect(centered.root.x, size[3], "centered window clamps when no horizontal travel remains")
+    expect(centered.root.y, size[4], "centered window clamps when no vertical travel remains")
+    expect(edged.root.x, size[5], "edge window clamps in undersized viewport")
     expect(edged.root.width, 300, "containment does not resize the surface")
 end
 area:SetSize(1000, 700)
 expectRelativePlacement()
 edged:Show()
 fractional:SetPoppedOut(true)
-expect(edged.titleDrag.x, 700, "reopened window's handle follows its retained edge")
+expect(edged.titleDrag.x, 700 + WINDOW_EDGE, "reopened window's handle follows its retained edge")
 expect(fractional.overlayDragLayer.x, 170, "popout handle follows retained fractional position")
 
 centered:Destroy()
 local callsBeforeDestroy = otherResizeCalls
 area:SetSize(500, 350)
-expect(edged.root.x, 200, "surviving window retains edge after sibling destruction")
+expect(edged.root.x, 200 + WINDOW_EDGE, "surviving window retains edge after sibling destruction")
 expect(otherResizeCalls, callsBeforeDestroy + 1, "sibling destruction preserves consumer listeners")
 edged:Destroy()
 corner:Destroy()
 fractional:Destroy()
 area:SetSize(1000, 700)
+
+-- An untitled window's top keeps the strip too: its top border is the bottom tile flipped. Only
+-- resizable untitled windows keep their placement, as they can't be dragged.
+local untitled = Window.new(area, { x = -150, y = -100, xAnchor = 0.5, yAnchor = 0.5,
+    width = 300, height = 200, resizable = true })
+area:SetSize(1400, 900)
+expect(untitled.root.y, math.floor((900 - 200 + WINDOW_EDGE * 2) / 2 + 0.5) - WINDOW_EDGE,
+    "an untitled window's vertical travel includes its top strip")
+area:SetSize(100, 80)
+expect(untitled.root.x, -WINDOW_EDGE, "an undersized area pins an untitled window's box past the left edge")
+expect(untitled.root.y, -WINDOW_EDGE, "an undersized area pins an untitled window's box past the top edge")
+untitled:Destroy()
+area:SetSize(1000, 700)
+
+-- Clamp keeps a root within its edge offsets; windows never call it, so check it directly.
+do
+    local DragBounds = require("src/core/drag_bounds")
+    local root = component(area, "clamped")
+    root:SetSize(300, 200)
+    local edges = { left = 2, top = 0, right = 3, bottom = 4 }
+    local moved = {}
+    local bounds = DragBounds.new(area, root, function(dx, dy) moved[#moved + 1] = { dx, dy } end, edges)
+    root:SetPos(-50, -50)
+    bounds:Clamp()
+    expect(root.x, -edges.left, "Clamp lets the root hang past the left edge by its offset")
+    expect(root.y, -edges.top, "Clamp stops the root at the top edge without an offset there")
+    root:SetPos(5000, 5000)
+    bounds:Clamp()
+    expect(root.x, 1000 - 300 + edges.right, "Clamp lets the root hang past the right edge by its offset")
+    expect(root.y, 700 - 200 + edges.bottom, "Clamp lets the root hang past the bottom edge by its offset")
+    bounds:Destroy()
+    root:Destroy()
+end
 
 local function exerciseRelativeDrag(owner, root, target)
     setAlt(true)
@@ -615,7 +832,8 @@ local function exercisePositionCallback(create, poppedOut)
     expect(#events, 1, "clamped movement does not notify while dragging")
     fire(target, ui.Hook.ONDRAGCOMPLETE)
     expect(#events, 2, "drag completion alone commits the position")
-    expect(events[2].x, 0, "callback reports clamped x")
+    -- poppedOut is nil for a titled window, whose box may hang past each edge but the top.
+    expect(events[2].x, poppedOut == nil and -WINDOW_EDGE or 0, "callback reports clamped x")
     expect(events[2].y, 0, "callback reports clamped y")
     fire(target, ui.Hook.ONRELEASE)
     expect(#events, 2, "release after drag completion does not notify twice")

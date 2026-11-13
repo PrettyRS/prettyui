@@ -123,6 +123,11 @@ Interactive resizing is opt-in with `resizable = true`.
 : Stops the window from being moved or resized while the player's interface is
   locked. Defaults to true.
 
+`snapToEdges`
+: Snaps the dragged window to edges within 12 interface units: other PrettyUI
+  windows, the game's own interfaces that use snapping, and the screen. Defaults
+  to true.
+
 `scrollable`
 : Enables automatic vertical scrolling. Defaults to true.
 
@@ -191,9 +196,12 @@ Interactive resizing is opt-in with `resizable = true`.
 `Show()`
 : Shows and raises the window.
 
+`Hide()`
+: Hides the window without invoking **onClose**.
+
 `Close()`
-: Hides tooltips belonging to the window and its nested panels, invokes
-  **onClose**, then hides or destroys the window.
+: Invokes **onClose**, then hides or destroys the window. Invoked 
+automatically when the end user closes a window with the 'X' button.
 
 `Destroy()`
 : Destroys the complete component tree.

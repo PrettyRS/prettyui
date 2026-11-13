@@ -7,7 +7,7 @@ weight: 21
 
 ## Mouseover tooltips {#tooltip-api}
 
-Tooltip-enabled PrettyUI controllers accept a string or options table through their `tooltip` option and expose `SetTooltip(value)` for later changes.
+Tooltip-enabled PrettyUI controllers accept a string or options table through their `tooltip` option and expose `SetTooltip(value)` for later changes. Tooltips are built on demand and cleaned up when hidden.
 
 ```lua
 local button = prettyui.SpriteButton.new(
@@ -54,10 +54,10 @@ Overlay
 ### Attachment
 
 `Show()`
-: Positions, raises, and displays the tooltip.
+: Builds (when needed), positions, raises, and displays the tooltip.
 
 `Hide()`
-: Hides the tooltip.
+: Hides the tooltip and frees its components.
 
 `SetText(text)`
 : Updates, remeasures, and repositions the attachment in place. Returns false after destruction.
