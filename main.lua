@@ -13,6 +13,7 @@ local CategoryGroups = require("src/core/category_groups")
 local Components = require("src/core/components")
 local NisNative = require("src/core/nis_native")
 local WorldMap = require("src/core/world_map")
+local NativeInterfaceSettings = require("src/core/native_interface_settings")
 local RibbonBar = require("src/ribbon_bar")
 
 local resources = Plugin.resources
@@ -38,6 +39,7 @@ local PrettyUI = {
     Histogram = Histogram,
     TimeGraph = TimeGraph,
     ItemSlot = require("src/item_slot"),
+    IsClassicUI = NativeInterfaceSettings.isClassicUI,
     ItemGrid = require("src/item_grid"),
     KeybindField = KeybindField,
     List = require("src/list"),

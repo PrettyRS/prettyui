@@ -1,5 +1,5 @@
--- The player's own interface settings that PrettyUI components may follow: the
--- "lock interface" customisation toggle and the interface transparency slider.
+-- The player's own interface settings: Classic UI mode, the "lock interface"
+-- customisation toggle and the interface transparency slider.
 local NativeInterfaceSettings = {}
 local EVENT_ID = "prettyui_native_interface_settings"
 local LOCK_VARBIT = "TOPLEVEL_V2_CUSTOMIZATION_LOCK"
@@ -85,6 +85,11 @@ local function unwatch(setting, owner)
     if setting.watchers[owner] == nil then return end
     setting.watchers[owner] = nil
     if not anyWatched() then Event.VarTransmit.Unsubscribe(EVENT_ID) end
+end
+
+-- Independent of Classic Combat and slim headers; read live rather than caching.
+function NativeInterfaceSettings.isClassicUI()
+    return var.VarPlayer.TOPLEVEL_V2_LEGACY_INTERFACE.value == 1
 end
 
 function NativeInterfaceSettings.isLocked() return lock.read() end

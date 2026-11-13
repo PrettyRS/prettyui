@@ -62,6 +62,16 @@ function PluginShutdown()
 end
 ```
 
+### Classic UI detection
+
+```lua
+local isClassicUI = prettyui.IsClassicUI()
+```
+
+Returns `true` for Classic Interface and `false` for Modern Interface. Reads the current `TOPLEVEL_V2_LEGACY_INTERFACE` varbit on every call; Classic Combat and slim headers do not affect the result.
+
+To react to mode changes, watch `Event.VarTransmit` for `event.var.id == id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP`, then call `prettyui.IsClassicUI()` again. The helper does not create subscriptions.
+
 {{% api-grid compact="true" %}}
 
 {{% api-card %}}
