@@ -797,7 +797,8 @@ do
         local source, target = pair()
         begin(source); move(source, point[1], point[2])
         expect(target._nisTabs.root.hidden, false, "strict strip interior shows the incoming tab")
-        expectRect(source.dragFeedback.active, 500, 100, 300, 260, "nesting previews target outer bounds")
+        expectRect(source.dragFeedback.active, point[1] - 100, point[2] - 6, 200, 180,
+            "nesting keeps orange at the dragged size and grip")
         expectRect(source.root, point[1] - 100, point[2] - 6, 200, 180,
             "nesting preview does not relocate or resize the body to the target")
         release(source)
@@ -1098,6 +1099,16 @@ do
             raw = { x = 556, y = 128 }
             fire(held, ui.Hook.ONHOLD, 12, 12)
             order(third, { target, third, source }, "dragging across one tab previews the middle position")
+            local peer = third._nisTabs.tabs[3]
+            expect(peer.visual.x, 40, "displaced peer starts at its previous slot")
+            expect(third._nisTabs.tabs[2].visual.x, 40, "dragged tab follows the pointer grip")
+            emit("Logic")
+            expect(peer.visual.x > 40 and peer.visual.x < 80, true,
+                "displaced peer slides through an intermediate position")
+            expect(peer.hit.x, third._nisTabs.root.x + peer.visual.x,
+                "sliding peer input follows its visible artwork")
+            for _ = 1, 12 do emit("Logic") end
+            expect(peer.visual.x, 80, "displaced peer settles into the vacated slot")
             expect(third.dragState, nil, "in-strip tab dragging does not detach a window")
             expectRect(third.root, 500, 100, 300, 260, "in-strip tab dragging leaves shared body fixed")
             expectRect(third.dragFeedback.origin, 500, 100, 300, 260, "reordering keeps white group origin")
@@ -1165,6 +1176,25 @@ do
         expect(source.root.hidden, false, "a same-slot drag cannot remove its tab's input hit")
         Mouse.GetPosition = function() return nil end
         endPair(source, target)
+
+        for _, point in ipairs({ { 503, 128 }, { 585, 128 }, { 554, 115 }, { 554, 144 } }) do
+            source, target = pair()
+            expect(source:DockTo(target), true, "directional tear-out starts grouped")
+            local held = source._nisTabs.tabs[2].hit
+            local raw = { x = held.x + 12, y = held.y + 12 }
+            Mouse.GetPosition = function() return raw end
+            fire(held, ui.Hook.ONCLICK, 12, 12)
+            raw = { x = point[1], y = point[2] }
+            fire(held, ui.Hook.ONHOLD, 12, 12)
+            expect(source.dragState ~= nil, true, "leaving any occupied row edge begins tear-out")
+            expect(source.dragState.nisTarget, nil, "empty source strip cannot immediately redock a torn-out tab")
+            fire(held, ui.Hook.ONRELEASE)
+            expect(source._nisGroup, nil, "directional tear-out commits standalone membership")
+            expect(target._nisGroup, nil, "directional tear-out leaves a standalone survivor")
+            expectNoDrag(source, "directional tear-out completion")
+            Mouse.GetPosition = function() return nil end
+            endPair(source, target)
+        end
     end
 
     source, target = pair({ tabText = "From" }, { tabText = "To" })
@@ -1701,9 +1731,22 @@ do
     expect(bounded:DockTo(notes.frame), false, "native viewport exceeding member limits is rejected")
     expect(notes.body.hidden, false, "rejected native docking leaves native content visible")
     bounded:Destroy()
+    local function visibleIcons(node, resource)
+        if not rendered(node) then return 0 end
+        local count = node.spriteID == resource and 1 or 0
+        for _, child in ipairs(node.renderChildren) do count = count + visibleIcons(child, resource) end
+        return count
+    end
     begin(nativePanel)
     move(nativePanel, 650, 130)
-    expectRect(nativePanel.dragFeedback.active, 500, 100, 379, 357, "native band previews its actual frame")
+    expectRect(nativePanel.dragFeedback.active, 510, 124, 280, 180,
+        "native nesting keeps the dragged dimensions instead of wrapping its host")
+    expect(visibleIcons(area, nativePanel.tabIcon), 1, "native nesting previews the incoming tab icon")
+    expect(notes.body.hidden, false, "native nesting preview does not conceal native content")
+    expect(nativePanel._nisNative, nil, "native nesting preview does not commit membership")
+    move(nativePanel, 650, 250)
+    expect(visibleIcons(area, nativePanel.tabIcon), 0, "leaving the native band removes its incoming tab")
+    move(nativePanel, 650, 130)
     release(nativePanel)
     expect(nativePanel._nisNative ~= nil, true, "header drop joins the native group")
     expect(nativePanel.root, root, "native docking retains the original root")
@@ -1927,6 +1970,29 @@ do
         end
         error("native tab exposes no drag capture")
     end
+    for _, edge in ipairs({ "left", "right", "top", "bottom" }) do
+        local binding = nativePanel._nisNative
+        local hit = binding.tabs[binding.group.current].hit
+        local band = ranged.tabs
+        local left, top = band.xyGlobal.x - area.xyGlobal.x, band.xyGlobal.y - area.xyGlobal.y
+        local right = hit.x + 40
+        local px, py = hit.x + 12, top + 12
+        if edge == "left" then px = left - 1
+        elseif edge == "right" then px = right + 1
+        elseif edge == "top" then py = top - 1
+        else py = top + 28 end
+        local raw = { x = hit.xyGlobal.x + 12, y = hit.xyGlobal.y + 12 }
+        Mouse.GetPosition = function() return raw end
+        fire(hit, ui.Hook.ONCLICK, 12, 12)
+        raw = { x = area.xyGlobal.x + px, y = area.xyGlobal.y + py }
+        fire(hit, ui.Hook.ONHOLD, 12, 12)
+        expect(nativePanel._nisNative, nil, "native " .. edge .. " edge allows tear-out")
+        expect(nativePanel.dragState ~= nil, true, "native edge tear-out enters placement")
+        expect(nativePanel.dragState.nativeTarget, nil, "native empty source strip does not redock during tear-out")
+        emit("KeyDown", { gameKey = GameKey.ESCAPE })
+        expect(nativePanel._nisNative ~= nil, true, "native edge tear-out cancellation restores membership")
+        Mouse.GetPosition = function() return nil end
+    end
     local capture = captureTab()
     fire(capture, ui.Hook.ONCLICK, 10, 10)
     local captureX, captureY = capture.x, capture.y
@@ -1954,6 +2020,42 @@ do
     expect(peer:DockTo(nativePanel), true, "another panel can join the same native group")
     expect(nativePanel.root.hidden, true, "selecting the new own tab hides the previous body")
     expect(peer.root.hidden, false, "incoming native member is selected")
+    for _, finish in ipairs({ "escape", "release" }) do
+        nativePanel:SelectTab()
+        local group = peer._nisNative.group
+        local dragged = peer._nisNative.tabs[group.current]
+        local displaced = nativePanel._nisNative.tabs[group.current]
+        local startX = displaced.visual.x
+        local hit = dragged.hit
+        local raw = { x = hit.xyGlobal.x + 12, y = hit.xyGlobal.y + 12 }
+        Mouse.GetPosition = function() return raw end
+        fire(hit, ui.Hook.ONCLICK, 12, 12)
+        raw.x = raw.x - 40
+        fire(hit, ui.Hook.ONHOLD, 12, 12)
+        expect(group.members[1], peer, "native own tab can reorder within its row")
+        expect(peer.dragState, nil, "native in-row reorder keeps membership")
+        expect(dragged.visual.x, startX, "native dragged artwork follows its pointer grip")
+        emit("Logic")
+        expect(displaced.visual.x > startX and displaced.visual.x < startX + 40, true,
+            "native own peer slides through an intermediate position")
+        expect(displaced.hit.x, ranged.frame.x + displaced.visual.x,
+            "native sliding peer input follows artwork")
+        for _ = 1, 12 do emit("Logic") end
+        expect(displaced.visual.x, startX + 40, "native own peer settles into the vacated slot")
+        if finish == "escape" then
+            emit("KeyDown", { gameKey = GameKey.ESCAPE })
+            expect(group.members[1], nativePanel, "native reorder cancellation restores original order")
+            expect(group.active, nativePanel, "native reorder cancellation restores original selection")
+        else
+            fire(hit, ui.Hook.ONRELEASE)
+            expect(group.members[1], peer, "native reorder release commits new order")
+            expect(group.active, peer, "native reorder release keeps the dragged page selected")
+        end
+        expectNoDrag(peer, "native reorder completion")
+        expect(hit.width, 40, "native reorder release restores normal input width")
+        expect(hit.height, 28, "native reorder release restores normal input height")
+        Mouse.GetPosition = function() return nil end
+    end
     nativePanel:SelectTab()
     peer:Destroy()
     expect(nativePanel.root.hidden, false, "destroying an inactive native member preserves selection")
@@ -1985,7 +2087,14 @@ do
     notes.body:SetSize(371, 337)
     notes.scroll:SetPos(4, 16)
     notes.scroll:SetSize(371, 337)
-    begin(nativePanel); move(nativePanel, 300, 500); move(nativePanel, 650, 130); release(nativePanel)
+    begin(nativePanel); move(nativePanel, 650, 106)
+    expect(visibleIcons(area, nativePanel.tabIcon), 1, "standalone header previews its incoming tab")
+    expect(wrapper.y, 0, "standalone preview does not inset native content")
+    expect(wrapper.height, 337, "standalone preview does not shrink native content")
+    expect(wrapper.hidden, false, "standalone preview leaves native content visible")
+    nativePanel:_CancelDrag()
+    expect(visibleIcons(area, nativePanel.tabIcon), 0, "cancelling standalone preview removes its artwork")
+    begin(nativePanel); move(nativePanel, 650, 106); release(nativePanel)
     expect(nativePanel._nisNative ~= nil, true, "standalone Notes synthesizes a native and own tab row")
     expect(wrapper.y, 28, "standalone docking reserves one band in the embedded wrapper")
     expect(wrapper.height, 309, "standalone wrapper shrinks without moving individual native controls")

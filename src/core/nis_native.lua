@@ -16,6 +16,7 @@ local pending = {}
 local restoring = false
 local restorePending
 local EVENT_ID = "prettyui_nis_native"
+local previewState
 local nextHook = 0
 local HEIGHT, WIDTH, SEAM, MAX_TABS = 28, 40, 4, 128
 local art = Sprites.NIS_PANEL
@@ -738,7 +739,17 @@ local function align(group)
         end
         for index, panel in ipairs(group.members) do
             local tab = group.bindings[panel].tabs[i]
-            alignTab(tab, band.x + host.used + (index - 1) * WIDTH, band.y, show)
+            local target = band.x + host.used + (index - 1) * WIDTH
+            local drag = group.tabDrag
+            local x = target
+            if drag and show then
+                if drag.panel == panel then
+                    x = drag.x - chrome.x
+                else
+                    x = tab.slideX or target
+                end
+            end
+            alignTab(tab, x, band.y, show)
             local selected = show and group.active == panel
             local value = selected and art.tabSelected or art.tabUnselected
             if tab.background.spriteID ~= value then tab.background.spriteID = value end
@@ -1235,23 +1246,24 @@ local function reconcileRoots(group)
 end
 
 local function saveGroup(group)
-    if restoring or group.attaching then return end
+    if restoring or group.attaching or group.tabDrag then return end
+    for _, member in ipairs(group.members) do
+        if member._nisNativeTransaction then return end
+    end
     local frames = {}
     for _, host in ipairs(group.hosts) do frames[#frames + 1] = host.spec.name end
     table.sort(frames)
     for index, panel in ipairs(group.members) do
-        if not panel._nisNativeTransaction then
-            Persistence.native(panel, {
-                frame = group.hosts[group.current].spec.name, frames = frames,
-                index = index, selected = group.active == panel,
-                free = group.bindings[panel].free,
-            })
-        end
+        Persistence.native(panel, {
+            frame = group.hosts[group.current].spec.name, frames = frames,
+            index = index, selected = group.active == panel,
+            free = group.bindings[panel].free,
+        })
     end
 end
 
 local function stopTick()
-    if subscribed and #groups == 0 and next(pending) == nil then
+    if subscribed and #groups == 0 and next(pending) == nil and not previewState then
         Event.Logic.Unsubscribe(EVENT_ID)
         subscribed = false
     end
@@ -1322,6 +1334,15 @@ local function tick()
             restorePending(panel)
         end
     end
+    if previewState then
+        local state = previewState
+        if state.panel._destroyed or not state.panel.root or not state.panel.dragState
+            or not ui.Interfaces:GetInterface(state.panel.interfaceID)
+            or not same(state.panel.parent, component(id.Component.TOPLEVEL_V2__GAME_AREA))
+            or identity(component(state.frame)) ~= state.key then
+            Native.clearPreview(state.panel)
+        end
+    end
     stopTick()
     -- Reconcile one shared group at a time; native clients own frame geometry.
     for index = #groups, 1, -1 do
@@ -1355,6 +1376,23 @@ local function tick()
                     local rootReflow = reconcileRoots(group)
                     local lockReflow = reconcileLock(group, current)
                     local repainted = reconcilePage(group, current)
+                    local drag = group.tabDrag
+                    if drag then
+                        local host = group.hosts[current]
+                        local band = tabBand(host)
+                        for index, panel in ipairs(group.members) do
+                            if panel ~= drag.panel then
+                                local tab = group.bindings[panel].tabs[current]
+                                local target = band.x + host.used + (index - 1) * WIDTH
+                                local distance = target - (tab.slideX or target)
+                                if distance ~= 0 then
+                                    tab.slideX = (tab.slideX or target)
+                                        + (distance > 0 and 1 or -1)
+                                            * math.min(math.abs(distance), math.max(1, math.ceil(math.abs(distance) * 0.4)))
+                                end
+                            end
+                        end
+                    end
                     if group.failure then error(group.failure) end
                     align(group)
                     if lockReflow or repainted or rootReflow then raiseGroup(group) end
@@ -1381,6 +1419,101 @@ local function startTick()
     end)
     subscribed = true
 end
+
+-- A candidate is a freshly captured native host. Preview owns only GAME_AREA
+-- components; it never parents artwork to a native frame or changes membership.
+function Native.clearPreview(panel)
+    local state = previewState
+    if not state or panel and state.panel ~= panel then return end
+    previewState = nil
+    if state.chrome and same(state.area, component(id.Component.TOPLEVEL_V2__GAME_AREA)) then
+        state.chrome:Destroy()
+    end
+    stopTick()
+end
+
+function Native.preview(panel, host)
+    if not host or not panel or panel._destroyed or not panel.root
+        or not ui.Interfaces:GetInterface(panel.interfaceID)
+        or not same(panel.parent, component(id.Component.TOPLEVEL_V2__GAME_AREA))
+        or not host.frame or not host.spec
+        or identity(component(host.spec.frame)) ~= host.key then
+        Native.clearPreview(panel)
+        return nil
+    end
+    local members = panel._nisGroup and panel._nisGroup.members
+    local state = previewState
+    if state and (state.panel ~= panel or state.key ~= host.key
+        or state.grouped ~= host.grouped or state.count ~= (members and #members or 1)
+        or state.nativeIcon ~= host.nativeIcon or not state.buffer or not state.divider
+        or #state.tabs ~= state.count or not host.grouped and not state.nativeTab) then
+        Native.clearPreview()
+        state = nil
+    end
+    if not state then
+        local chrome = Components.new(ui.Layer, panel.parent, { _categoryPolicy = "auto" })
+        chrome.clickthrough, chrome.enabled = true, false
+        state = { panel = panel, area = panel.parent, key = host.key, frame = host.spec.frame,
+            grouped = host.grouped, nativeIcon = host.nativeIcon,
+            count = members and #members or 1, chrome = chrome, tabs = {} }
+        previewState = state -- even a partial construction is cleaned up on stop
+        state.buffer = ownSprite(chrome, art.tabBufferTile)
+        state.buffer.isTiling = true
+        state.divider = ownSprite(chrome, art.tabBarTile)
+        state.divider.isTiling = true
+        if not host.grouped then
+            local nativeTab = Components.new(ui.Layer, chrome, { _categoryPolicy = "auto" })
+            nativeTab:SetSize(WIDTH, HEIGHT)
+            nativeTab.clickthrough = true
+            local background = ownSprite(nativeTab, art.tabUnselected)
+            background:SetSize(WIDTH, HEIGHT)
+            local icon = ownSprite(nativeTab, host.nativeIcon)
+            icon:SetPos(8, 2)
+            icon:SetSize(24, 24)
+            state.nativeTab = nativeTab
+        end
+        for index = 1, state.count do
+            local member = members and members[index] or panel
+            local visual = Components.new(ui.Layer, chrome, { _categoryPolicy = "auto" })
+            visual:SetSize(WIDTH, HEIGHT)
+            visual.clickthrough = true
+            local background = ownSprite(visual,
+                member == (panel._nisGroup and panel._nisGroup.active or panel)
+                    and art.tabSelected or art.tabUnselected)
+            background:SetSize(WIDTH, HEIGHT)
+            local icon = ownSprite(visual, member.tabIcon or art.defaultIcon)
+            icon:SetPos(8, 2)
+            icon:SetSize(24, 24)
+            state.tabs[index] = visual
+        end
+        startTick()
+    end
+    local x, y, width, height = rectInParent(panel, host.frame)
+    local chrome = state.chrome
+    if chrome.x ~= x or chrome.y ~= y then chrome:SetPos(x, y) end
+    if chrome.width ~= width or chrome.height ~= height then chrome:SetSize(width, height) end
+    local band = tabBand(host)
+    local occupiedGroup = frameGroup(host)
+    local occupied = host.used + (occupiedGroup and #occupiedGroup.members or 0) * WIDTH
+    local bufferX = band.x + (host.grouped and occupied or 0)
+    local bufferWidth = band.width - (host.grouped and occupied or 0)
+    if state.buffer.x ~= bufferX or state.buffer.y ~= band.y then state.buffer:SetPos(bufferX, band.y) end
+    if state.buffer.width ~= bufferWidth then state.buffer:SetSize(bufferWidth, HEIGHT - SEAM) end
+    if state.divider.x ~= bufferX or state.divider.y ~= band.y + HEIGHT - SEAM then
+        state.divider:SetPos(bufferX, band.y + HEIGHT - SEAM)
+    end
+    if state.divider.width ~= bufferWidth then state.divider:SetSize(bufferWidth, SEAM) end
+    if state.nativeTab and (state.nativeTab.x ~= band.x or state.nativeTab.y ~= band.y) then
+        state.nativeTab:SetPos(band.x, band.y)
+    end
+    for index, visual in ipairs(state.tabs) do
+        local tx, ty = band.x + occupied + (index - 1) * WIDTH, band.y
+        if visual.x ~= tx or visual.y ~= ty then visual:SetPos(tx, ty) end
+    end
+    chrome:MoveToFront()
+    return chrome
+end
+
 
 local function buildGroup(host, area)
     local found = discover(area)
@@ -1416,6 +1549,12 @@ end
 local function abandonMember(group, panel)
     local binding = group.bindings[panel]
     if not binding then return end
+    if group.tabDrag then
+        group.tabDrag = nil
+        for _, member in ipairs(group.members) do
+            for _, tab in ipairs(group.bindings[member].tabs) do tab.slideX = nil end
+        end
+    end
     for _, tab in ipairs(binding.tabs) do destroyTab(tab) end
     group.bindings[panel] = nil
     for index, member in ipairs(group.members) do
@@ -1701,6 +1840,89 @@ function Native.sync(panel)
     if not ok then binding.group.failure = problem; warn(problem); return false end
     return true
 end
+-- pointerX and gripX are in GAME_AREA parent units. Move only own members;
+-- native script-owned artwork and input remain at their original positions.
+function Native.reorder(panel, pointerX, gripX)
+    local binding = panel and panel._nisNative
+    if not binding or type(pointerX) ~= "number" or type(gripX) ~= "number" then return false end
+    local group = binding.group
+    local current = selectedFrame(group)
+    if not current then return false end
+    local host = group.hosts[current]
+    local frameX = rectInParent(panel, host.frame)
+    local stripX = frameX + tabBand(host).x + host.used
+    local drag = group.tabDrag
+    if drag and drag.panel ~= panel then return false end
+    if not drag then
+        drag = { panel = panel }
+        group.tabDrag = drag
+        for _, member in ipairs(group.members) do
+            for _, tab in ipairs(group.bindings[member].tabs) do
+                if tab.visual then tab.slideX = tab.visual.x end
+            end
+        end
+    end
+    drag.x = math.floor(pointerX - gripX + 0.5)
+    local nextIndex = math.max(1, math.min(#group.members,
+        math.floor((drag.x - stripX + WIDTH / 2) / WIDTH) + 1))
+    for index, member in ipairs(group.members) do
+        if member == panel then
+            if index ~= nextIndex then
+                table.remove(group.members, index)
+                table.insert(group.members, nextIndex, panel)
+            end
+            break
+        end
+    end
+    align(group)
+    local tab = binding.tabs[current]
+    if tab.visual then tab.visual:MoveToFront() end
+    return true
+end
+
+-- Finishing with the press-time snapshot cancels both reorder and selection.
+-- Finishing without one commits the order (unless a tear-out transaction is
+-- still pending); detached tab input remains owned by the press/capture.
+function Native.finishTabDrag(panel, snapshot)
+    local binding = panel and panel._nisNative
+    if not binding then return false end
+    local group = binding.group
+    if group.tabDrag and group.tabDrag.panel ~= panel then return false end
+    group.tabDrag = nil
+    if snapshot and snapshot.index then
+        for index, member in ipairs(group.members) do
+            if member == panel then
+                table.remove(group.members, index)
+                table.insert(group.members, math.min(snapshot.index, #group.members + 1), panel)
+                break
+            end
+        end
+    end
+    for _, member in ipairs(group.members) do
+        for _, tab in ipairs(group.bindings[member].tabs) do tab.slideX = nil end
+    end
+    if snapshot then
+        local active = snapshot.active
+        if active and group.bindings[active] then
+            if group.active ~= active then return Native.select(active) end
+        elseif not active then
+            nativePage(group)
+        end
+    end
+    local current = selectedFrame(group)
+    if current then align(group) end
+    saveGroup(group)
+    return true
+end
+
+local function occupiedBounds(panel, group, host)
+    local band = tabBand(host)
+    local origin, parentOrigin = band.xyGlobal, panel.parent.xyGlobal
+    local left = origin.x - parentOrigin.x
+        + (host.grouped and host.backgrounds[1].component.x or 0)
+    return left, origin.y - parentOrigin.y,
+        origin.x - parentOrigin.x + host.used + #group.members * WIDTH - left, HEIGHT
+end
 
 function Native.contains(panel, x, y)
     local binding = panel and panel._nisNative
@@ -1709,10 +1931,9 @@ function Native.contains(panel, x, y)
     local current = selectedFrame(group)
     local host = current and group.hosts[current]
     if not host then return false end
-    local band = tabBand(host)
-    local origin, parentOrigin = band.xyGlobal, panel.parent.xyGlobal
-    local left, top = origin.x - parentOrigin.x, origin.y - parentOrigin.y
-    return x >= left and x < left + band.width and y >= top and y < top + HEIGHT
+    local left, top, width, height = occupiedBounds(panel, group, host)
+    return x >= left and x < left + width
+        and y >= top and y < top + height
 end
 
 function Native.snapshot(panel)
@@ -1724,10 +1945,13 @@ function Native.snapshot(panel)
     end
     local frames = {}
     for _, host in ipairs(group.hosts) do frames[#frames + 1] = host.spec.frame end
-    return { frame = group.hosts[group.current].spec.frame, frames = frames, index = index,
+    local current = selectedFrame(group) or group.current
+    local x, y, width, height = occupiedBounds(panel, group, group.hosts[current])
+    return { frame = group.hosts[current].spec.frame, frames = frames, index = index,
         free = { x = binding.free.x, y = binding.free.y,
             width = binding.free.width, height = binding.free.height },
-        selected = group.active == panel }
+        selected = group.active == panel, active = group.active,
+        tabBounds = { x = x, y = y, width = width, height = height } }
 end
 
 function Native.restore(panel, snapshot)
@@ -1752,11 +1976,19 @@ function Native.restore(panel, snapshot)
             end
         end
     end
-    if snapshot.selected then return Native.select(panel) end
+    if snapshot.active and group.bindings[snapshot.active] then
+        return Native.select(snapshot.active)
+    end
+    if not snapshot.active then
+        nativePage(group)
+    elseif snapshot.selected then
+        return Native.select(panel)
+    end
     return Native.sync(panel)
 end
 
 function Native.shutdown()
+    Native.clearPreview()
     for panel in pairs(pending) do panel._nisNativePending = nil end
     pending = {}
     local complete = true

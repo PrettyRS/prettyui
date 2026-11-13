@@ -86,7 +86,11 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
         end
     end
     tab = tab or setmetatable({ member = panel, interfaceID = view.interfaceID }, Tab)
-    tab.preview, tab.x = preview, x
+    tab.preview, tab.targetX = preview, x
+    tab.x = view.dragMember and tab.x or x
+    tab.x = tab.x or x
+    tab.visual = visual
+    visual:SetPos(tab.x, 0)
     tab.background = sprite(view, visual,
         selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected)
     tab.background:SetSize(NisTabs.WIDTH, NisTabs.HEIGHT)
@@ -222,6 +226,55 @@ function NisTabs:Contains(parentX, parentY)
     local top = root.y + (self.panel.locked and 0 or 12) + CORNER
     return parentX >= left and parentX < left + root.width - CORNER * 2
         and parentY >= top and parentY < top + NisTabs.HEIGHT
+end
+
+-- Empty strip space is a docking target, not a reason to retain a dragged tab.
+function NisTabs:ContainsDrag(parentX, parentY)
+    if not self:Contains(parentX, parentY) then return false end
+    local right = 0
+    for _, tab in ipairs(self.tabs) do
+        right = math.max(right, tab.targetX + NisTabs.WIDTH)
+    end
+    for _, item in ipairs(self.navigationHits) do
+        right = math.max(right, item.x + NAV_WIDTH)
+    end
+    return parentX < self.panel.root.x + CORNER + right
+end
+
+function NisTabs:SetDrag(member, parentX, gripX)
+    self.dragMember = member
+    for _, tab in ipairs(self.tabs) do
+        if tab.member == member then
+            tab.x = math.floor(parentX - self.root.x - gripX + 0.5)
+            tab.visual:SetPos(tab.x, 0)
+            tab.visual:MoveToFront()
+            break
+        end
+    end
+end
+
+-- Logic runs at 50 Hz: ease displaced peers into their new slots, preserving
+-- their current positions if the pointer reverses before the slide completes.
+function NisTabs:StepDrag()
+    if not self.dragMember or not loaded(self) then return end
+    for _, tab in ipairs(self.tabs) do
+        if tab.member ~= self.dragMember and tab.x ~= tab.targetX then
+            local delta = tab.targetX - tab.x
+            tab.x = tab.x + (delta > 0 and 1 or -1) * math.ceil(math.abs(delta) * 0.4)
+            tab.visual:SetPos(tab.x, 0)
+        end
+    end
+    self:Sync(self.panel.root.hidden == true)
+end
+
+function NisTabs:FinishDrag()
+    self.dragMember = nil
+    if not loaded(self) then return end
+    for _, tab in ipairs(self.tabs) do
+        tab.x = tab.targetX
+        tab.visual:SetPos(tab.x, 0)
+    end
+    self:Sync(self.panel.root.hidden == true)
 end
 
 function NisTabs:Refresh(members, active, previewPanel)
@@ -362,6 +415,11 @@ function NisTabs:Refresh(members, active, previewPanel)
     self.active, self.previewPanel = active, previewPanel
     self.pageIndex, self.pageDirty = page, false
     self.bandWidth, self.bandY = bandWidth, bandY
+    if self.dragMember then
+        for _, tab in ipairs(self.tabs) do
+            if tab.member == self.dragMember then tab.visual:MoveToFront(); break end
+        end
+    end
     self:Sync(root.hidden == true)
 end
 

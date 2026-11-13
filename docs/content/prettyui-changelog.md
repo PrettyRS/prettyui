@@ -35,6 +35,7 @@ hero:
 
 
 ### Fixed
+- Matched NisPanel nesting previews more closely to native: the destination tab row appears while the orange outline retains the dragged size. Displaced PrettyUI tabs slide during reordering, including in native hosts, and tabs can tear out past any edge of the occupied row without immediately redocking into empty strip space.
 - Fixed native-tab transfers losing the moved panel's saved host and selection before plugin restart, leaving only the peer restored in hosts such as Prayer. Drag completion now persists the settled native group after clearing transaction state.
 - Matched the native dark tab-strip backdrop for PrettyUI tab groups and synthetic native-host rows using the native buffer sprite. Icons and tab input remain unchanged; existing native rows are not darkened twice.
 - Fixed unavailable Familiar rejecting docking previews when its interface remains loaded with an unparented 0 × 0 root. Only mounted native pages participate; dismissed pages release borrowed layout and visibility before remounting.
