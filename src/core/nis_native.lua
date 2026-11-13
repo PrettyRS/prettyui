@@ -15,9 +15,10 @@ local WorldMap = require("src/core/world_map")
 local Native = {}
 local groups, byFrame = {}, {}
 local subscribed = false
-local pending = {}
+local pending = {} -- Panel -> earliest native logic sequence for restoration.
 local restoring = false
-local restorePending
+local restoringBatch = false
+local restorePending, startTick
 local EVENT_ID = "prettyui_nis_native"
 local previewState
 local logicSequence = 0
@@ -471,7 +472,8 @@ local function captureHiddenGroup(spec, area)
 end
 
 function Native.candidate(panel, x, y)
-    if WorldMap.isSuspended() then return nil end
+    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
+        or panel and panel._nisClassic then return nil end
     if not panel or panel._nisNative or not panel.root or panel.locked
         or not ui.Interfaces:GetInterface(panel.interfaceID) then return nil end
     local area = component(id.Component.TOPLEVEL_V2__GAME_AREA)
@@ -544,6 +546,27 @@ function Native.rect(panel, host)
     if not frame or not panel or not panel.parent then return nil end
     local x, y, width, height = rectInParent(panel, frame)
     return { x = x, y = y, width = width, height = height }
+end
+
+local function hasCapacity(group, host)
+    if tabBand(host).width < host.used + WIDTH * #group.members
+        or host.content.height <= HEIGHT then return false end
+    local height = host.content.height - (group.grouped and 0 or HEIGHT)
+    for _, panel in ipairs(group.members) do
+        if host.content.width < panel.minWidth or height < panel.minHeight
+            or host.content.width > (panel.maxWidth or math.huge)
+            or height > (panel.maxHeight or math.huge) then return false end
+    end
+    return true
+end
+
+local function checkCapacity(group)
+    for _, host in ipairs(group.hosts) do
+        if not hasCapacity(group, host) then
+            group.capacityLost = true
+            error("native host resized out of docking capacity")
+        end
+    end
 end
 
 local function validHost(group, host)
@@ -954,7 +977,7 @@ local function align(group)
     group.current = current
     -- Attachment aligns once before selecting the incoming page. That temporary
     -- selection is not a content deactivation; commit the lifecycle afterward.
-    if not group.attaching then
+    if not group.attaching and not restoringBatch then
         for _, panel in ipairs(group.members) do
             if panel ~= group.active or panel._nisHidden then panel:_SyncContent(false) end
         end
@@ -990,7 +1013,7 @@ local function align(group)
                 if not visible and panel.content then Tooltip.hideContextTooltips(panel.content) end
                 if panel._scroll then panel._scroll:_RefreshClipTargets() end
             end
-            if not group.attaching then panel:_SyncContent(visible) end
+            if not group.attaching and not restoringBatch then panel:_SyncContent(visible) end
             if changed or visibilityChanged then
                 panel:_SyncChrome()
                 panel:_SyncOverlays(not visible)
@@ -2032,17 +2055,21 @@ local function finishGroup(group)
 end
 
 local function tick()
-    if WorldMap.isSuspended() then return end
+    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI() then return end
     logicSequence = logicSequence + 1
+    -- Commit content visibility only after all due native members have rejoined.
+    restoringBatch = true
     for panel in pairs(pending) do
         if not panel._nisNativePending or panel._destroyed or not panel.root
             or not ui.Interfaces:GetInterface(panel.interfaceID) then
             pending[panel] = nil
-        elseif not panel.dragState and not panel._nisTabPress
+        elseif logicSequence >= pending[panel] and not panel._nisClassic
+            and not panel.dragState and not panel._nisTabPress
             and not (panel.resize and panel.resize.dragState) then
             restorePending(panel)
         end
     end
+    restoringBatch = false
     if previewState then
         local state = previewState
         if state.panel._destroyed or not state.panel.root or not state.panel.dragState
@@ -2058,6 +2085,7 @@ local function tick()
         local group = groups[index]
         if not group.dead and #group.members > 0 and (not group.mapPaused or mapReady(group)) then
             group.mapPaused = nil
+            group.capacityLost = nil
             local ok, problem = pcall(function()
                 syncObservers(group)
                 if group.nativeSort and (editingLocked(group) or group.nativeSort.mapCancelled) then
@@ -2082,8 +2110,13 @@ local function tick()
                     group.nativeSort = nil
                     settledSort = true
                 end
+                -- A reservation reflow can temporarily shrink even visible
+                -- hosts. Preserve the whole group before discovery can mistake
+                -- an uncapturable row for a native tab split.
+                checkCapacity(group)
                 local changed = reconcile(group)
                 if changed == nil then suspend(group); return end
+                checkCapacity(group)
                 if settledSort then
                     -- Native sort completion can be followed by one delayed
                     -- baseline repaint, just like the lock reflow path.
@@ -2091,14 +2124,6 @@ local function tick()
                 end
                 for _, host in ipairs(group.hosts) do
                     if not validHost(group, host) then error("native host resized out of capacity or retired") end
-                    local height = host.content.height - (group.grouped and 0 or HEIGHT)
-                    for _, panel in ipairs(group.members) do
-                        if host.content.width < panel.minWidth or height < panel.minHeight
-                            or host.content.width > (panel.maxWidth or math.huge)
-                            or height > (panel.maxHeight or math.huge) then
-                            error("native host resized outside the panel's limits")
-                        end
-                    end
                 end
                 local current = selectedFrame(group)
                 local selectionChanged = group.pending or current ~= group.current
@@ -2151,15 +2176,30 @@ local function tick()
             if not ok then
                 warn(problem)
                 local members = { table.unpack(group.members) }
+                local remembered = group.capacityLost and {} or nil
+                if remembered then
+                    for _, panel in ipairs(members) do remembered[panel] = Native.remember(panel) end
+                end
                 for _, panel in ipairs(members) do Native.detach(panel) end
                 if not group.dead and #group.members == 0 then finishGroup(group) end
+                if remembered then
+                    -- Release unsafe geometry, not logical membership. Native
+                    -- layout owns when these named hosts have room again.
+                    for _, panel in ipairs(members) do
+                        if not panel._nisNative then
+                            panel._nisNativePending = remembered[panel]
+                            pending[panel] = 0
+                        end
+                    end
+                    startTick()
+                end
             end
         end
     end
 end
 
 local function beforeDraw()
-    if WorldMap.isSuspended() then return end
+    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI() then return end
     for index = #groups, 1, -1 do
         local group = groups[index]
         if group.paintPending and not group.dead and #group.members > 0
@@ -2172,10 +2212,11 @@ local function beforeDraw()
     end
 end
 
-local function startTick()
+startTick = function()
     if subscribed then return end
     Event.Logic.Subscribe(EVENT_ID, function()
         local ok, problem = pcall(tick)
+        restoringBatch = false -- Also release the guard if a native getter throws.
         if not ok then warn(problem) end
     end)
     Event.Draw.Subscribe(EVENT_ID, function()
@@ -2475,6 +2516,7 @@ local function attach(panel, group, free)
 end
 
 local function dock(panel, target, savedFree, insertion)
+    if NativeInterfaceSettings.isClassicUI() or panel and panel._nisClassic then return false end
     if not panel or panel._nisNative or panel.locked and not restoring or not panel.root
         or not ui.Interfaces:GetInterface(panel.interfaceID) then return false end
     local area = component(id.Component.TOPLEVEL_V2__GAME_AREA)
@@ -2498,8 +2540,8 @@ local function dock(panel, target, savedFree, insertion)
     if not group then return false end
     local members = panel._nisGroup and { table.unpack(panel._nisGroup.members) } or { panel }
     for _, member in ipairs(members) do
-        if member._nisNative or member.locked and not restoring or member._nisHidden
-            or not member.root or not same(member.parent, panel.parent)
+        if member._nisClassic or member._nisNative or member.locked and not restoring
+            or member._nisHidden or not member.root or not same(member.parent, panel.parent)
             or not ui.Interfaces:GetInterface(member.interfaceID) then return false end
     end
     for _, item in ipairs(group.hosts) do
@@ -2574,14 +2616,16 @@ local function dock(panel, target, savedFree, insertion)
 end
 
 function Native.dock(panel, target, savedFree, insertion)
-    if WorldMap.isSuspended() then return false end
+    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
+        or panel and panel._nisClassic then return false end
     return dock(panel, target, savedFree, insertion)
 end
 
 -- Rebind by named host identity once the native layout is available. Startup
 -- restoration is allowed while locked; explicit docking still is not.
 restorePending = function(panel)
-    if WorldMap.isSuspended() then return end
+    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
+        or panel._nisClassic then return end
     local snapshot = panel._nisNativePending
     if not snapshot or panel._nisHidden or panel._nisGroup then return end
     restoring = true
@@ -2636,12 +2680,14 @@ restorePending = function(panel)
     end
 end
 
-function Native.register(panel, activating)
-    if not panel._nisNativePending then return end
+function Native.register(panel, activating, delayTicks)
+    if NativeInterfaceSettings.isClassicUI() or panel._nisClassic
+        or not panel._nisNativePending then return end
     panel._nisNativeActivating = activating == true
-    pending[panel] = true
+    local delay = delayTicks or 0
+    pending[panel] = logicSequence + delay
     startTick()
-    restorePending(panel)
+    if delay == 0 then restorePending(panel) end
 end
 
 function Native.lockChanged(panel, locked)

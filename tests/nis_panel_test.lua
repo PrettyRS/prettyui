@@ -149,7 +149,8 @@ id = {
         return nextSpriteID
     end }),
     Font = { MUSEO_SANS_15PT_REGULAR = 1, CINZEL_13PT_BOLD = 2 },
-    VarPlayer = { TOPLEVEL_V2_SKINS_VARP = 12, TOPLEVEL_V2_TRANSPARENCY = -13 },
+    VarPlayer = { TOPLEVEL_V2_SKINS_VARP = 12, TOPLEVEL_V2_TRANSPARENCY = -13,
+        TOPLEVEL_V2_GENERAL_VARP = 14 },
     Component = {
         TOPLEVEL_V2__GAME_AREA = (1477 << 16) | 61,
         TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM = (1477 << 16) | 62,
@@ -194,7 +195,9 @@ Event = {
     KeyDown = event("KeyDown"), WindowFocusChanged = event("WindowFocusChanged"),
 }
 local locked, transparency = true, 0
+local classicMode = { value = 0 }
 var = { VarPlayer = {
+    TOPLEVEL_V2_LEGACY_INTERFACE = classicMode,
     TOPLEVEL_V2_CUSTOMIZATION_LOCK = setmetatable({}, {
         __index = function() return locked and 1 or 0 end,
     }),
@@ -233,7 +236,12 @@ local function copy(value)
     for key, child in pairs(value) do result[key] = copy(child) end
     return result
 end
+local savedPreferences = {}
 PersistentDB = {
+    GetString = function(_, key) return savedPreferences[key] end,
+    SetString = function(_, key, value) savedPreferences[key] = value; return true end,
+    GetBool = function(_, key) return savedPreferences[key] end,
+    SetBool = function(_, key, value) savedPreferences[key] = value; return true end,
     GetStructuredData = function(_, key) return copy(savedLayouts[key]) end,
     SetStructuredData = function(_, key, value)
         savedLayouts[key] = copy(value)
@@ -1560,7 +1568,7 @@ do
     end
     local function restart()
         for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
-            "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence" }) do
+            "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence", "src/ribbon_bar" }) do
             package.loaded[name] = nil
         end
         NisPanel = require("src/nis_panel")
@@ -3351,7 +3359,7 @@ do
     do
         local function restart()
             for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
-                "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence" }) do
+                "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence", "src/ribbon_bar" }) do
                 package.loaded[name] = nil
             end
             NisPanel = require("src/nis_panel")
@@ -3710,7 +3718,7 @@ do
         end
     end
     for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
-        "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence" }) do
+        "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence", "src/ribbon_bar" }) do
         package.loaded[name] = nil
     end
     NisPanel = require("src/nis_panel")
@@ -3975,6 +3983,552 @@ do
         item.frame.nativeShown = false
         locked = false; transmit(12)
     end
+    -- Suspend real PrettyUI groups and named native membership without a
+    -- ribbon transition; the coordinator will perform this batch on mode exit.
+    do
+        local Group = require("src/core/nis_group")
+        local Native = require("src/core/nis_native")
+        local Persistence = require("src/core/nis_persistence")
+        local function record(name)
+            return savedLayouts["prettyui.nis-layout.v1"].panels["classic-suspend:" .. name]
+        end
+        local function sameData(actual, expected, label)
+            if type(expected) ~= "table" then
+                expect(actual, expected, label)
+                return
+            end
+            expect(type(actual), "table", label)
+            for key, value in pairs(expected) do
+                sameData(actual[key], value, label .. "." .. tostring(key))
+            end
+            for key in pairs(actual) do
+                expect(expected[key] ~= nil, true, label .. " has no extra " .. tostring(key))
+            end
+        end
+        local builds, released = {}, {}
+        local function create(name, extra)
+            local options = { id = "classic-suspend:" .. name, categoryID = "auto",
+                x = 40, y = 430, width = 280, height = 180,
+                buildContent = function(panel)
+                    builds[name] = (builds[name] or 0) + 1
+                    panel:AddTitle(name)
+                    return function() released[name] = (released[name] or 0) + 1 end
+                end }
+            for key, value in pairs(extra or {}) do options[key] = value end
+            return NisPanel.new(area, options)
+        end
+        local function suspend(panels)
+            -- The ribbon premarks the entire batch before any native detach or
+            -- resize callback. A premarked flag is not an existing suspension.
+            classicMode.value = 1
+            for _, owner in ipairs(panels) do owner._nisClassic = true end
+            for _, owner in ipairs(panels) do owner:_SetClassicMode(true) end
+        end
+        local function resume(panels)
+            local states, transientSelections = {}, {}
+            for _, owner in ipairs(panels) do
+                states[owner] = assert(owner._nisClassicState, "missing classic suspension record")
+                owner._contentReady = false
+                if owner._nisPersistenceID == nil and owner._nisGroup
+                    and owner._nisGroup.active == owner then
+                    transientSelections[#transientSelections + 1] = {
+                        panel = owner, snapshot = Group.snapshot(owner),
+                    }
+                end
+            end
+            classicMode.value = 0
+            for _, owner in ipairs(panels) do owner:_SetClassicMode(false) end
+            for _, selected in ipairs(transientSelections) do
+                Group.resume(selected.panel, selected.snapshot)
+            end
+            for _, owner in ipairs(panels) do
+                if owner:IsActive() then
+                    local restored = Persistence.setActive(owner, true, Group)
+                    if not restored and owner._nisInactiveGroup then
+                        Group.resume(owner, owner._nisInactiveGroup)
+                    end
+                    owner._nisNativePending = states[owner].native or owner._nisNativePending
+                    if owner._nisNativePending then Native.register(owner) end
+                end
+            end
+            for _, owner in ipairs(panels) do
+                owner._contentReady = states[owner].contentReady
+                owner:_SyncChrome()
+                owner:_SyncOverlays(owner.root.hidden == true)
+            end
+            for _, owner in ipairs(panels) do owner:_SyncContent(owner.root.hidden ~= true) end
+        end
+
+        locked = false; transmit(12)
+        notes.frame.nativeShown, notes.frame.visible = true, true
+        notes.frame:SetPos(500, 100)
+        notes.tabs.visible = true
+        notes.body:SetPos(4, 44); notes.body:SetSize(371, 309)
+        notes.scroll:SetPos(4, 44); notes.scroll:SetSize(371, 309)
+        notes:rebuild({ 9001, 9002 }, 1)
+        local a = create("a", { x = 110, y = 400 })
+        local b = create("b", { x = 410, y = 400, width = 310, height = 200 })
+        expect(a:DockTo(b), true, "suspension setup creates a persisted PrettyUI group")
+        local inactive = create("inactive", { x = 480, y = 400 })
+        expect(inactive:DockTo(a), true, "suspension setup saves a third group member")
+        b:SelectTab()
+        inactive:Hide()
+        local group = assert(a._nisGroup)
+        expect(group.active, b, "suspension setup selects the second modern tab")
+        local native = create("native", { x = 20, y = 440 })
+        expect(native:DockTo(notes.frame), true, "suspension setup docks to a named native host")
+        local nativeBinding = assert(native._nisNative)
+        local nativeSnapshot = Native.remember(native)
+        local free = create("free", { x = 290, y = 470 })
+        local pendingCandidate = create("candidate", { x = 70, y = 500 })
+        local transientA = NisPanel.new(area, { categoryID = "auto",
+            x = 60, y = 260, width = 220, height = 150 })
+        local transientB = NisPanel.new(area, { categoryID = "auto",
+            x = 310, y = 260, width = 230, height = 160 })
+        expect(transientA:DockTo(transientB), true, "transient group setup docks without stable IDs")
+        transientB:SelectTab()
+        local transientGroup = assert(transientA._nisGroup)
+        local tabX = notes.frame.x + notes.tabs.x + 12
+        local tabY = notes.frame.y + notes.tabs.y + 12
+        expect(Native.candidate(pendingCandidate, tabX, tabY) ~= nil, true,
+            "live-mode guard has a compatible native candidate before switching")
+        local savedA, savedB, savedInactive = copy(record("a")), copy(record("b")),
+            copy(record("inactive"))
+        local savedNative = copy(record("native"))
+        local savedGroup = copy(savedLayouts["prettyui.nis-layout.v1"].groups[savedA.group])
+        local firstBContent, firstNativeContent = b.content, native.content
+        local modernBuildsB, modernReleasedB = builds.b, released.b or 0
+        local modernReleasedNative = released.native or 0
+        local oldDragBounds = b.dragBounds
+        local oldHookID = oldDragBounds.hookID
+        expect(area.namedSubscriptions[ui.Hook.ONRESIZE][oldHookID] ~= nil, true,
+            "modern DragBounds owns a parent-resize subscription")
+
+        -- A native tick can race ahead of the ribbon's panel-flag batch.
+        classicMode.value = 1
+        expect(Native.candidate(pendingCandidate, tabX, tabY), nil,
+            "live classic mode rejects native hover before panel reconciliation")
+        expect(Native.dock(pendingCandidate, notes.frame), false,
+            "live classic mode rejects explicit native docking before reconciliation")
+        pendingCandidate._nisNativePending = copy(savedNative.native)
+        Native.register(pendingCandidate)
+        emit("Logic")
+        expect(pendingCandidate._nisNative, nil, "native tick cannot consume pending membership in classic")
+        sameData(pendingCandidate._nisNativePending, savedNative.native,
+            "native guard preserves deferred named membership")
+        pendingCandidate._nisNativePending = nil
+        local members = { a, b, inactive, native, free, pendingCandidate, transientA, transientB }
+        suspend(members)
+        expect(a._nisGroup, group, "suspension keeps runtime PrettyUI grouping")
+        expect(group.members[1], b, "suspension retains reordered first group member")
+        expect(group.members[2], a, "suspension retains reordered second group member")
+        expect(group.active, b, "suspension retains the selected modern group tab")
+        expect(inactive._nisGroup, nil, "disabled saved member is absent from the runtime group")
+        expect(savedGroup.members[3], "classic-suspend:inactive",
+            "saved group retains its inactive member")
+        expect(transientA._nisGroup, transientGroup, "transient group keeps its runtime identity")
+        expect(transientGroup.members[1], transientB, "transient group retains modern member order")
+        expect(transientGroup.active, transientB, "transient group retains modern selection")
+        expect(native._nisNative, nil, "native suspension detaches through native restoration")
+        expect(native._nisClassicState.contentReady, true, "suspension remembers original content readiness")
+        expect(b._nisClassicState.contentReady, true, "group suspension remembers content readiness")
+        sameData(native._nisClassicState.native, nativeSnapshot, "suspended native membership")
+        expect(native._nisClassicState.native.free == nativeBinding.free, false,
+            "suspended standalone rectangle is independently copied")
+        nativeBinding.free.x = -999
+        expect(native._nisClassicState.native.free.x, savedNative.native.free.x,
+            "retired binding cannot mutate suspended free geometry")
+        nativeBinding.free.x = savedNative.native.free.x
+        expect(b.content, nil, "classic entry releases the modern selected group page")
+        expect(native.content, nil, "classic entry releases native-docked consumer content")
+        expect(firstBContent.destroyed, true, "modern group controls are released")
+        expect(firstNativeContent.destroyed, true, "modern native controls are released")
+        expect(released.b, modernReleasedB + 1, "modern group cleanup runs once on entry")
+        expect(released.native, modernReleasedNative + 1, "modern native cleanup runs once on entry")
+        expect(b.dragBounds, nil, "classic entry destroys DragBounds controller")
+        expect(oldDragBounds.parent, nil, "old DragBounds releases its parent")
+        expect(area.namedSubscriptions[ui.Hook.ONRESIZE][oldHookID], nil,
+            "classic entry removes DragBounds parent-resize listener")
+        b:_SetClassicMode(true); native:_SetClassicMode(true)
+        expect(released.b, modernReleasedB + 1, "premarked suspension is idempotent")
+        expect(released.native, modernReleasedNative + 1, "premarked native detach is idempotent")
+        expect(b._nisClassicState.contentReady, true,
+            "repeated suspension keeps the original readiness snapshot")
+        sameData(native._nisClassicState.native, savedNative.native,
+            "repeated suspension keeps the original native membership")
+        b:_SyncContent(true)
+        expect(b.content, nil, "suspended page cannot build its hidden modern content")
+        expect(builds.b, modernBuildsB, "hidden shell callbacks cannot rebuild suspended content")
+        for _, owner in ipairs(members) do
+            expect(owner.root.hidden, true, "classic suspension hides every retained modern shell")
+            expect(owner.dragLayer.hidden, true, "classic suspension conceals modern drag capture")
+            expect(owner.dragLayer.enabled, false, "classic suspension disables modern drag input")
+            expect(owner.resize.handles.e.enabled, false, "classic suspension disables resize input")
+            owner:_BeginDrag(owner.dragLayer, 5, 5)
+            expect(owner.dragState, nil, "classic guard rejects programmatic drag initiation")
+        end
+        local rootX, rootY, rootWidth, rootHeight = b.root.x, b.root.y, b.root.width, b.root.height
+        area:SetSize(940, 650)
+        expectRect(b.root, rootX, rootY, rootWidth, rootHeight,
+            "parent resize cannot move a suspended modern shell")
+        local focus = var.VarClient.WORLDMAP_FOCUS
+        focus.value = 0; emit("VarTransmit", { var = focus, newValue = 0 })
+        focus.value = -1; emit("VarTransmit", { var = focus, newValue = -1 })
+        emit("Logic")
+        expect(require("src/core/world_map").isSuspended(), false, "native area is ready after map return")
+        expectRect(b.root, rootX, rootY, rootWidth, rootHeight,
+            "map return cannot resume modern placement during classic")
+        area:SetSize(1000, 700)
+        b:SetSize(600, 300)
+        b:Undock()
+        expect(b:DockTo(free), false, "classic docking cannot replace remembered group membership")
+        expectRect(b.root, rootX, rootY, rootWidth, rootHeight,
+            "classic size and undock leave remembered modern geometry unchanged")
+        expect(b._nisGroup, group, "classic undock does not mutate runtime membership")
+        expect(native:DockTo(notes.frame), false, "classic panel cannot rejoin native tab row")
+        Persistence.capture(b); Persistence.bounds(b); Persistence.native(native, nativeSnapshot)
+        sameData(record("a"), savedA, "classic group A persistence")
+        sameData(record("b"), savedB, "classic group B persistence")
+        sameData(record("inactive"), savedInactive, "classic inactive group member persistence")
+        sameData(record("native"), savedNative, "classic named native persistence")
+        sameData(savedLayouts["prettyui.nis-layout.v1"].groups[savedA.group], savedGroup,
+            "classic selection does not overwrite saved modern group selection")
+        Persistence.setActive(inactive, true, Group)
+        expect(record("inactive").active, true, "classic activation updates saved enabled state")
+        expect(inactive._nisGroup, nil, "classic activation does not restore modern group tabs")
+        Persistence.setActive(inactive, false, Group)
+        sameData(record("inactive"), savedInactive,
+            "classic enabled-state toggle preserves inactive group snapshot")
+        free._nisHidden = true
+        Persistence.setActive(free, false, Group)
+        expect(record("free").active, false, "explicit classic disable persists only enabled state")
+        expect(free.content, nil, "explicit classic disable leaves no modern page")
+        resume(members)
+        expect(a._nisGroup, b._nisGroup, "restoration rejoins the modern group")
+        expect(b._nisGroup.active, b, "restoration selects the saved modern group page")
+        expect(b.root.hidden, false, "restoration reveals only the selected group shell")
+        expect(a.root.hidden, true, "restoration keeps unselected group shell hidden")
+        expect(native._nisNative ~= nil, true, "restoration rejoins the named native host")
+        expect(native._nisNative.group.active, native, "restoration recovers native selection")
+        expect(free:IsActive(), false, "disabled classic panel remains disabled in modern")
+        expect(free.root.hidden, true, "disabled panel is not rebuilt on restoration")
+        expect(b.content ~= nil and b.content ~= firstBContent, true,
+            "modern content rebuilds once after the restoration batch")
+        expect(builds.b, modernBuildsB + 1, "only the selected group page rebuilds after mode exit")
+        expect(builds.a or 0, 1, "unselected group member remains unbuilt after mode exit")
+        expect(inactive:IsActive(), false, "disabled saved group member remains inactive")
+        expect(inactive.content, nil, "disabled saved group member does not rebuild")
+        expect(b.dragBounds ~= nil, true, "restoration recreates DragBounds")
+        expect(b.dragBounds.hookID == oldHookID, false, "restoration uses a fresh resize listener")
+        sameData(record("native"), savedNative, "restoration retains saved native geometry")
+        sameData(savedLayouts["prettyui.nis-layout.v1"].groups[savedA.group], savedGroup,
+            "restoration retains saved group order and selection")
+        expect(transientA._nisGroup, transientB._nisGroup,
+            "transient group survives classic restoration")
+        expect(transientB._nisGroup.active, transientB,
+            "transient group retains its modern selection on return")
+        expect(transientB.root.hidden, false, "transient selected shell returns after classic")
+        expect(transientA.root.hidden, true, "transient inactive shell stays hidden")
+        expect(transientB.content ~= nil, true, "transient selected content returns after batch")
+        local firstReturnB = b.content
+        suspend(members)
+        expect(firstReturnB.destroyed, true, "second classic entry releases restored content")
+        expect(native._nisClassicState.native.frame, savedNative.native.frame,
+            "second classic entry retains named native host")
+        resume(members)
+        expect(b._nisGroup.active, b, "second mode return keeps saved group selection")
+        expect(native._nisNative ~= nil, true, "second mode return restores named native membership")
+        expect(transientB._nisGroup.active, transientB,
+            "second mode return retains transient selection")
+        expect(builds.b, modernBuildsB + 2, "two classic exits each rebuild only selected modern content")
+        sameData(record("a"), savedA, "second mode return preserves group A geometry")
+        sameData(record("b"), savedB, "second mode return preserves group B geometry")
+        sameData(record("native"), savedNative, "second mode return preserves native geometry")
+        sameData(record("inactive"), savedInactive,
+            "second mode return preserves inactive group membership")
+        sameData(savedLayouts["prettyui.nis-layout.v1"].groups[savedA.group], savedGroup,
+            "second mode return preserves saved group selection")
+
+        -- Restart consumers while the classic mode is already live: neither
+        -- saved group members nor named native pages may mount a modern page.
+        for _, owner in ipairs(members) do owner:Destroy() end
+        classicMode.value = 1
+        builds, released = {}, {}
+        b = create("b"); native = create("native"); a = create("a")
+        inactive = create("inactive"); free = create("free")
+        expect(a._nisGroup, nil, "classic-first startup defers saved group restoration")
+        expect(b._nisGroup, nil, "classic-first startup does not select a modern group shell")
+        expect(native._nisNative, nil, "classic-first startup defers named native docking")
+        sameData(native._nisNativePending, savedNative.native, "classic-first native pending snapshot")
+        expectRect(b.root, savedB.x, savedB.y, savedB.width, savedB.height,
+            "classic-first group member retains saved modern placement")
+        expectRect(native.root, savedNative.x, savedNative.y, savedNative.width, savedNative.height,
+            "classic-first native member retains saved standalone placement")
+        expect(a.root.hidden and b.root.hidden and native.root.hidden, true,
+            "classic-first saved enabled panels start with hidden modern shells")
+        expect(a.content == nil and b.content == nil and native.content == nil, true,
+            "classic-first saved panels do not eagerly build consumer content")
+        expect(next(builds), nil, "classic-first saved panels invoke no builders")
+        expect(free:IsActive(), false, "classic-first startup restores saved disabled state")
+        expect(free.content, nil, "classic-first disabled member remains unbuilt")
+        expect(inactive:IsActive(), false, "classic-first saved group member remains inactive")
+        expect(inactive.content, nil, "classic-first inactive group member does not build")
+        local restarted = { a, b, inactive, native, free }
+        suspend(restarted)
+        sameData(native._nisClassicState.native, savedNative.native,
+            "classic-first pending native membership survives suspension")
+        sameData(record("a"), savedA, "classic-first group A persistence")
+        sameData(record("b"), savedB, "classic-first group B persistence")
+        sameData(record("native"), savedNative, "classic-first native persistence")
+        sameData(record("inactive"), savedInactive, "classic-first inactive group persistence")
+        resume(restarted)
+        expect(a._nisGroup, b._nisGroup, "classic-first group restores after mode exit")
+        expect(b._nisGroup.active, b, "classic-first group restores saved selection")
+        expect(a._nisGroup.members[1], b, "classic-first group restores saved order")
+        expect(native._nisNative ~= nil, true, "classic-first native host restores after mode exit")
+        expect(native._nisNative.group.active, native, "classic-first native selection restores")
+        expect(builds.a or 0, 0, "classic-first inactive tab never builds on restoration")
+        expect(builds.b, 1, "classic-first selected group page builds once")
+        expect(builds.native, 1, "classic-first selected native page builds once")
+        expect(builds.inactive or 0, 0, "classic-first inactive group member never builds")
+        expect(builds.free or 0, 0, "classic-first disabled page does not build on restoration")
+        -- Drive the same saved native members through the real coordinator,
+        -- including reversed registration order on a classic-first restart.
+        local function runNativeCycles()
+            local Ribbon = require("src/ribbon_bar")
+            local oldLookup = ui.Interfaces.GetComponent
+            local oldPos, oldSize, oldParent = area.SetPos, area.SetSize, area.parent
+            local named = {}
+            for _, name in ipairs({ "TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP",
+                "TOPLEVEL_V2__VIEWPORT", "TOPLEVEL_V2__GAMEVIEW_WINDOW" }) do
+                named[name] = id.Component[name]
+            end
+            local top = component(nil, "native mode-cycle top")
+            local viewport = component(nil, "native mode-cycle viewport")
+            top:SetSize(1000, 700); viewport:SetSize(1000, 700)
+            local view = component(nil, "native mode-cycle gameview")
+            for _, node in ipairs({ top, viewport, view }) do
+                node.interfaceID, node.staticID = area.interfaceID, nil
+                Interfaces.component(node)
+            end
+            local function setPosition(self, x, y, xp, yp, xs, ys)
+                self.position = { x = x, y = y, xParentPc = xp or 0, yParentPc = yp or 0,
+                    xSelfPc = xs or 0, ySelfPc = ys or 0 }
+                self.x = x + viewport.width * (xp or 0) - self.width * (xs or 0)
+                self.y = y + viewport.height * (yp or 0) - self.height * (ys or 0)
+            end
+            local function setSize(self, w, h, wp, hp)
+                self.size = { width = w, height = h, widthParentPc = wp or 0, heightParentPc = hp or 0 }
+                self.width, self.height = w + viewport.width * (wp or 0), h + viewport.height * (hp or 0)
+                local p = self.position
+                setPosition(self, p.x, p.y, p.xParentPc, p.yParentPc, p.xSelfPc, p.ySelfPc)
+                for _, child in ipairs(self.children) do child:Relayout() end
+                self:EmitResize()
+            end
+            area.parent, view.parent = viewport, viewport
+            area.SetPos, area.SetSize = setPosition, setSize
+            view.SetPos, view.SetSize = setPosition, setSize
+            area:SetSize(0, 0, 1, 1); area:SetPos(0, 0, .5, .5, .5, .5)
+            view:SetSize(0, 0, 1, 1)
+            local mounts = {}
+            for name, node in pairs({ TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP = top,
+                TOPLEVEL_V2__VIEWPORT = viewport, TOPLEVEL_V2__GAMEVIEW_WINDOW = view }) do
+                local packed = (node.interfaceID << 16) | node.staticID
+                id.Component[name], mounts[packed] = packed, node
+            end
+            function ui.Interfaces:GetComponent(packed, ...)
+                if select("#", ...) == 0 and mounts[packed] then return mounts[packed] end
+                return oldLookup(self, packed, ...)
+            end
+            config.Cursor.CURSOR_OPEN = { id = 7 }
+            local peer = create("native-peer")
+            expect(peer:DockTo(notes.frame), true, "second native member docks before mode cycle")
+            native:SelectTab()
+            local nativeIndex, peerIndex = Native.remember(native).index, Native.remember(peer).index
+            local nativeBuilds = builds.native
+            Ribbon.Start()
+            local function advance(ticks)
+                for _ = 1, ticks do emit("Logic") end
+            end
+            for pass = 1, 2 do
+                classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                expect(area.width, 956, "real native mode entry reserves collapsed rail")
+                expect(native._nisNative, nil, "real coordinator suspends named native membership")
+                a:Show()
+                expect(area.width, 596, "classic selection reserves expanded content beside native UI")
+                classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                expect(area.width, 1000, "mode exit releases reservation before deferred native restore")
+                expect(native._nisNative, nil, "mode return does not dock inside VarTransmit")
+                advance(9)
+                expect(native._nisNative, nil, "native docking waits through the layout settling interval")
+                expect(peer._nisNative, nil, "every native member respects the settling interval")
+                emit("Logic")
+                expect(native._nisNative ~= nil, true, "real coordinator restores named native member")
+                expect(peer._nisNative.group, native._nisNative.group, "native members restore to one group")
+                expect(native._nisNative.group.active, native, "native selection survives sequential detach")
+                expect(Native.remember(native).index, nativeIndex, "native first slot survives round trip")
+                expect(Native.remember(peer).index, peerIndex, "native second slot survives round trip")
+                expectRect(native.root, notes.frame.x + notes.body.x, notes.frame.y + notes.body.y,
+                    notes.body.width, notes.body.height, "deferred restore aligns with the current native content")
+                expect(builds.native, nativeBuilds + pass, "native content builds once after complete batch")
+                expect(b._nisGroup.active, b, "real native cycle retains independent PrettyUI selection")
+            end
+            -- Right-edge frames shrink with GAME_AREA. A delayed native pass
+            -- can briefly reapply the narrow layout after Modern has redocked
+            -- the panels; that must not permanently discard their targets.
+            do
+                local savedNativeMember, savedPeerMember = copy(record("native")), copy(record("native-peer"))
+                local nodes = { notes.frame, notes.body, notes.scroll, notes.tabs,
+                    ranged.frame, ranged.body, ranged.scroll, ranged.tabs }
+                local layouts = {}
+                for _, node in ipairs(nodes) do
+                    layouts[node] = { position = copy(node.position), size = copy(node.size) }
+                end
+                for _, item in ipairs({ notes, ranged }) do
+                    item.frame:SetPos(621, 100)
+                    item.frame:SetSize(-621, 357, 1, 0)
+                    item.body:SetSize(-8, 309, 1, 0)
+                    item.scroll:SetSize(-8, 309, 1, 0)
+                    item.tabs:SetSize(-8, 28, 1, 0)
+                end
+                for pass = 1, 2 do
+                    classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                    a:Show()
+                    expect(notes.frame.x > area.width, true, "expanded sidebar overlaps right-edge native host")
+                    classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                    advance(10)
+                    expect(native._nisNative ~= nil, true, "right-edge host initially accepts mode-return docking")
+                    -- Model a later native reflow still using the reduced width.
+                    notes.frame:SetSize(100, 357); ranged.frame:SetSize(100, 357)
+                    emit("Logic")
+                    expect(native._nisNative, nil, "undersized native host releases unsafe binding")
+                    expect(peer._nisNative, nil, "undersized native host releases every unsafe member")
+                    expect(native._nisNativePending ~= nil, true, "capacity loss retains selected native target")
+                    expect(peer._nisNativePending ~= nil, true, "capacity loss retains peer native target")
+                    emit("Logic"); emit("Logic")
+                    expect(native._nisNative, nil, "narrow host cannot prematurely reclaim a member")
+                    sameData(record("native"), savedNativeMember, "capacity loss preserves saved native membership")
+                    sameData(record("native-peer"), savedPeerMember, "capacity loss preserves saved peer membership")
+                    -- Another mode round trip must retain the deferred targets.
+                    classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                    classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                    notes.frame:SetSize(-621, 357, 1, 0); ranged.frame:SetSize(-621, 357, 1, 0)
+                    advance(10)
+                    expect(native._nisNative ~= nil, true, "settled right-edge host reclaims its member")
+                    expect(peer._nisNative.group, native._nisNative.group, "settled host reclaims the whole group")
+                    expect(native._nisNative.group.active, native, "capacity recovery restores selected tab")
+                    expect(Native.remember(native).index, nativeIndex, "capacity recovery restores first tab order")
+                    expect(Native.remember(peer).index, peerIndex, "capacity recovery restores peer tab order")
+                    sameData(record("native"), savedNativeMember, "capacity recovery preserves standalone geometry")
+                end
+                for _, node in ipairs(nodes) do
+                    local p, s = layouts[node].position, layouts[node].size
+                    node:SetPos(p.x, p.y, p.xParentPc, p.yParentPc, p.xSelfPc, p.ySelfPc)
+                    node:SetSize(s.width, s.height, s.widthParentPc, s.heightParentPc)
+                end
+                emit("Logic")
+            end
+            -- The native host may still be rebuilding when Modern returns.
+            -- Parent reflow must not turn its deferred members into permanent
+            -- standalone panels, even across another mode switch.
+            do
+                local savedNativeMember, savedPeerMember = copy(record("native")), copy(record("native-peer"))
+                classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                notes.frame.visible = false
+                classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                expect(native._nisNative, nil, "unavailable host defers mode-return docking")
+                expect(peer._nisNative, nil, "unavailable host defers every native member")
+                local fallbackY = native.root.y
+                viewport:SetSize(960, 650); top:SetSize(960, 650); area:SetSize(0, 0, 1, 1)
+                expect(native.root.y ~= fallbackY, true, "parent reflow moves the standalone fallback")
+                advance(10)
+                sameData(record("native"), savedNativeMember, "parent reflow preserves saved native membership")
+                sameData(record("native-peer"), savedPeerMember, "parent reflow preserves peer native membership")
+                expect(native._nisNativePending ~= nil, true, "parent reflow retains pending native target")
+                expect(peer._nisNativePending ~= nil, true, "parent reflow retains pending peer target")
+                classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                viewport:SetSize(1000, 700); top:SetSize(1000, 700); area:SetSize(0, 0, 1, 1)
+                notes.frame.visible = true
+                advance(10)
+                expect(native._nisNative ~= nil, true, "late host reclaims native member after repeated mode switches")
+                expect(peer._nisNative.group, native._nisNative.group, "late host restores all pending members")
+                expect(native._nisNative.group.active, native, "late host restores native selection")
+                expect(Native.remember(native).index, nativeIndex, "late host restores native member order")
+                expect(Native.remember(peer).index, peerIndex, "late host restores peer order")
+                sameData(record("native"), savedNativeMember, "late host preserves original standalone bounds")
+            end
+            do
+                local manual = create("pending-manual")
+                expect(manual:DockTo(notes.frame), true, "manual-placement scenario starts natively docked")
+                classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                notes.frame.visible = false
+                classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                expect(manual._nisNativePending ~= nil, true, "manual placement starts with deferred native target")
+                manual:SetSize(manual.root.width + 10, manual.root.height)
+                expect(manual._nisNativePending, nil, "explicit resizing still clears deferred native target")
+                expect(record("pending-manual").native, nil, "explicit resizing still saves standalone membership")
+                notes.frame.visible = true
+                advance(10)
+                expect(manual._nisNative, nil, "manually resized fallback does not unexpectedly redock")
+                native:SelectTab()
+                manual:Destroy()
+            end
+            do
+                local disabled = create("delay-disabled")
+                local destroyed = create("delay-destroyed")
+                expect(disabled:DockTo(notes.frame), true, "delayed cancellation starts with a docked member")
+                expect(destroyed:DockTo(notes.frame), true, "delayed teardown starts with a docked member")
+                native:SelectTab()
+                classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                advance(4)
+                disabled:SetActive(false)
+                destroyed:Destroy()
+                classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                advance(12)
+                expect(native._nisNative, nil, "rapid Classic reentry cancels deferred Modern docking")
+                expect(peer._nisNative, nil, "cancelled batch cannot redock another member in Classic")
+                classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+                advance(9)
+                expect(native._nisNative, nil, "rapid mode reentry starts a fresh settling interval")
+                emit("Logic")
+                expect(native._nisNative ~= nil, true, "latest mode return restores eligible native members")
+                expect(disabled._nisNative, nil, "disabled panel is not resurrected by deferred work")
+                expect(destroyed._nisNative, nil, "destroyed panel is not resurrected by deferred work")
+                disabled:SetActive(true)
+                expect(disabled._nisNative ~= nil, true, "explicit ribbon-style reactivation still docks immediately")
+                expect(disabled._nisNative.group.active, disabled, "explicit reactivation selects the requested panel")
+                disabled:Destroy()
+                native:SelectTab()
+            end
+            classicMode.value = 1; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+            native:Destroy(); peer:Destroy()
+            local before = builds.native
+            peer, native = create("native-peer"), create("native")
+            expect(builds.native, before, "classic-first saved native host does not build eagerly")
+            expect(native._nisNative, nil, "classic-first named host remains deferred")
+            classicMode.value = 0; transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+            advance(10)
+            expect(peer._nisNative.group, native._nisNative.group, "reversed registration rejoins saved native group")
+            expect(native._nisNative.group.active, native, "reversed registration restores saved native selection")
+            expect(Native.remember(native).index, nativeIndex, "classic-first native order restores by saved slot")
+            expect(Native.remember(peer).index, peerIndex, "classic-first peer order restores by saved slot")
+            peer:Destroy()
+            Ribbon.Shutdown()
+            restarted[#restarted + 1] = native
+            area.parent, area.SetPos, area.SetSize = oldParent, oldPos, oldSize
+            area:SetPos(0, 0); area:SetSize(1000, 700)
+            ui.Interfaces.GetComponent = oldLookup
+            for _, name in ipairs({ "TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP",
+                "TOPLEVEL_V2__VIEWPORT", "TOPLEVEL_V2__GAMEVIEW_WINDOW" }) do id.Component[name] = named[name] end
+            view:Destroy(); viewport:Destroy(); top:Destroy()
+        end
+        runNativeCycles()
+        for _, owner in ipairs(restarted) do owner:Destroy() end
+        expect(next(events.Logic), nil, "classic suspension releases native restoration observers")
+        locked = false; transmit(12)
+    end
     -- Exercise Clan's pre-existing native tab-row arrangement as well.
     clanHost.tabs.visible = true
     clanHost.body:SetPos(4, 44); clanHost.body:SetSize(238, 276)
@@ -4072,6 +4626,722 @@ do
     id.Component.NOTES_CHILD__WRAPPER = nil
     for _, captured in ipairs(standaloneHosts) do id.Component[captured.rootName] = nil end
     id.Component.TOPLEVEL_V2_PRAYER__LISTENERS_AND_TIMERS = nil
+end
+
+-- The retained modern shell and the classic content host can belong to
+-- different interfaces. Exercise the dormant host path without a ribbon.
+do
+    local Components = require("src/core/components")
+    local Tooltip = require("src/tooltip")
+    local WorldMap = require("src/core/world_map")
+    local function classicHost(interfaceID)
+        local overlay = component(nil, "classic overlay parent")
+        overlay.interfaceID = interfaceID
+        Interfaces.component(overlay)
+        overlay:SetSize(1000, 700)
+        local body = Components.new(ui.Layer, overlay, { categoryID = "auto" })
+        body:SetPos(480, 30)
+        body:SetSize(360, 320)
+        local context = Tooltip.registerContext(body, overlay, function(target)
+            if target == body then return body.x, body.y end
+            return body.x + (target.x or 0), body.y + (target.y or 0)
+        end)
+        return overlay, body, context
+    end
+    local overlay, body, hostContext = classicHost(4086)
+    local shellInterfaceID = parent.interfaceID
+    local buildsA, buildsB, cleanupsA, cleanupsB = 0, 0, 0, 0
+    local sequence, rowA, rowB, tooltipA, nestedA
+    classicMode.value = 1
+    local a = NisPanel.new(parent, {
+        categoryID = "auto", x = 120, y = 90, width = 300, height = 200,
+        rowBackgroundColours = { 0x24211EFF, 0x2E2825FF },
+        rowBackgroundEdgeToEdge = true,
+        buildContent = function(owner)
+            buildsA = buildsA + 1
+            sequence[#sequence + 1] = "build A"
+            rowA = owner:AddText("Classic A " .. buildsA)
+            for index = 1, 28 do owner:AddText("Scrollable row " .. index) end
+            local nested = owner:AddPanel({ height = 80 })
+            nestedA = nested:AddText("Nested input")
+            for index = 1, 8 do nested:AddText("Nested row " .. index) end
+            tooltipA = Tooltip.attach(rowA, owner.content, "Classic tooltip")
+            return function()
+                expect(rowA.destroyed, nil, "classic cleanup sees live controls")
+                expect(Tooltip.getContext(owner.content) ~= nil, true,
+                    "classic cleanup precedes context removal")
+                cleanupsA = cleanupsA + 1
+                sequence[#sequence + 1] = "cleanup A"
+            end
+        end,
+    })
+    local b = NisPanel.new(parent, {
+        categoryID = "auto", rowBackgroundColours = { 0x24211EFF },
+        rowBackgroundEdgeToEdge = true,
+        buildContent = function(owner)
+            buildsB = buildsB + 1
+            sequence[#sequence + 1] = "build B"
+            rowB = owner:AddText("Classic B " .. buildsB)
+            return function()
+                cleanupsB = cleanupsB + 1
+                sequence[#sequence + 1] = "cleanup B"
+            end
+        end,
+    })
+    local empty = NisPanel.new(parent, {
+        categoryID = "auto", buildContent = function() return nil end,
+    })
+    expect(a.interfaceID, shellInterfaceID, "classic-first shell keeps its original interface")
+    expect(a.root.hidden, true, "classic-first enabled shell stays hidden")
+    expect(b.root.hidden, true, "second enabled shell stays hidden")
+    expect(empty.root.hidden, true, "empty classic-first shell stays hidden")
+    expect(a:IsActive(), true, "classic selection does not replace enabled state")
+    expect(b:IsActive(), true, "other enabled page remains enabled")
+    expect(buildsA, 0, "classic-first constructor does not eagerly build A")
+    expect(buildsB, 0, "classic-first constructor does not eagerly build B")
+    expect(a.content, nil, "classic-first shell has no mounted content")
+    expect(b.content, nil, "unselected classic page has no content")
+    a:_SetClassicMode(true)
+    b:_SetClassicMode(true)
+    empty:_SetClassicMode(true)
+    expect(a.root.hidden, true, "idempotent classic suspension hides retained shell")
+    expect(a.dragLayer.hidden, true, "classic suspension hides modern drag hitbox")
+    expect(a.resize.handles.e.enabled, false, "classic suspension disables resize input")
+    sequence = {}
+    a:_SetClassicHost(body)
+    a:_SyncContent(true)
+    expect(buildsA, 1, "selecting A constructs content only once")
+    expect(a._scroll.root.parent, body, "scroll viewport mounts on the shared body")
+    expect(a.content.interfaceID, overlay.interfaceID, "classic content uses host interface")
+    expect(a.interfaceID, shellInterfaceID, "hosting content preserves the shell interface identity")
+    expect(a.root.hidden, true, "selected classic page does not expose its modern shell")
+    expect(a.scrollbarVisible, true, "classic overflow uses the retained scroll core")
+    local firstRow, firstNested, firstContent = rowA, nestedA, a.content
+    local firstScroll, firstThumb = a._scroll.root, a._scroll.thumbDrag
+    local firstContext = Tooltip.getContext(firstContent)
+    expect(firstContext.parentContext, hostContext, "selected content inherits real host tooltip context")
+    expect(firstContext.parent, overlay, "tooltip overlay belongs to the shared host's overlay parent")
+    expect(firstThumb.parent, overlay, "scrollbar input overlay belongs to host's overlay parent")
+    local absoluteX, absoluteY = a._scroll:_AbsolutePosition()
+    expect(absoluteX, body.x, "scrollbar overlay origin uses host context x")
+    expect(absoluteY, body.y, "scrollbar overlay origin uses host context y")
+    tooltipA:Show()
+    local firstTooltip = tooltipA.root
+    expect(firstTooltip.parent, overlay, "selected content tooltip escapes the scroll clip")
+    local rowCategory, rowDynamic = rowA.categoryID, rowA.dynamicID
+    expect(ui.Interfaces:GetComponent(overlay.interfaceID, overlay.staticID, rowCategory, rowDynamic),
+        rowA, "host's native namespace owns selected control ID")
+    expect(a.rowBackgrounds[1] ~= nil, true, "hosted content creates row artwork")
+    local firstBackground = a.rowBackgrounds[1]
+    a:SetScrollPosition(90)
+    expect(a.scrollY, 90, "selected page preserves scroll offset")
+    local targetX, targetY = firstContext.position(rowA)
+    expect(targetX, body.x + rowA.x, "tooltip x follows the host rather than hidden shell")
+    expect(targetY, body.y + rowA.y - a.scrollY, "tooltip y accounts for hosted scroll offset")
+    expect(firstThumb.hidden, false, "scroll synchronization ignores the hidden modern root")
+    local overlayRoots = {}
+    for root in pairs(a.overlays) do overlayRoots[#overlayRoots + 1] = root end
+    expect(#overlayRoots > 0, true, "hosted scroll registers input overlays")
+
+    local oldGet = ui.Interfaces.GetComponent
+    function ui.Interfaces:GetComponent(packed, ...)
+        if packed == id.Component.TOPLEVEL_V2__GAME_AREA then return parent end
+        return oldGet(self, packed, ...)
+    end
+    local focus = var.VarClient.WORLDMAP_FOCUS
+    focus.value = 0
+    emit("VarTransmit", { var = focus, newValue = 0 })
+    expect(WorldMap.isSuspended(), true, "classic host receives world-map focus")
+    expect(body.hidden, true, "world map occludes the shared host")
+    expect(a.content, firstContent, "map opening retains selected content")
+    expect(a._scroll.root, firstScroll, "map opening retains scroll viewport")
+    focus.value = -1
+    emit("VarTransmit", { var = focus, newValue = -1 })
+    emit("Logic")
+    ui.Interfaces.GetComponent = oldGet
+    expect(WorldMap.isSuspended(), false, "map close resumes shared host")
+    expect(body.hidden, false, "map close restores selected shared host")
+    expect(a.content, firstContent, "map return does not rebuild content")
+    expect(a.scrollY, 90, "map return retains the selected page's scroll offset")
+    expect(buildsA, 1, "map return never invokes A builder again")
+    body:SetSize(360, 420)
+    a._scroll:Refresh()
+    expect(a.content, firstContent, "host resize retains content identity")
+    expect(a.viewport.height, body.height, "host resize updates content viewport height")
+    expect(a._scroll.thumbDrag.hidden, false, "host resize retains scrollbar input")
+
+    a:_SetClassicHost(nil)
+    expect(cleanupsA, 1, "outgoing A cleanup runs once")
+    expect(a.content, nil, "clearing host releases selected A content")
+    expect(a._scroll, nil, "clearing host releases A scroll tree")
+    expect(firstRow.destroyed, true, "clearing host destroys A controls")
+    expect(firstNested.destroyed, true, "clearing host destroys nested controls")
+    expect(firstTooltip.destroyed, true, "clearing host destroys tooltip root")
+    expect(firstScroll.destroyed, true, "clearing host destroys scroll viewport")
+    expect(firstThumb.destroyed, true, "clearing host destroys sibling scrollbar input")
+    expect(firstBackground.destroyed, true, "clearing host destroys row artwork")
+    expect(a.interfaceID, shellInterfaceID, "releasing content preserves shell interface identity")
+    expect(Tooltip.getContext(firstContent), nil, "clearing host unregisters tooltip context")
+    expect(ui.Interfaces:GetComponent(overlay.interfaceID, overlay.staticID, rowCategory, rowDynamic),
+        nil, "clearing host frees control ID in host interface")
+    expect(next(a.overlays), nil, "clearing host unregisters every content-owned input overlay")
+    for _, root in ipairs(overlayRoots) do
+        expect(root.destroyed, true, "clearing host destroys each input overlay")
+    end
+    b:_SetClassicHost(body)
+    b:_SyncContent(true)
+    expect(sequence[1], "build A", "first classic page builds first")
+    expect(sequence[2], "cleanup A", "outgoing cleanup precedes incoming construction")
+    expect(sequence[3], "build B", "incoming builder follows outgoing cleanup")
+    expect(buildsB, 1, "second page mounts exactly once")
+    expect(b.root.hidden, true, "second selected page also keeps modern shell hidden")
+    expect(b.rowBackgrounds[1].height, body.height,
+        "edge-to-edge row artwork uses the selected host viewport height")
+    expect(b.rowBackgrounds[1].height == b.surface.container.height, false,
+        "row artwork does not use hidden shell dimensions")
+    local firstB = rowB
+    b:_SetClassicHost(nil)
+    expect(cleanupsB, 1, "B cleanup runs on collapse")
+    expect(firstB.destroyed, true, "B controls release before next page")
+    empty:_SetClassicHost(body)
+    empty:_SyncContent(true)
+    expect(empty.content ~= nil, true, "empty builder still mounts a valid viewport")
+    empty:_SetClassicHost(nil)
+    expect(empty.content, nil, "empty page releases its viewport")
+    a:_SetClassicHost(body)
+    a:_SyncContent(true)
+    expect(buildsA, 2, "reselecting A builds fresh handles")
+    expect(rowA == firstRow, false, "reselected page never reuses expired controls")
+    expect(a.scrollY, 90, "reselected page restores its own scroll position")
+    a:_SetClassicHost(nil)
+    expect(cleanupsA, 2, "second A mount also cleans up")
+    a:Destroy(); b:Destroy(); empty:Destroy()
+
+    local partial, partialTooltipRoot, buildFailure = nil, nil, true
+    local failingBuild = NisPanel.new(parent, {
+        categoryID = "auto", buildContent = function(owner)
+            partial = owner:AddText("Partial classic construction")
+            local partialTooltip = Tooltip.attach(partial, owner.content, "Partial classic tooltip")
+            partialTooltip:Show()
+            partialTooltipRoot = partialTooltip.root
+            if buildFailure then error("injected classic builder failure") end
+        end,
+    })
+    local ok, problem = pcall(function()
+        failingBuild:_SetClassicHost(body)
+        failingBuild:_SyncContent(true)
+    end)
+    expect(ok, false, "classic builder error propagates")
+    expect(problem:find("injected classic builder failure", 1, true) ~= nil,
+        true, "classic builder preserves original failure")
+    expect(partial.destroyed, true, "failed classic builder destroys partial controls")
+    expect(partialTooltipRoot.destroyed, true, "failed classic builder destroys partial tooltip")
+    expect(failingBuild._scroll, nil, "failed classic builder releases scroll tree")
+    expect(failingBuild.content, nil, "failed classic builder leaves no content")
+    expect(next(failingBuild.overlays), nil, "failed classic builder releases input overlays")
+    failingBuild:_SetClassicHost(nil)
+    buildFailure = false
+    failingBuild:_SetClassicHost(body)
+    failingBuild:_SyncContent(true)
+    expect(failingBuild.content ~= nil, true, "classic page remains usable after builder failure")
+    failingBuild:_SetClassicHost(nil)
+    failingBuild:Destroy()
+
+    local cleanupRow, cleanupBuilds = nil, 0
+    local failingCleanup = NisPanel.new(parent, {
+        categoryID = "auto", buildContent = function(owner)
+            cleanupBuilds = cleanupBuilds + 1
+            cleanupRow = owner:AddText("Cleanup failure")
+            return function() error("injected classic cleanup failure") end
+        end,
+    })
+    failingCleanup:_SetClassicHost(body)
+    failingCleanup:_SyncContent(true)
+    ok, problem = pcall(function() failingCleanup:_SetClassicHost(nil) end)
+    expect(ok, false, "classic cleanup error propagates")
+    expect(problem:find("injected classic cleanup failure", 1, true) ~= nil,
+        true, "classic cleanup preserves original failure")
+    expect(cleanupRow.destroyed, true, "cleanup error still releases controls")
+    expect(failingCleanup.content, nil, "cleanup error still clears content")
+    expect(failingCleanup._scroll, nil, "cleanup error still releases Scroll")
+    expect(next(failingCleanup.overlays), nil, "cleanup error still clears input overlays")
+    expect(cleanupBuilds, 1, "cleanup failure cannot build a replacement page")
+    failingCleanup:Destroy()
+    local recovered = NisPanel.new(parent, {
+        categoryID = "auto", buildContent = function(owner) owner:AddText("Recovered") end,
+    })
+    recovered:_SetClassicHost(body)
+    recovered:_SyncContent(true)
+    expect(recovered.content ~= nil, true, "shared host remains usable after cleanup failure")
+    recovered:_SetClassicHost(nil)
+    recovered:Destroy()
+    Tooltip.unregisterContext(body)
+    overlay:Destroy()
+
+    local lostOverlay, lostHost = classicHost(4087)
+    local lost = NisPanel.new(parent, {
+        categoryID = "auto", buildContent = function(owner) owner:AddText("Unmount with host") end,
+    })
+    lost:_SetClassicHost(lostHost)
+    lost:_SyncContent(true)
+    expect(lost.content.interfaceID, 4087, "unload scenario mounts on another interface")
+    Interfaces.unload(4087)
+    lost:_SetClassicHost(nil)
+    expect(lost.content, nil, "unloaded content host clears Lua ownership")
+    expect(lost._scroll, nil, "unloaded content host releases scroll controller")
+    expect(next(lost.overlays), nil, "unloaded content host clears overlay registry")
+    lost:Destroy()
+    Tooltip.unregisterContext(lostHost)
+    classicMode.value = 0
+end
+
+-- Exercise the complete classic coordinator with real NisPanels, native space
+-- reservation, and RibbonButton click hooks. The plugin layer is not the
+-- interface that owns the retained modern shells or the native GAME_AREA.
+do
+    local RibbonBar = require("src/ribbon_bar")
+    local Tooltip = require("src/tooltip")
+    local ClassicLayout = require("src/core/classic_layout")
+    local previousGet = ui.Interfaces.GetComponent
+    local previousLayerNew = ui.Layer.new
+    local previousNames = {}
+    local names = {
+        TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP = (4088 << 16) | 51,
+        TOPLEVEL_V2__VIEWPORT = (4089 << 16) | 52,
+        TOPLEVEL_V2__GAME_AREA = (4089 << 16) | 53,
+        TOPLEVEL_V2__GAMEVIEW_WINDOW = (4089 << 16) | 54,
+    }
+    local nodes = {}
+    for name, packed in pairs(names) do
+        previousNames[name] = id.Component[name]
+        id.Component[name] = packed
+    end
+    local function native(interfaceID, staticID, owner, x, y, xp, yp, xs, ys, w, h, wp, hp)
+        local node = component(nil, "captured native")
+        node.interfaceID, node.staticID = interfaceID, staticID
+        Interfaces.component(node)
+        node.parent = owner
+        if owner then
+            owner.children[#owner.children + 1] = node
+            owner.renderChildren[#owner.renderChildren + 1] = node
+        end
+        function node:SetPos(px, py, ppx, ppy, psx, psy)
+            self.position = { x = px, y = py, xParentPc = ppx or 0, yParentPc = ppy or 0,
+                xSelfPc = psx or 0, ySelfPc = psy or 0 }
+            self.x = px + (self.parent and self.parent.width or 0) * (ppx or 0)
+                - self.width * (psx or 0)
+            self.y = py + (self.parent and self.parent.height or 0) * (ppy or 0)
+                - self.height * (psy or 0)
+        end
+        function node:SetSize(sw, sh, spx, spy)
+            self.size = { width = sw, height = sh, widthParentPc = spx or 0,
+                heightParentPc = spy or 0 }
+            self.width = sw + (self.parent and self.parent.width or 0) * (spx or 0)
+            self.height = sh + (self.parent and self.parent.height or 0) * (spy or 0)
+            local p = self.position
+            self:SetPos(p.x, p.y, p.xParentPc, p.yParentPc, p.xSelfPc, p.ySelfPc)
+            for _, child in ipairs(self.children) do
+                if child.Relayout then child:Relayout() end
+            end
+            self:EmitResize()
+        end
+        function node:Relayout()
+            local s = self.size
+            self:SetSize(s.width, s.height, s.widthParentPc, s.heightParentPc)
+        end
+        node:SetSize(w, h, wp, hp)
+        node:SetPos(x, y, xp, yp, xs, ys)
+        nodes[(interfaceID << 16) | staticID] = node
+        return node
+    end
+    local top = native(4088, 51, nil, 0, 0, 0, 0, 0, 0, 3440, 1440, 0, 0)
+    local viewport = native(4089, 52, nil, 0, 0, 0, 0, 0, 0, 3440, 1440, 0, 0)
+    local area = native(4089, 53, viewport, 0, 0, .5, .5, .5, .5, 0, 0, 1, 1)
+    local view = native(4089, 54, viewport, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1)
+    local minimap = component(area, "captured minimap")
+    minimap:SetSize(250, 250)
+    minimap:SetPos(-25, 0, 1, 0, 1, 0)
+    local nativeButton = component(area, "captured native ribbon")
+    nativeButton:SetSize(32, 34)
+    nativeButton:SetPos(-520, 0, 1, 0, 1, 0)
+    function ui.Interfaces:GetComponent(packed, ...)
+        if select("#", ...) == 0 and nodes[packed]
+            and ui.Interfaces:GetInterface(math.floor(packed / 65536)) ~= nil then
+            return nodes[packed]
+        end
+        return previousGet(self, packed, ...)
+    end
+    local function findSprite(node, icon)
+        if node.spriteID == icon then return node end
+        for _, child in ipairs(node.children) do
+            local result = findSprite(child, icon)
+            if result then return result end
+        end
+    end
+    local function rail()
+        for _, child in ipairs(top.children) do
+            if not child.destroyed and findSprite(child, id.Sprite.RS3_ICON_MENU_SETTINGS) then
+                return child
+            end
+        end
+        for _, child in ipairs(top.children) do
+            if not child.destroyed and child.kind == "layer" and child.width >= 44
+                and child.height == top.height then return child end
+        end
+    end
+    local function button(icon)
+        local image = assert(findSprite(assert(rail(), "missing classic rail"), icon),
+            "missing real ribbon icon")
+        return image.parent
+    end
+    local function width(expected, label)
+        local root = assert(rail(), label .. " rail")
+        expectRect(root, top.width - expected, 0, expected, top.height, label .. " full-height rail")
+        expect(area.x, 0, label .. " native left edge")
+        expect(area.width, viewport.width - expected, label .. " native right edge")
+        expect(view.width, viewport.width - expected, label .. " gameview")
+        expect(minimap.x, area.width - 275, label .. " minimap right anchor")
+        expect(nativeButton.x, area.width - 552, label .. " native button right anchor")
+    end
+    -- Model a bare category-zero host appearing before categorized artwork,
+    -- with non-top-left constructor defaults. Its owner must establish both
+    -- placement and rendering order explicitly.
+    ui.Layer.new = function(owner, categoryID, dynamicID)
+        local layer = previousLayerNew(owner, categoryID, dynamicID)
+        if owner and owner.parent == top and categoryID == nil then
+            layer:SetPos(0, 20, 0, .5, 0, .5)
+            assert(removeRenderChild(owner, layer))
+            table.insert(owner.renderChildren, 1, layer)
+        end
+        return layer
+    end
+    local function paintAt(node, x, y)
+        if node.hidden or node.visibleGlobal == false or node.alpha == 0 then return nil end
+        for index = #node.renderChildren, 1, -1 do
+            local child = node.renderChildren[index]
+            if x >= child.x and x < child.x + child.width
+                and y >= child.y and y < child.y + child.height then
+                local painted = paintAt(child, x - child.x, y - child.y)
+                if painted then return painted end
+            end
+        end
+        if node.kind == "text" or node.kind == "sprite" or node.kind == "rectangle" then return node end
+    end
+    local function expectTopContent(owner, row, reason)
+        local scrollY = owner.scrollY
+        owner:SetScrollPosition(0)
+        local point = row.xyGlobal
+        expect(point.y, 12, reason .. " content starts at the top flow inset")
+        expect(paintAt(top, point.x + 1, point.y + 1), row,
+            reason .. " text paints above sidebar background")
+        local surface = assert(rail())
+        local bodyPaint = assert(paintAt(top, surface.x + 5, top.height - 5))
+        expect(bodyPaint.spriteID, require("src/core/sprites").NIS_PANEL.content,
+            reason .. " content uses the lighter NisPanel backdrop")
+        expect(bodyPaint.isTiling, true, reason .. " content backdrop tiles without stretching")
+        local railPaint = assert(paintAt(top, surface.x + surface.width - 5, top.height - 5))
+        expect(railPaint.spriteID, require("src/core/sprites").HUD_WINDOW.content,
+            reason .. " ribbon rail keeps its dark backdrop")
+        owner:SetScrollPosition(scrollY)
+    end
+    local sequence, counts, rows = {}, {}, {}
+    local closed = 0
+    local function make(name, extra)
+        local options = {
+            categoryID = "auto", tabIcon = 830000 + string.byte(name), tabText = "Classic " .. name,
+            x = 130, y = 80, width = 300, height = 200,
+            onClose = function() closed = closed + 1 end,
+            buildContent = function(owner)
+                counts[name] = (counts[name] or 0) + 1
+                sequence[#sequence + 1] = "build " .. name
+                rows[name] = owner:AddText("Page " .. name)
+                local contentInterfaceID = owner.content.interfaceID
+                if name == "A" then
+                    for index = 1, 100 do owner:AddText("Scrollable " .. index) end
+                    Tooltip.attach(rows[name], owner.content, "Classic page tooltip")
+                end
+                return function()
+                    sequence[#sequence + 1] = "cleanup " .. name
+                    if ui.Interfaces:GetInterface(contentInterfaceID) ~= nil then
+                        expect(rows[name].destroyed, nil, "cleanup precedes native control release")
+                    end
+                end
+            end,
+        }
+        for key, value in pairs(extra or {}) do options[key] = value end
+        return NisPanel.new(parent, options)
+    end
+    config.Cursor.CURSOR_OPEN = { id = 7 }
+    PersistentDB:SetString("ribbonBarPosition", "top")
+    PersistentDB:SetBool("ribbonBarAutoHide", true)
+    RibbonBar.Start()
+    expect(#top.children, 0, "zero registered panels allocate no classic surface")
+    classicMode.value = 1
+    local a, b = make("A"), make("B")
+    expect(a.root.hidden, true, "classic-first A shell stays hidden")
+    expect(b.root.hidden, true, "classic-first B shell stays hidden")
+    expect(a.content, nil, "classic-first enabled A does not build")
+    expect(b.content, nil, "classic-first enabled B does not build")
+    expect(#sequence, 0, "classic starts with no builders")
+    expect(#top.children, 1, "two panels share a single independently mounted rail")
+    width(44, "classic-first collapse")
+    expect(RibbonBar.GetPosition(), "top", "saved modern top preference survives classic")
+    expect(RibbonBar.GetAutoHide(), true, "saved modern auto-hide survives classic")
+    fire(button(a.tabIcon), ui.Hook.ONCLICK)
+    width(404, "first button expands")
+    expect(button(a.tabIcon).children[1].spriteID,
+        require("src/core/sprites").RIBBON_BUTTON_ACTIVE,
+        "selected classic A alone receives the active real button state")
+    expect(button(b.tabIcon).children[1].spriteID,
+        require("src/core/sprites").RIBBON_BUTTON_NEUTRAL,
+        "enabled but unselected B button remains neutral")
+    expect(a.content.interfaceID, top.interfaceID, "content mounts in plugin-layer interface")
+    expect(a.interfaceID, parent.interfaceID, "modern shell retains separate interface identity")
+    expect(a.root.hidden, true, "selected classic page never exposes modern chrome")
+    expect(b.content, nil, "unselected enabled B has no content")
+    expect(counts.A, 1, "first click builds A exactly once")
+    expectTopContent(a, rows.A, "first selected page")
+    local firstA, firstRow, firstScroll = a.content, rows.A, a._scroll.root
+    a:SetScrollPosition(90)
+    local context = assert(Tooltip.getContext(a.content))
+    expect(context.parent, top, "tooltips escape to full-screen plugin layer")
+    expect(a._scroll.thumbDrag.parent, top, "scroll input uses full-screen plugin layer")
+    local px, py = context.position(firstRow)
+    expect(px, a._scroll.root.parent.x + firstRow.x + rail().x,
+        "hosted tooltip x follows right-aligned sidebar")
+    expect(py, firstRow.y - a.scrollY, "hosted tooltip y follows page scroll")
+    fire(button(b.tabIcon), ui.Hook.ONCLICK)
+    width(404, "switching pages keeps expanded reservation")
+    expect(sequence[2], "cleanup A", "A cleanup happens before B builds")
+    expect(sequence[3], "build B", "incoming B builds after outgoing cleanup")
+    expect(firstRow.destroyed, true, "switch destroys outgoing consumer control")
+    expect(firstScroll.destroyed, true, "switch destroys outgoing scroll viewport")
+    expect(a.content, nil, "switch clears outgoing page ownership")
+    expect(b.content ~= nil, true, "switch mounts one B page")
+    expectTopContent(b, rows.B, "replacement page")
+    expect(a:IsActive(), true, "switch keeps A enabled")
+    expect(closed, 0, "switch never invokes Close callbacks")
+    fire(button(b.tabIcon), ui.Hook.ONCLICK)
+    width(44, "second B click collapses")
+    do
+        local surface = assert(rail())
+        expect(assert(paintAt(top, surface.x + 5, top.height - 5)).spriteID,
+            require("src/core/sprites").HUD_WINDOW.content, "collapsed rail has only the dark backdrop")
+    end
+    expect(b.content, nil, "collapse releases B page")
+    expect(b:IsActive(), true, "collapse leaves B enabled")
+    expect(closed, 0, "collapse never invokes Close callbacks")
+    a:Show()
+    expect(a.content ~= firstA, true, "programmatic Show creates fresh page handles")
+    expect(a.scrollY, 90, "reselection restores A scroll position")
+    local secondA = a.content
+    a:SelectTab()
+    a:SetActive(true)
+    expect(a.content, secondA, "same-page programmatic selection does not rebuild")
+    expect(counts.A, 2, "already-enabled Show and SetActive reuse selected content")
+    b:SetActive(true)
+    expect(b.content ~= nil, true, "already-enabled SetActive selects other page")
+    b:Hide()
+    width(44, "hiding selected page collapses")
+    expect(b:IsActive(), false, "Hide disables only selected B")
+    expect(a:IsActive(), true, "Hide preserves other enabled page")
+    a:Show()
+    b:Destroy()
+    width(404, "removing unselected B preserves A")
+    expect(a.content ~= nil, true, "unregistering another page keeps selected content")
+    local selectedA = a.content
+    a:SetSize(800, 400)
+    a:Undock()
+    expect(a:DockTo(parent), false, "classic cannot change remembered modern docking")
+    expect(a.content, selectedA, "classic sizing leaves selected content mounted")
+    local focus = var.VarClient.WORLDMAP_FOCUS
+    focus.value = 0
+    emit("VarTransmit", { var = focus, newValue = 0 })
+    expect(a.content, selectedA, "map focus retains selected content identity")
+    focus.value = -1
+    emit("VarTransmit", { var = focus, newValue = -1 })
+    emit("Logic")
+    expect(a.content, selectedA, "map return does not rebuild selected page")
+    expect(a.scrollY, 90, "map return keeps scroll position")
+    viewport:SetSize(3200, 900)
+    top:SetSize(3200, 900)
+    game.options.InterfaceScale.setting = 125
+    emit("Logic")
+    width(404, "viewport and interface-scale resize")
+    expect(a.content, selectedA, "resize keeps selected content identity")
+    expect(a.scrollY, 90, "resize keeps selected scroll offset")
+    expectTopContent(a, rows.A, "resized retained page")
+    game.options.InterfaceScale.setting = 100
+    viewport:SetSize(3440, 1440)
+    top:SetSize(3440, 1440)
+    emit("Logic")
+    width(404, "viewport resize restored")
+    expect(a.content, selectedA, "restored viewport does not rebuild content")
+    a:Close()
+    width(44, "Close releases and collapses the selected page")
+    expect(closed, 1, "explicit Close retains callback semantics")
+    expect(a:IsActive(), false, "Close disables selected page")
+    a:Destroy()
+    expect(#top.children, 0, "last registration removes the classic surface")
+    expect(area.width, 3440, "last removal restores native area width")
+    expect(area.position.xSelfPc, .5, "last removal restores native self-anchor")
+    expect(view.width, 3440, "last removal restores gameview width")
+    expect(ClassicLayout.restore(), true, "restoration remains idempotent")
+    local partial, partialTooltip
+    local failBuilder = make("C", { buildContent = function(owner)
+        partial = owner:AddText("Partially built classic page")
+        local tooltip = Tooltip.attach(partial, owner.content, "Partial tooltip")
+        tooltip:Show()
+        partialTooltip = tooltip.root
+        error("classic builder exploded")
+    end })
+    local ok, problem = pcall(function() fire(button(failBuilder.tabIcon), ui.Hook.ONCLICK) end)
+    expect(ok, false, "real ribbon propagates builder errors")
+    expect(problem:find("classic builder exploded", 1, true) ~= nil, true,
+        "real ribbon preserves original builder error")
+    width(44, "builder failure collapses reservation")
+    expect(partial.destroyed, true, "builder failure releases partial controls")
+    expect(partialTooltip.destroyed, true, "builder failure releases partial tooltip")
+    expect(failBuilder.content, nil, "builder failure relinquishes page ownership")
+    expect(button(failBuilder.tabIcon).children[1].spriteID,
+        require("src/core/sprites").RIBBON_BUTTON_NEUTRAL,
+        "builder failure synchronizes the real button to collapsed")
+    local good = make("D")
+    fire(button(good.tabIcon), ui.Hook.ONCLICK)
+    width(404, "another page works after builder error")
+    expect(good.content ~= nil, true, "healthy panel mounts after failed builder")
+    failBuilder:Destroy()
+    expect(good.content ~= nil, true, "removing failed unselected panel keeps selected page")
+    good:Destroy()
+    expect(area.width, 3440, "removing selected final page restores native width")
+    expect(#top.children, 0, "removing selected final page retires rail")
+
+    local failingRow
+    local failingCleanup = make("E", { buildContent = function(owner)
+        failingRow = owner:AddText("Cleanup exception")
+        return function() error("classic cleanup exploded") end
+    end })
+    local replacement = make("F")
+    fire(button(failingCleanup.tabIcon), ui.Hook.ONCLICK)
+    ok, problem = pcall(function() fire(button(replacement.tabIcon), ui.Hook.ONCLICK) end)
+    expect(ok, false, "switching propagates outgoing cleanup errors")
+    expect(problem:find("classic cleanup exploded", 1, true) ~= nil, true,
+        "switching propagates the original outgoing cleanup error")
+    width(44, "cleanup error collapses reservation")
+    expect(failingRow.destroyed, true, "cleanup failure still destroys its controls")
+    expect(replacement.content, nil, "cleanup failure never builds incoming page")
+    expect(button(failingCleanup.tabIcon).children[1].spriteID,
+        require("src/core/sprites").RIBBON_BUTTON_NEUTRAL,
+        "cleanup failure synchronizes the outgoing button to collapsed")
+    failingCleanup:Destroy()
+    fire(button(replacement.tabIcon), ui.Hook.ONCLICK)
+    expect(replacement.content ~= nil, true, "rail remains usable after cleanup error")
+    replacement:Destroy()
+    expect(area.width, 3440, "last removal after recovery restores native layout")
+    expect(#top.children, 0, "last removal after recovery retires rail")
+    -- Reconcile real modern groups on both directions of a base-var mode
+    -- transmission. Classic page selection must not rewrite modern records.
+    classicMode.value = 0
+    transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+    local g = make("G", { id = "classic-ribbon:group-g", x = 80, y = 330 })
+    local h = make("H", { id = "classic-ribbon:group-h", x = 500, y = 320 })
+    expect(g:DockTo(h), true, "modern group is formed through public docking")
+    h:SelectTab()
+    local solo = make("L", { id = "classic-ribbon:standalone", x = 215, y = 250 })
+    solo:SetSize(320, 230)
+    local soloRect = { solo.root.x, solo.root.y, solo.root.width, solo.root.height }
+    local soloBuilds = counts.L
+    local function saved() return savedLayouts["prettyui.nis-layout.v1"] end
+    local originalGroupID = saved().panels["classic-ribbon:group-g"].group
+    local originalGroup = copy(saved().groups[originalGroupID])
+    local originalG = copy(saved().panels["classic-ribbon:group-g"])
+    local originalH = copy(saved().panels["classic-ribbon:group-h"])
+    local modernHBuilds = counts.H
+    for pass = 1, 2 do
+        classicMode.value = 1
+        transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+        width(44, "mode entry starts collapsed " .. pass)
+        expect(g.root.hidden, true, "mode entry hides modern group shell G")
+        expect(h.root.hidden, true, "mode entry hides modern group shell H")
+        expect(g.content, nil, "mode entry does not build an unselected group page")
+        expect(h.content, nil, "mode entry releases previously visible group content")
+        expect(solo.content, nil, "classic entry releases modern standalone content")
+        g:Show()
+        width(404, "mode entry selects group page " .. pass)
+        expect(g.content ~= nil, true, "enabled grouped page mounts in shared host")
+        expect(h.content, nil, "modern group selection does not affect classic sidebar")
+        expect(saved().groups[originalGroupID].active, originalGroup.active,
+            "classic selection preserves saved modern group selection")
+        expect(saved().panels["classic-ribbon:standalone"].x, soloRect[1],
+            "classic selection does not persist standalone movement")
+        if pass == 2 then
+            local added = make("I", { id = "classic-ribbon:added-in-classic",
+                dockTo = "classic-ribbon:group-g", active = false })
+            expect(added.content, nil, "disabled classic-first member has no eager builder")
+            expect(added:IsActive(), false, "disabled new page keeps its enabled flag")
+            local transient = make("J")
+            transient:Show()
+            expect(transient.content ~= nil, true, "transient added page can be selected")
+            transient:Destroy()
+            width(44, "destroying selected transient collapses")
+            added:Destroy()
+            g:Show()
+        end
+        classicMode.value = 0
+        transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+        expect(area.width, 3440, "mode exit restores native geometry " .. pass)
+        expect(view.width, 3440, "mode exit restores gameview geometry " .. pass)
+        expect(g.content, nil, "unselected group page is not rebuilt during restore")
+        expect(h.content ~= nil, true, "modern saved group selection builds after restore")
+        expect(counts.H, modernHBuilds + pass,
+            "restoration builds the final selected group page once")
+        expectRect(solo.root, soloRect[1], soloRect[2], soloRect[3], soloRect[4],
+            "modern standalone bounds survive mode round trip " .. pass)
+        expect(counts.L, soloBuilds + pass,
+            "standalone content builds once after each complete restoration")
+        expect(saved().groups[originalGroupID].active, originalGroup.active,
+            "return restores modern selected group member")
+        expect(saved().groups[originalGroupID].members[1], originalGroup.members[1],
+            "return preserves saved tab order")
+        expect(saved().panels["classic-ribbon:group-g"].x, originalG.x,
+            "classic presentation does not persist group G position")
+        expect(saved().panels["classic-ribbon:group-h"].width, originalH.width,
+            "classic presentation does not persist group H dimensions")
+        expect(RibbonBar.GetPosition(), "top", "mode exit preserves saved ribbon position")
+        expect(RibbonBar.GetAutoHide(), true, "mode exit preserves saved ribbon auto-hide")
+    end
+    g:Destroy()
+    h:Destroy()
+    solo:Destroy()
+    classicMode.value = 1
+    transmit(id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP)
+    local remounting = make("K")
+    remounting:Show()
+    width(404, "selected page before top interface unload")
+    local topInterfaceID = top.interfaceID
+    Interfaces.unload(topInterfaceID)
+    emit("Logic")
+    expect(remounting.content, nil, "unloaded plugin host releases selected consumer content")
+    expect(area.width, 3440, "top-layer retirement restores live native geometry")
+    top = native(4088, 51, nil, 0, 0, 0, 0, 0, 0, 3440, 1440, 0, 0)
+    emit("Logic")
+    width(44, "remounted plugin layer starts collapsed")
+    remounting:Show()
+    width(404, "remounted selected page")
+    expectTopContent(remounting, rows.K, "remounted page")
+    local shutdownBuilds = counts.K
+    RibbonBar.Shutdown()
+    expect(remounting.content, nil, "shutdown releases selected classic consumer content")
+    expect(counts.K, shutdownBuilds, "shutdown never builds modern consumer content")
+    expect(area.width, 3440, "shutdown restores reserved native geometry")
+    expect(view.width, 3440, "shutdown restores reserved gameview geometry")
+    remounting:Destroy()
+    classicMode.value = 0
+    RibbonBar.Shutdown()
+    classicMode.value = 0
+    ui.Interfaces.GetComponent = previousGet
+    ui.Layer.new = previousLayerNew
+    for name in pairs(names) do id.Component[name] = previousNames[name] end
 end
 
 -- Active unload must take the full destruction path without touching native handles.

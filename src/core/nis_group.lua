@@ -42,25 +42,29 @@ end
 local function refresh(group)
     -- Release every outgoing page before allocating the selected page's controls.
     for _, panel in ipairs(group.members) do
-        if loaded(panel) and (panel ~= group.active or panel._nisHidden) then
+        if not panel._nisClassic and loaded(panel) and (panel ~= group.active or panel._nisHidden) then
             panel:_SyncContent(false)
         end
     end
     for _, panel in ipairs(group.members) do
         if loaded(panel) then
-            local active = panel == group.active and not panel._nisHidden
-            if not active then
-                if panel.content then Tooltip.hideContextTooltips(panel.content) end
-                panel._nisTabs:Refresh(nil)
-            end
-            Components.setHidden(panel.root, not active)
-            panel:_SyncContent(active)
-            panel:_SyncChrome()
-            panel:_SyncOverlays(not active)
-            if active then
-                panel._nisTabs:Refresh(group.members, group.active)
-                panel.root:MoveToFront()
-                panel:_SyncOverlays(false)
+            if panel._nisClassic then
+                Components.setHidden(panel.root, true)
+            else
+                local active = panel == group.active and not panel._nisHidden
+                if not active then
+                    if panel.content then Tooltip.hideContextTooltips(panel.content) end
+                    panel._nisTabs:Refresh(nil)
+                end
+                Components.setHidden(panel.root, not active)
+                panel:_SyncContent(active)
+                panel:_SyncChrome()
+                panel:_SyncOverlays(not active)
+                if active then
+                    panel._nisTabs:Refresh(group.members, group.active)
+                    panel.root:MoveToFront()
+                    panel:_SyncOverlays(false)
+                end
             end
         end
     end
@@ -112,6 +116,10 @@ end
 
 local function updateStandalone(panel)
     if not loaded(panel) then return end
+    if panel._nisClassic then
+        Components.setHidden(panel.root, true)
+        return
+    end
     Components.setHidden(panel.root, panel._nisHidden == true)
     panel:_LayoutBody()
     panel:_SyncContent(not panel._nisHidden)
@@ -132,7 +140,7 @@ function NisGroup.clearPreview(source)
     if source ~= nil and previewSource ~= source then return end
     local target = previewTarget
     previewTarget, previewSource = nil, nil
-    if loaded(target) then
+    if loaded(target) and not target._nisClassic then
         local group = target._nisGroup
         target._nisTabs:Refresh(group and group.members or nil,
             group and group.active or target)

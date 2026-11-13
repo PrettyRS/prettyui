@@ -12,6 +12,11 @@ player's interface lock and background transparency settings; content stays opaq
 When unlocked, drag the header to move it or an edge or corner to resize it.
 Placement fits around other interfaces; an invalid drop restores the previous bounds.
 
+In Classic Interface, panels use one full-height right sidebar instead of their
+modern windows. It starts collapsed on each mode entry, even when panels are
+enabled. Modern placement, tab groups, native membership, and ribbon preferences
+are retained for returning to Modern Interface.
+
 {{< signature compact="true" >}}
 NisPanel.new(parent, options)
 {{< /signature >}}
@@ -117,6 +122,10 @@ Selection, **Show()**, or undocking remounts selected content by calling
 **buildContent** again and restores **scrollY**. Resizing, toggling interface
 lock, temporarily hiding a drag preview, and world-map hiding do not rebuild
 content or change enabled state.
+Classic sidebar switching and collapse also release outgoing content without
+disabling the page or calling **onClose**. Only the selected enabled page builds.
+Its content and tooltip/input overlays can live on a different interface from
+the retained modern shell; use **panel.content** as the content parent.
 
 If **buildContent** returns a function, PrettyUI calls it before destroying
 controls on deactivation or **Destroy()**. Use it to unsubscribe content-owned
@@ -271,18 +280,20 @@ client rendering and native script behavior still require verification.
   A native frame component or packed frame component ID is also accepted, such as
   `ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__NOTES_WINDOW)`.
   Native targets require a direct GAME_AREA mount and a compatible native host.
+  Returns false in Classic Interface; remembered modern docking is unchanged.
 
 `Undock()`
 : Detaches this panel and saves it as standalone, remounting its content if
   active. Native docking restores the retained standalone rectangle;
   PrettyUI-only groups keep their current bounds.
+  In Classic Interface this is a no-op.
 
 `SelectTab()`
-: Selects this panel within its group.
+: Selects this panel within its group, or enables/selects its Classic sidebar page.
 
 `SetSize(width, height)`
 : Resizes the panel, or its entire PrettyUI group, within the configured size
-  limits. While docked natively, the native frame owns sizing; this is a no-op.
+  limits. Native docking and the Classic sidebar own sizing; this is a no-op there.
 
 `SetActive(active)`, `IsActive()`
 : Enables or disables the panel independently of tab selection. Disabling removes
@@ -319,20 +330,44 @@ client rendering and native script behavior still require verification.
 ### Panel ribbon {#ribbon-bar-api}
 
 Every live `NisPanel` automatically adds a ribbon button using its **tabIcon**
-and **tabText**. No registration API is needed. A highlighted button means the
-panel is enabled, even when another tab is selected. Click to disable or restore
-the panel; disabled panels have no body or tab but keep their ribbon buttons.
-Destroying a panel removes its button. The ribbon disappears when no panels remain.
+and **tabText**. No registration API is needed. Destroying a panel removes its
+button; the ribbon disappears when no panels remain.
 
-The cog opens only **Ribbon settings**: left/right/top placement and auto-hide.
-These settings persist independently of panel layout. The ribbon and settings
-window follow world-map hiding without changing enabled state.
+In Modern Interface, a highlighted button means the panel is enabled, even when
+another tab is selected. Click to disable or restore it. Disabled panels have no
+body or tab but keep their ribbon buttons. The cog opens left/right/top placement
+and auto-hide settings, saved independently of panel layout.
+
+In Classic Interface, the fixed right rail is **44 interface units** wide.
+Selecting a button opens **360 additional content units** to its left (**404**
+total); selecting the same button again collapses it. Another button replaces
+the current page. Only the selected page is highlighted; other pages stay enabled.
+**Show()**, **SelectTab()**, and **SetActive(true)** select a page even if it was
+already enabled. **Hide()**, **SetActive(false)**, **Close()**, and destruction
+release the selected body without automatically selecting a replacement.
+
+The entire visible sidebar width is reserved in the native containing layout:
+right-anchored minimap, ribbon, and content wrappers shift together. The gameview
+also shrinks when its native layout permits it; a gameview limitation does not
+disable native UI reservation. Incompatible mandatory native layouts suspend
+the sidebar rather than drawing it over native controls. On undersized screens,
+the rail/content widths clamp to leave at least one native-area unit.
+
+The settings icon stays at the top; wheel-scroll the clipped panel-icon list if
+it exceeds the available height. Classic settings explain that position and
+auto-hide apply only to Modern Interface; saved preferences are not overwritten.
+World-map focus temporarily occludes the sidebar and pauses native writes while
+retaining the selected content tree and scroll position. Mode exit, last-panel
+removal, and shutdown restore owned native geometry.
+
+Classic geometry and lifecycle are fixture-verified. Actual client rendering,
+native-script compliance, and world-click alignment still require client proof.
 
 `prettyui.RibbonBar.SetPosition("left" | "right" | "top")`, `GetPosition()`
-: Changes or reads the ribbon edge.
+: Changes or reads the saved modern ribbon edge.
 
 `prettyui.RibbonBar.SetAutoHide(boolean)`, `GetAutoHide()`
-: Changes or reads sliding auto-hide.
+: Changes or reads saved modern sliding auto-hide.
 
 This restores the ribbon for panel control, not the removed plugin-registration
 API. Native plugin content/settings layers remain separate entry points.

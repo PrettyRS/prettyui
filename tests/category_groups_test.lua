@@ -97,6 +97,16 @@ local function namespace()
 end
 id = namespace()
 config = namespace()
+var = { VarPlayer = { TOPLEVEL_V2_LEGACY_INTERFACE = { value = 0 } } }
+id.VarPlayer = { TOPLEVEL_V2_GENERAL_VARP = 14 }
+Event = {
+    Logic = { Subscribe = function() end, Unsubscribe = function() end },
+    VarTransmit = { Subscribe = function() end, Unsubscribe = function() end },
+}
+PersistentDB = {
+    GetString = function() return "left" end,
+    GetBool = function() return false end,
+}
 package.loaded["src/minimenu"] = { Start = function() end }
 local prettyui = require("main")
 local build = prettyui.BuildCategoryGroup

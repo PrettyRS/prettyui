@@ -123,7 +123,7 @@ local function restore(groups, affected)
         local members, parent, active = {}, nil, nil
         for _, panelID in ipairs(saved.members) do
             local panel = live[panelID]
-            if loaded(panel) and not panel._nisHidden then
+            if loaded(panel) and not panel._nisClassic and not panel._nisHidden then
                 if parent == nil then parent = panel.parent end
                 if sameComponent(panel.parent, parent) then
                     panel:_CancelDrag()
@@ -201,7 +201,7 @@ function Persistence.setActive(panel, active, groups)
     if not panelID then return false end
     local record = state.panels[panelID]
     if set(record, "active", active) then flush() end
-    if not active then return false end
+    if not active or panel._nisClassic then return false end
     panel._nisNativePending = record.native
     if record.group then
         restore(groups, { [record.group] = true })
@@ -212,7 +212,7 @@ end
 
 function Persistence.bounds(panel)
     local panelID = panel._nisPersistenceID
-    if WorldMap.isSuspended() or not panelID or restoring or not loaded(panel)
+    if panel._nisClassic or WorldMap.isSuspended() or not panelID or restoring or not loaded(panel)
         or panel._nisHidden or busy(panel) then return end
     local record = state.panels[panelID]
     local group = record.group and state.groups[record.group]
@@ -232,9 +232,13 @@ function Persistence.bounds(panel)
 end
 
 function Persistence.capture(panel)
-    if WorldMap.isSuspended() or restoring or not state or not loaded(panel) then return end
+    if panel._nisClassic or WorldMap.isSuspended()
+        or restoring or not state or not loaded(panel) then return end
     local group = panel._nisGroup
     if not group then return Persistence.bounds(panel) end
+    for _, member in ipairs(group.members) do
+        if member._nisClassic then return end
+    end
     local ids = {}
     for _, member in ipairs(group.members) do
         if busy(member) then return end
@@ -253,7 +257,7 @@ end
 -- Persist names and standalone bounds only, never native component handles.
 function Persistence.native(panel, snapshot)
     local panelID = panel._nisPersistenceID
-    if WorldMap.isSuspended() or not panelID or restoring then return end
+    if panel._nisClassic or WorldMap.isSuspended() or not panelID or restoring then return end
     local record = state.panels[panelID]
     local old = record.native
     local changed = geometry(record, snapshot.free)
@@ -273,7 +277,7 @@ end
 
 function Persistence.detach(panel)
     local panelID = panel._nisPersistenceID
-    if not panelID or restoring then return end
+    if panel._nisClassic or not panelID or restoring then return end
     local record = state.panels[panelID]
     local group = record.group and state.groups[record.group]
     local changed = record.group ~= nil or record.dockTo ~= nil or record.native ~= nil
@@ -306,7 +310,7 @@ end
 function Persistence.unregister(panel)
     local panelID = panel._nisPersistenceID
     if not panelID then return end
-    if not state.panels[panelID].native then Persistence.bounds(panel) end
+    if not panel._nisClassic and not state.panels[panelID].native then Persistence.bounds(panel) end
     live[panelID] = nil
     panel._nisPersistenceID = nil
 end

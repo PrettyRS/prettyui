@@ -62,9 +62,13 @@ Event = {
     },
 }
 local lockValue, transparencyValue = 0, 0
+local classicValue = 0
 var = { VarPlayer = {
     TOPLEVEL_V2_CUSTOMIZATION_LOCK = setmetatable({}, { __index = function() return lockValue end }),
     TOPLEVEL_V2_TRANSPARENCY = setmetatable({}, { __index = function() return transparencyValue end }),
+    TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, { __index = function(_, key)
+        if key == "value" then return classicValue end
+    end }),
 } }
 local function listening()
     local count = 0
@@ -76,6 +80,17 @@ local function transmit(varID)
 end
 
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
+expect(NativeInterfaceSettings.isClassicUI(), false, "modern mode is read live")
+expect(listening(), 0, "classic mode reading does not subscribe to variable transmissions")
+classicValue = 1
+expect(NativeInterfaceSettings.isClassicUI(), true, "legacy interface value one enables classic mode")
+classicValue = 2
+expect(NativeInterfaceSettings.isClassicUI(), false, "non-one legacy values are not classic mode")
+classicValue = -1
+expect(NativeInterfaceSettings.isClassicUI(), false, "negative legacy values are not classic mode")
+classicValue = 0
+expect(NativeInterfaceSettings.isClassicUI(), false, "returning to modern mode takes effect immediately")
+expect(listening(), 0, "live mode reads never install setting watchers")
 local Window = require("src/window")
 local Panel = require("src/panel")
 local parent = component()

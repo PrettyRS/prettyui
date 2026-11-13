@@ -16,7 +16,8 @@ local activePanel
 local EVENT_ID = "prettyui_nis_panel_drag"
 
 local function locked(panel)
-    return WorldMap.isSuspended() or panel.locked or NativeInterfaceSettings.isLocked()
+    return panel._nisClassic or WorldMap.isSuspended()
+        or panel.locked or NativeInterfaceSettings.isLocked()
 end
 
 local function scaleSetting()
