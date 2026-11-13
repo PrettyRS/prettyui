@@ -17,6 +17,7 @@ NisPanel.new(parent, options)
 {{< /signature >}}
 
 ```lua
+local state = { lastTick = 0 } -- Plugin state survives content rebuilds.
 local gameArea = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
 local panel = prettyui.NisPanel.new(gameArea, {
     id = "my-plugin:encounter",
@@ -26,10 +27,18 @@ local panel = prettyui.NisPanel.new(gameArea, {
     width = 300,
     height = 180,
     tabText = "Encounter",
+    buildContent = function(owner)
+        owner:AddTitle("Encounter")
+        local tickText = owner:AddText("Client tick: " .. state.lastTick)
+        Event.Logic.Subscribe("my-plugin:encounter-tick", function(event)
+            state.lastTick = event.logicTick
+            tickText.content = "Client tick: " .. state.lastTick
+        end)
+        return function()
+            Event.Logic.Unsubscribe("my-plugin:encounter-tick")
+        end
+    end,
 })
-
-panel:AddTitle("Encounter")
-panel:AddText("Next attack: 00:12")
 
 -- During plugin shutdown:
 panel:Destroy()
@@ -71,6 +80,12 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
 : Sprite ID and hover text for the panel's tab when grouped. Defaults to a
   built-in icon and **"Panel"**.
 
+`buildContent(panel)`
+: Optional for a panel with no content; required to create content. Called whenever
+  the panel's page becomes active. Add controls using **panel:Add…** or build
+  directly under **panel.content**. Return an optional cleanup function for
+  plugin-owned subscriptions and other content-specific resources.
+
 `onBoundsChange(panel, x, y, width, height)`
 : Receives changed, committed bounds after dragging, resizing, `SetSize`, or
   parent-driven repositioning. Coordinates are parent-relative interface units.
@@ -86,10 +101,28 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
 
 {{% api-card %}}
 
-### Content
+### Content lifecycle
+
+Build all content inside **buildContent(panel)**, not after construction. An
+inactive grouped tab or native page, and a panel hidden with **Hide()**, release
+managed controls, tooltip contexts, row backgrounds, the scroll tree, and its
+overlays. The panel shell, root, tab controls, bounds, and membership remain.
+Selection, **Show()**, or undocking remounts active content by calling
+**buildContent** again and restores **scrollY**. Resizing, toggling interface
+lock, temporarily hiding a drag preview, and world-map hiding do not rebuild
+content.
+
+If **buildContent** returns a function, PrettyUI calls it before destroying
+controls on deactivation or **Destroy()**. Use it to unsubscribe content-owned
+events while controls are still accessible. Keep persistent values in plugin Lua
+state, not in control handles: handles from a previous build are invalid after
+cleanup. **panel.content** and **panel.viewport** are nil while unmounted.
+**Add…** helpers remain available on the panel, but create controls only during
+an active content build. A panel without **buildContent** may remain empty.
 
 `AddText`, `AddTitle`, `Add…`
-: Use the shared [layout and flow helpers](#layout-and-scale).
+: Use the shared [layout and flow helpers](#layout-and-scale) inside
+  **buildContent**.
 
 `scrollable`, `scrollStep`, `contentHeight`
 : Shared [scrolling options](#scrolling-api). Scrolling defaults to true with
@@ -100,7 +133,8 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
 : Use the shared [scrolling methods](#scrolling-api).
 
 `content`, `viewport`, `scrollbarVisible`, `scrollY`, `contentHeight`, `contentWidth`
-: Raw content layer, clipped viewport, and current scroll state.
+: Raw content layer and clipped viewport while mounted; **content** and
+  **viewport** are nil when unmounted. **scrollY** is preserved across rebuilds.
 
 `layout`, `textLayout`
 : Shared flow configuration; **textLayout** is an alias for **layout**.
@@ -122,17 +156,17 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
 
 Drag onto another compatible `NisPanel` to form a tab group. Click tabs to switch,
 drag within the tab strip to reorder, or drag a tab out to detach it. Grouped
-panels share bounds and retain their own content and scroll state.
+panels share bounds; only the active page mounts content. Each panel preserves
+its own scroll position across switches.
 
 Panels mounted directly on `TOPLEVEL_V2__GAME_AREA` can also be dropped onto a
 native NIS tab band, or the visible header of a standalone native window.
-Their existing content becomes an own page in that row; drag the own tab out
-to restore an independent panel. Escape or focus loss
-cancels the drag. Native tabs keep their original handlers and select native
-pages normally. Native movement and resizing control the docked viewport.
-Lock/unlock handling retains the existing controls and scroll state. Own tab
-selection remains enabled; dragging, undocking by gesture, and resizing remain
-disabled while locked.
+Their own tab becomes a page in that row; drag it out to restore an independent
+panel. Escape or focus loss cancels the drag. Native tabs keep their original
+handlers and select native pages normally. Native movement and resizing control
+the docked viewport. Lock/unlock handling does not rebuild active content.
+Own tab selection remains enabled; dragging, undocking by gesture, and resizing
+remain disabled while locked.
 
 PrettyUI-only groups and synthetic native-host rows use the native dark tab-strip
 backdrop behind their tabs. Icons retain their original colours and input;
@@ -163,16 +197,17 @@ after clearing its transaction state; no later click or logic tick is needed
 before restarting the consumer plugin. A save that already lost native membership
 requires docking that panel again; matching bounds cannot recover the missing host.
 
-Compatible native tab rebuilds, reorders, and group merges/splits retain the
-existing PrettyUI page and its selected content.
-Temporary loss of native frame selection suspends own content/input without
-discarding membership; it resumes when native selection becomes visible again.
-Closing every host or changing to an unsupported arrangement restores raised,
-standalone PrettyUI panels and releases borrowed native state.
+Compatible native tab rebuilds, reorders, and group merges/splits preserve
+PrettyUI shell, membership, and selection; switching away destroys page content
+and selecting it again rebuilds it. Temporary loss of native frame selection
+releases own content/input without discarding membership; active content returns
+when native selection becomes visible again. Closing every host or changing to
+an unsupported arrangement restores raised, standalone PrettyUI panels and
+releases borrowed native state.
 
-**Stacking limitation:** retained content and added tab artwork use the GAME_AREA
+**Stacking limitation:** active content and added tab artwork use the GAME_AREA
 overlay fallback. They can draw above overlapping native windows; this is not
-native-equivalent occlusion. Inactive pages hide their content, tooltips and
+native-equivalent occlusion. Inactive pages release content, tooltips, and
 sibling input overlays; only the current native frame's own tab artwork is shown.
 
 Grouped hosts are discovered from named native components and matching native
@@ -202,8 +237,9 @@ filter open/closed state is not overwritten.
 Familiar supports both its centered embedded page and the native “Familiar
 currently unavailable” state. The latter reserves the band across the native
 edit block's background, message and icon children, without changing the edit
-container. Availability changes retain the PrettyUI page and selection while
-adopting newly loaded native roots. Each availability transition permits one
+container. Availability changes preserve the PrettyUI shell and selection while
+adopting newly loaded native roots; an active page's content is not rebuilt by
+native reflow alone. Each availability transition permits one
 recorded-baseline reset per retained root, as with lock reflow. Original centered
 anchors and placeholder layouts restore on undock; unknown layouts are rejected.
 The client may retain the familiar interface with an unparented 0 × 0 root while
@@ -231,8 +267,9 @@ client rendering and native script behavior still require verification.
   Native targets require a direct GAME_AREA mount and a compatible native host.
 
 `Undock()`
-: Detaches this panel and saves it as standalone. Native docking restores the
-  retained standalone rectangle; PrettyUI-only groups keep their current bounds.
+: Detaches this panel and saves it as standalone, remounting its content if
+  active. Native docking restores the retained standalone rectangle;
+  PrettyUI-only groups keep their current bounds.
 
 `SelectTab()`
 : Selects this panel within its group.
@@ -242,19 +279,22 @@ client rendering and native script behavior still require verification.
   limits. While docked natively, the native frame owns sizing; this is a no-op.
 
 `Show()`
-: Shows and raises the panel, selecting its tab if grouped.
+: Shows and raises the panel, selecting its tab if grouped and rebuilding
+  content when active.
 
 `Hide()`
-: Hides and undocks the panel without calling **onClose**.
+: Hides and undocks the panel without calling **onClose**, releasing content
+  while retaining its shell for a later **Show()**.
 
 `Close()`
 : Calls **onClose**, then hides or destroys the panel. Also used by the close
   button, which is visible only while the interface is unlocked.
 
 `Destroy()`
-: Removes the panel, managed content, and retained handlers without forgetting its
-  saved group. Call during plugin shutdown; `Hide()` and `Close()` instead save
-  the panel's removal from its group.
+: Calls the content cleanup before destroying controls, then removes the panel,
+  shell, and retained handlers without forgetting its saved group. Call during
+  plugin shutdown; `Hide()` and `Close()` instead save the panel's removal from
+  its group.
   Destroying a native member also removes its tab and restores native state when
   the last PrettyUI member leaves. Library shutdown restores native overrides
   without forgetting saved native membership.

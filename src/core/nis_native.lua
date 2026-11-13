@@ -952,6 +952,13 @@ local function align(group)
         end
     end
     group.current = current
+    -- Attachment aligns once before selecting the incoming page. That temporary
+    -- selection is not a content deactivation; commit the lifecycle afterward.
+    if not group.attaching then
+        for _, panel in ipairs(group.members) do
+            if panel ~= group.active or panel._nisHidden then panel:_SyncContent(false) end
+        end
+    end
     local host = group.hosts[current]
     for _, panel in ipairs(group.members) do
         local binding = group.bindings[panel]
@@ -983,6 +990,7 @@ local function align(group)
                 if not visible and panel.content then Tooltip.hideContextTooltips(panel.content) end
                 if panel._scroll then panel._scroll:_RefreshClipTargets() end
             end
+            if not group.attaching then panel:_SyncContent(visible) end
             if changed or visibilityChanged then
                 panel:_SyncChrome()
                 panel:_SyncOverlays(not visible)
@@ -2383,6 +2391,7 @@ local function abandonMember(group, panel)
         end
         if panel._scroll then panel._scroll:_RefreshClipTargets() end
         panel:_LayoutBody()
+        panel:_SyncContent(not panel._nisHidden)
         panel:RefreshRowBackgrounds()
         if not panel.root.hidden then panel.root:MoveToFront() end
         panel:_SyncChrome()
@@ -2526,6 +2535,8 @@ local function dock(panel, target, savedFree, insertion)
         if not subscribed then startTick() end
         align(group)
         assert(Native.select(panel), "native page selection failed")
+        group.attaching = nil
+        align(group)
     end)
     group.attaching = nil
     if not success then

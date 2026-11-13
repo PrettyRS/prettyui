@@ -30,6 +30,7 @@ hero:
 - Added a `placement` option to tooltips, allowing control over their position relative to the target element.
 
 ### Changed
+- [NisPanel](index.html#nis-panel-api) now uses `buildContent(panel)` and optional cleanup for inactive or hidden content; selection, `Show()`, and undocking rebuild it with saved scroll.
 - PrettyUI components are now hidden while the player is viewing the world map.
 - Added `Refresh()` to [sliders](index.html#slider-api), which can update the marker's position again after the slider's width changes.
 

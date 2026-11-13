@@ -250,6 +250,10 @@ local panel = NisPanel.new(parent, {
     rowBackgroundColours = { 0x24211EFF, 0x2E2825FF },
     rowBackgroundEdgeToEdge = true,
     onClose = function() closed = closed + 1 end,
+    buildContent = function(owner)
+        owner:AddTitle("NisPanel QA")
+        for index = 1, 16 do owner:AddText("Row " .. index) end
+    end,
 })
 expect(panel.surface.background.alpha, 1, "native full opacity has no caller-imposed cap")
 expect(panel.locked, true, "known locked state starts without editing chrome")
@@ -292,8 +296,6 @@ expect(panel.closeSprite.spriteID, id.Sprite.RS3_CHILD_COMPACT_CLOSE_BUTTON_OVER
 fire(panel.closeButton, ui.Hook.ONMOUSELEAVE)
 expect(panel.closeSprite.spriteID, id.Sprite.RS3_CHILD_COMPACT_CLOSE_BUTTON,
     "close leave restores sprite")
-panel:AddTitle("NisPanel QA")
-for index = 1, 16 do panel:AddText("Row " .. index) end
 expect(panel.contentHeight > panel.surface.container.height, true, "content overflows")
 expect(panel.scrollbarVisible, true, "scrollbar appears when content overflows")
 panel:RefreshRowBackgrounds()
@@ -320,10 +322,13 @@ expect(thumb.hidden, false, "overflow capture is visible")
 panel:Hide()
 expect(panel.root.hidden, true, "hide suppresses body")
 expect(panel.dragLayer.hidden, true, "hide removes sibling input hit")
-expect(thumb.hidden, true, "hide removes overlay capture")
+expect(thumb.destroyed, true, "hide destroys the scrollbar capture")
+expect(panel.content, nil, "hidden panel unmounts its content")
+expect(panel.viewport, nil, "hidden panel releases its viewport")
 panel:Show()
 expect(panel.dragLayer.hidden, false, "show restores unlocked drag region")
-expect(thumb.hidden, false, "show restores scrollbar capture")
+expect(panel._scroll.thumbDrag.hidden, false, "show recreates scrollbar capture")
+expect(panel._scroll.thumbDrag == thumb, false, "show uses a fresh scrollbar tree")
 fire(panel.closeButton, ui.Hook.ONCLICK)
 expect(closed, 1, "close runs onClose callback")
 expect(panel.root.hidden, true, "close hides by default")
@@ -356,6 +361,117 @@ expect(panel.dragLayer, nil, "destroy clears sibling capture")
 expect(panel._scroll, nil, "destroy clears scroll controller")
 expect(next(panel.overlays), nil, "destroy releases overlay registry")
 expect(next(events.VarTransmit), nil, "destroy unwatches native settings")
+-- A plugin owns durable data, not UI handles: each visible mount gets fresh
+-- controls, tooltips, row backdrops, Scroll and sibling input overlays.
+do
+    local Components = require("src/core/components")
+    local Tooltip = require("src/tooltip")
+    local builds, cleanups, failBuild = 0, 0, false
+    local row, nestedRow, tooltipRoot, contentContext
+    local owner = NisPanel.new(parent, {
+        categoryID = "auto", x = 100, y = 80, width = 300, height = 200,
+        rowBackgroundColours = { 0x24211EFF, 0x2E2825FF },
+        buildContent = function(current)
+            builds = builds + 1
+            current:AddTitle("Durable plugin state " .. builds)
+            row = current:AddText("Temporary control " .. builds)
+            if failBuild then error("injected buildContent failure") end
+            for index = 1, 20 do current:AddText("Row " .. index) end
+            local nested = current:AddPanel({ height = 80 })
+            nestedRow = nested:AddText("Nested control")
+            for index = 1, 8 do nested:AddText("Nested row " .. index) end
+            contentContext = current.content
+            local tooltip = Tooltip.attach(row, current.content, "Temporary tooltip")
+            tooltipRoot = tooltip.root
+            return function()
+                expect(row.destroyed, nil, "cleanup can still access live controls")
+                expect(Tooltip.getContext(contentContext) ~= nil, true,
+                    "cleanup runs before tooltip context is unregistered")
+                cleanups = cleanups + 1
+            end
+        end,
+    })
+    expect(builds, 1, "visible panel builds during construction")
+    local originalRoot, firstRow, firstNested, firstTooltip = owner.root, row, nestedRow, tooltipRoot
+    local firstContent, firstScroll = owner.content, owner._scroll.root
+    owner:SetSize(320, 220)
+    expect(builds, 1, "resizing active shell does not rebuild its content")
+    expect(row, firstRow, "resizing retains active control handles")
+    locked = false; transmit(12)
+    locked = true; transmit(12)
+    expect(builds, 1, "native lock and unlock do not rebuild active content")
+    local firstThumb, firstBackground = owner._scroll.thumbDrag, owner.rowBackgrounds[1]
+    local categoryID, dynamicID = firstRow.categoryID, firstRow.dynamicID
+    local slot = (categoryID - 1) * 235 + dynamicID
+    expect(Components.occupiedIDs(parent)[slot], true, "mounted content occupies its native full ID")
+    expect(ui.Interfaces:GetComponent(parent.interfaceID, parent.staticID, categoryID, dynamicID),
+        firstRow, "mounted content is addressable by native full ID")
+    owner:SetScrollPosition(64)
+    owner:Hide()
+    expect(cleanups, 1, "Hide invokes cleanup once")
+    owner:Hide()
+    expect(cleanups, 1, "repeated Hide cannot clean up one mount twice")
+    expect(owner.root, originalRoot, "Hide retains the reusable shell")
+    expect(owner.content, nil, "Hide removes the content tree")
+    expect(owner.viewport, nil, "Hide removes the viewport")
+    expect(owner._scroll, nil, "Hide releases the Scroll controller")
+    expect(owner.scrollY, 64, "Hide saves scroll position")
+    expect(firstRow.destroyed, true, "Hide destroys top-level controls")
+    expect(firstNested.destroyed, true, "Hide destroys nested controls")
+    expect(firstTooltip.destroyed, true, "Hide destroys a built tooltip root")
+    expect(firstScroll.destroyed, true, "Hide destroys the Scroll root")
+    expect(firstThumb.destroyed, true, "Hide destroys its sibling scrollbar overlay")
+    expect(firstBackground.destroyed, true, "Hide destroys row backgrounds")
+    expect(Tooltip.getContext(firstContent), nil, "Hide unregisters the content tooltip context")
+    expect(next(owner.overlays), nil, "Hide releases all sibling input registrations")
+    expect(Components.occupiedIDs(parent)[slot], nil, "Hide frees control IDs while shell stays mounted")
+    expect(ui.Interfaces:GetComponent(parent.interfaceID, parent.staticID, categoryID, dynamicID),
+        nil, "native lookup no longer returns removed controls")
+    local reused = component(parent, "ID reuse", categoryID, dynamicID)
+    expect(ui.Interfaces:GetComponent(parent.interfaceID, parent.staticID, categoryID, dynamicID),
+        reused, "another consumer can reuse the freed ID")
+    reused:Destroy()
+    owner:Show()
+    expect(owner.root, originalRoot, "Show preserves shell identity")
+    expect(builds, 2, "Show rebuilds controls after Hide")
+    expect(row == firstRow, false, "Show supplies new control handles")
+    expect(owner.scrollY, 64, "Show restores scroll position")
+    owner:Show()
+    expect(builds, 2, "repeated Show of a mounted panel does not rebuild")
+    owner:Hide()
+    failBuild = true
+    local ok, problem = pcall(function() owner:Show() end)
+    expect(ok, false, "failed builder propagates an error")
+    expect(problem:find("injected buildContent failure", 1, true) ~= nil, true,
+        "failed builder preserves the original error")
+    expect(row.destroyed, true, "failed builder rolls back partial controls")
+    expect(owner.content, nil, "failed builder leaves no mounted content")
+    expect(owner.viewport, nil, "failed builder leaves no viewport")
+    expect(owner._scroll, nil, "failed builder releases Scroll and sibling overlays")
+    expect(next(owner.overlays), nil, "failed builder releases overlay registrations")
+    failBuild = false
+    owner:Show()
+    expect(builds, 4, "Show retries a failed build instead of retaining partial controls")
+    owner:Destroy()
+    expect(cleanups, 3, "Destroy invokes cleanup for the final mount")
+    expect(row.destroyed, true, "Destroy releases the last consumer controls")
+    expect(owner.root, nil, "Destroy releases the shell")
+    local children = #parent.children
+    local partialRow, failedRoot
+    ok, problem = pcall(function()
+        NisPanel.new(parent, { categoryID = "auto", buildContent = function(current)
+            failedRoot = current.root
+            partialRow = current:AddText("Partial construction")
+            error("injected constructor build failure")
+        end })
+    end)
+    expect(ok, false, "constructor propagates builder failure")
+    expect(problem:find("injected constructor build failure", 1, true) ~= nil,
+        true, "constructor preserves builder error")
+    expect(partialRow.destroyed, true, "constructor rollback destroys partial content")
+    expect(failedRoot.destroyed, true, "constructor rollback destroys its shell")
+    expect(#parent.children, children, "constructor rollback leaves no sibling controls")
+end
 
 local capped = NisPanel.new(parent, {
     width = 400.9, height = 200.5, minWidth = 100.9, minHeight = 32.9,
@@ -410,10 +526,12 @@ end
 local function emit(name, payload)
     for _, callback in pairs(events[name]) do callback(payload or {}) end
 end
-local function makePanel()
-    return NisPanel.new(parent, {
+local function makePanel(extra)
+    local options = {
         categoryID = "auto", x = 100, y = 100, width = 300, height = 200,
-    })
+    }
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return NisPanel.new(parent, options)
 end
 local function begin(owner)
     fire(owner.dragLayer, ui.Hook.ONCLICK, owner.root.width / 2, 6)
@@ -590,10 +708,11 @@ obstacles = {
     { x = 0, y = 300, width = 400, height = 400 },
     { x = 520, y = 300, width = 480, height = 400 },
 }
-local scrolling = makePanel()
-for index = 1, 16 do scrolling:AddText("Row " .. index) end
-local nested = scrolling:AddPanel({ height = 80 })
-for index = 1, 8 do nested:AddText("Nested " .. index) end
+local scrolling = makePanel({ buildContent = function(owner)
+    for index = 1, 16 do owner:AddText("Row " .. index) end
+    local nested = owner:AddPanel({ height = 80 })
+    for index = 1, 8 do nested:AddText("Nested " .. index) end
+end })
 begin(scrolling); move(scrolling, 460, 450); release(scrolling)
 expect(scrolling.contentWidth, 94, "narrowed viewport reserves scrollbar and gutter")
 expect(scrolling.viewport.width, 94, "content and viewport widths agree")
@@ -603,9 +722,12 @@ expect(scrolling.scrollY, 64, "narrowed content remains scrollable")
 local overlayRoots = {}
 for root in pairs(scrolling.overlays) do overlayRoots[#overlayRoots + 1] = root end
 scrolling:Hide()
-for _, root in ipairs(overlayRoots) do expect(root.hidden, true, "hide removes nested input overlays") end
+for _, root in ipairs(overlayRoots) do expect(root.destroyed, true, "hide releases nested input overlays") end
+expect(next(scrolling.overlays), nil, "hide clears all content overlay registrations")
+expect(scrolling._scroll, nil, "hide releases the nested Scroll tree")
+scrolling:Show()
+expect(scrolling.scrollY, 64, "show restores the previous scroll position")
 scrolling:Destroy()
-for _, root in ipairs(overlayRoots) do expect(root.destroyed, true, "destroy releases nested overlays") end
 
 -- Other NisPanels obstruct with their full body; Windows keep their visible inset.
 obstacles = {}
@@ -926,26 +1048,63 @@ do
         endPair(source, target)
     end
 
-    local saved = {}
+    local Components = require("src/core/components")
+    local saved, sourceBuilds, sourceCleanups = {}, 0, 0
+    local sourceRow
     source, target = pair({
         onBoundsChange = function(_, x, y, width, height)
             saved[#saved + 1] = { x = x, y = y, width = width, height = height }
         end,
+        buildContent = function(owner)
+            sourceBuilds = sourceBuilds + 1
+            for index = 1, 16 do sourceRow = owner:AddText("Source row " .. index) end
+            local nested = owner:AddPanel({ height = 100 })
+            for index = 1, 8 do nested:AddText("Nested row " .. index) end
+            return function()
+                expect(sourceRow.destroyed, nil, "cleanup runs while source controls remain available")
+                sourceCleanups = sourceCleanups + 1
+            end
+        end,
+    }, {
+        buildContent = function(owner)
+            if sourceCleanups > 0 then
+                local categoryID, dynamicID = sourceRow.categoryID, sourceRow.dynamicID
+                local slot = (categoryID - 1) * 235 + dynamicID
+                expect(Components.occupiedIDs(parent)[slot], nil,
+                    "incoming page builds after outgoing control IDs are released")
+                expect(ui.Interfaces:GetComponent(parent.interfaceID, parent.staticID, categoryID, dynamicID),
+                    nil, "incoming page cannot observe outgoing native controls")
+            end
+            owner:AddText("Incoming group page")
+        end,
     })
-    for index = 1, 16 do source:AddText("Source row " .. index) end
-    local nested = source:AddPanel({ height = 100 })
-    for index = 1, 8 do nested:AddText("Nested row " .. index) end
     begin(source); move(source, 650, 130)
     expect(#saved, 0, "nesting preview does not persist bounds")
     release(source)
     expect(#saved, 1, "nest commit persists new shared bounds once")
     fire(source.dragLayer, ui.Hook.ONDRAGCOMPLETE)
     expect(#saved, 1, "duplicate nesting completion cannot persist twice")
+    local oldRow = sourceRow
+    local oldScroll = source._scroll.root
+    local oldOverlays = {}
+    for overlay in pairs(source.overlays) do oldOverlays[#oldOverlays + 1] = overlay end
+    source:SetScrollPosition(64)
     target:SelectTab()
-    for overlay in pairs(source.overlays) do
-        expect(overlay.hidden, true, "inactive tab hides nested content input overlays")
+    expect(sourceCleanups, 1, "inactive grouped page invokes cleanup exactly once")
+    expect(oldRow.destroyed, true, "inactive grouped page destroys old rows")
+    expect(oldScroll.destroyed, true, "inactive grouped page destroys its scroll tree")
+    expect(source.content, nil, "inactive grouped page releases content")
+    expect(source.viewport, nil, "inactive grouped page releases viewport")
+    for _, overlay in ipairs(oldOverlays) do
+        expect(overlay.destroyed, true, "inactive grouped page destroys nested scrollbar overlays")
     end
+    expect(next(source.overlays), nil, "inactive group has no content overlays")
     source:SelectTab()
+    expect(sourceBuilds, 2, "reselection rebuilds old page controls")
+    expect(sourceRow == oldRow, false, "reselection gives consumers fresh control handles")
+    expect(source.scrollY, 64, "group reselection restores scroll offset")
+    source:SelectTab()
+    expect(sourceBuilds, 2, "repeated selection of active page never rebuilds")
     source:SetSize(340, 280)
     sameBounds(source, target, "explicit group sizing synchronizes inactive member geometry")
     expectRect(target.root, 500, 100, 340, 280, "group sizing updates dimensions without restoring old sizes")
@@ -980,15 +1139,25 @@ do
     expect(target.surface.container.y, 16, "hiding member dissolves a two-member group")
     endPair(source, target)
 
-    source, target = pair()
+    local body, bodyClicks, targetBuilds = nil, 0, 0
+    source, target = pair(nil, { buildContent = function(owner)
+        targetBuilds = targetBuilds + 1
+        body = owner:AddText("Interactive body")
+        body.clickthrough = false
+        body:Subscribe(ui.Hook.ONCLICK, function() bodyClicks = bodyClicks + 1; return false end)
+    end })
+    local originalContent, originalBody = target.content, body
     expect(source:DockTo(target), true, "explicit docking shares a compatible target")
-    -- Tab input must switch retained pages without replacing their content.
-    local originalContent = target.content
+    expect(target.content, nil, "docking deactivates target's old content")
+    expect(originalBody.destroyed, true, "docking destroys old body control")
+    -- Tab input switches newly built pages without destroying pressed tab input.
     local firstTab = source._nisTabs.tabs[1].hit
     expect(hitAt(parent, 514, 126), firstTab, "the visible tab receives the initial press")
     fire(firstTab, ui.Hook.ONCLICK, 10, 10)
     expect(target.root.hidden, false, "native-style tab click selects the target")
-    expect(target.content, originalContent, "selection preserves content and scroll ownership")
+    expect(target.content == originalContent, false, "selection mounts a new content tree")
+    expect(body == originalBody, false, "selection rebuilds consumer controls")
+    expect(targetBuilds, 2, "target content builds when selected")
     expect(hitAt(parent, 514, 126), firstTab,
         "tab switching preserves the native pressed component until release")
     expect(firstTab.destroyed == true, false, "switching content must not destroy the pressed tab")
@@ -1008,6 +1177,10 @@ do
         expectNoDrag(selected, "repeated tab click release")
         sameBounds(source, target, "tab clicks cannot change shared bounds")
     end
+    expect(targetBuilds > 2, true, "switching repeatedly reconstructs the target page")
+    local alreadyBuilt = targetBuilds
+    target:SelectTab()
+    expect(targetBuilds, alreadyBuilt, "reselecting active target does not rebuild it")
     locked = true; transmit(12)
     for _, selected in ipairs({ source, target, source, target }) do
         local slot = selected == target and 0 or 40
@@ -1023,10 +1196,7 @@ do
         sameBounds(source, target, "locked tab interaction cannot move the group")
     end
     locked = false; transmit(12)
-    local body = target:AddText("Interactive body")
-    local bodyClicks = 0
-    body.clickthrough = false
-    body:Subscribe(ui.Hook.ONCLICK, function() bodyClicks = bodyClicks + 1; return false end)
+    expect(body.destroyed, nil, "active target retains its current interactive body")
     local bodyPoint = body.xyGlobal
     local bodyHit = hitAt(parent, bodyPoint.x + 2, bodyPoint.y + 2)
     expect(bodyHit, body, "tab clicking leaves body controls reachable below the header")
@@ -1394,15 +1564,24 @@ do
         yAnchor = 0.5, width = 600, height = 400, dockTo = "new:default" })
     expectRect(b.root, 500, 100, 340, 260, "saved bounds override changed defaults and anchors")
     expect(b._nisGroup, nil, "missing plugin leaves a usable standalone panel")
-    a = create("plugin-a:tracker", { width = 500, height = 500 })
+    local inactiveBuilds = 0
+    a = create("plugin-a:tracker", { width = 500, height = 500,
+        buildContent = function(owner)
+            inactiveBuilds = inactiveBuilds + 1
+            owner:AddTitle("Saved inactive panel")
+        end })
     expect(a._nisGroup, b._nisGroup, "group restores in reverse plugin creation order")
     expect(a._nisGroup.active, b, "locked startup restores the selected tab")
     expect(a._nisGroup.members[1], a, "saved tab order restores")
     expect(a._nisGroup.members[2], b, "reordered tab remains last")
     expect(a.root.hidden, true, "restored inactive page is hidden")
     expectRect(a.root, 500, 100, 340, 260, "restored members share saved bounds")
+    expect(inactiveBuilds, 0, "saved inactive startup does not allocate consumer content")
+    expect(a.content, nil, "saved inactive startup leaves content unmounted")
+    expect(a.viewport, nil, "saved inactive startup has no viewport")
 
     b:Destroy()
+    expect(inactiveBuilds, 1, "selecting survivor builds saved inactive content on demand")
     a:SetSize(360, 280)
     b = create("plugin-b:tracker")
     expectRect(b.root, 500, 100, 360, 280, "absent plugin follows changes to its saved group")
@@ -1891,12 +2070,20 @@ do
             end
         end
     end
+    local title, rows, nativeBuilds, nativeCleanups = nil, {}, 0, 0
     local nativePanel = NisPanel.new(area, {
         categoryID = "auto", x = 50, y = 450, width = 280, height = 180, id = "native:retained",
+        buildContent = function(owner)
+            nativeBuilds = nativeBuilds + 1
+            title = owner:AddTitle("Rebuildable native page")
+            rows = {}
+            for index = 1, 30 do rows[index] = owner:AddText("Native row " .. index) end
+            return function()
+                expect(title.destroyed, nil, "native cleanup runs before controls are destroyed")
+                nativeCleanups = nativeCleanups + 1
+            end
+        end,
     })
-    local title = nativePanel:AddTitle("Retained native page")
-    local rows = {}
-    for index = 1, 30 do rows[index] = nativePanel:AddText("Native retained row " .. index) end
     local root, content = nativePanel.root, nativePanel.content
     local overlay = component(area, "overlay")
     nativePanel:_RegisterOverlay(overlay, function() return true end)
@@ -1936,6 +2123,7 @@ do
         return count
     end
     begin(nativePanel)
+    local previewBuilds, previewTitle = nativeBuilds, title
     move(nativePanel, 650, 130)
     expectRect(nativePanel.dragFeedback.active, 510, 124, 280, 180,
         "native nesting keeps the dragged dimensions instead of wrapping its host")
@@ -1943,11 +2131,14 @@ do
     expect(nativePanel.root.hidden, true, "a visible incoming native tab hides the dragged body")
     expect(notes.body.hidden, false, "native nesting preview does not conceal native content")
     expect(nativePanel._nisNative, nil, "native nesting preview does not commit membership")
+    expect(nativeBuilds, previewBuilds, "temporary native drag preview does not rebuild content")
+    expect(title, previewTitle, "temporary preview keeps the current control handles")
     move(nativePanel, 650, 250)
     expect(visibleIcons(area, nativePanel.tabIcon), 0, "leaving the native band removes its incoming tab")
     expect(nativePanel.root.hidden, false, "leaving the native tab band immediately restores the body")
     move(nativePanel, 650, 130)
     expect(nativePanel.root.hidden, true, "re-entering the native band hides the body with its tab preview")
+    expect(nativeBuilds, previewBuilds, "re-entering drag preview does not rebuild content")
     release(nativePanel)
     expect(nativePanel._nisNative ~= nil, true, "header drop joins the native group")
     expect(nativePanel.root, root, "native docking retains the original root")
@@ -1979,6 +2170,7 @@ do
         expect(peer:DockTo(free), true, "world-map fixture creates a retained PrettyUI group")
         local group, binding = peer._nisGroup, nativePanel._nisNative
         local savedNative = copy(savedLayouts["prettyui.nis-layout.v1"].panels["native:retained"].native)
+        local mapBuilds, mapTitle = nativeBuilds, title
         local hidden = NisPanel.new(area, { categoryID = "auto" })
         hidden:Hide()
         local window = Window.new(area, { x = 20, y = 450, width = 260, height = 180 })
@@ -1991,6 +2183,8 @@ do
         raw:SetSize(20, 20)
         changes = 0
         map(0)
+        expect(nativeBuilds, mapBuilds, "world-map occlusion does not rebuild selected content")
+        expect(nativePanel.content, content, "world-map occlusion does not unmount selected content")
         expect(nativePanel.root.hidden, true, "map immediately suppresses the native-docked page")
         expect(binding.tabs[binding.group.current].hit.hidden, true, "map suppresses native tab input siblings")
         expect(binding.group.hosts[binding.group.current].chrome.hidden, true, "map suppresses native chrome siblings")
@@ -2032,6 +2226,8 @@ do
         expect(nativePanel.content, content, "map close retains populated consumer content")
         expect(binding.group.active, nativePanel, "map close retains the selected native-docked tab")
         expect(drawable(title, nativePanel), true, "retained native page renders again after map close")
+        expect(nativeBuilds, mapBuilds, "world-map return does not rebuild selected content")
+        expect(title, mapTitle, "world-map return preserves the live title handle")
         expectRect(peer.root, 100, 400, 240, 180, "map close restores group placement exactly")
         expect(peer.root.hidden, false, "active PrettyUI page returns after map close")
         expect(free.root.hidden, true, "inactive PrettyUI page stays hidden after map close")
@@ -2097,7 +2293,8 @@ do
             emit("Draw"); emit("Logic")
             expect(nativePanel._nisNative, binding, unavailable .. " selecting a restored native peer cannot detach")
             expect(nativePanel.root, root, unavailable .. " native peer selection retains the panel tree")
-            expect(nativePanel.content, content, unavailable .. " native peer selection retains populated content")
+            expect(nativePanel.content, nil, unavailable .. " native peer selection releases content")
+            expect(nativePanel.viewport, nil, unavailable .. " native peer selection releases viewport")
             expect(binding.group.active, nil, unavailable .. " native peer selection retains native authority")
             expect(nativePanel.root.hidden, true, unavailable .. " native peer selection leaves the own page hidden")
             expect(ranged.body.hidden, false, unavailable .. " newly selected native page remains visible")
@@ -2221,9 +2418,12 @@ do
         nativeHook(notes.backgrounds[1], ui.Hook.ONDRAGCOMPLETE, nil, 11, 10)
         nativePanel:SelectTab()
     end
+    local lockContent, lockBuilds = nativePanel.content, nativeBuilds
     nativeLock(true, true)
     expect(nativePanel._nisNative, nativeBinding, "locking retains native membership")
     expect(drawable(rows[4], nativePanel), true, "locking native chrome does not discard the selected content")
+    expect(nativePanel.content, lockContent, "lock reflow retains the selected content tree")
+    expect(nativeBuilds, lockBuilds, "lock reflow does not invoke buildContent")
     expect(lockedPeer.root.hidden, true, "locking does not reveal an inactive nested page")
     expectRect(nativePanel.root, 504, 132, 371, 321, "locked native body follows its reflowed slot")
     local target = hitAt(area, root.x + 10, root.y + 100)
@@ -2249,7 +2449,8 @@ do
     expect(nativePanel.dragState, nil, "locked nested tabs cannot start placement")
     expect(nativePanel._nisTabPress, nil, "locked nested tabs cannot retain a drag press")
     lockedPeer:SelectTab()
-    expect(drawable(rows[4], nativePanel), false, "locked own-tab switching hides the previous content")
+    expect(nativePanel.content, nil, "locked own-tab switching releases previous content")
+    expect(rows[4].destroyed, true, "locked own-tab switching destroys old rows")
     nativePanel:SelectTab()
     expect(drawable(rows[4], nativePanel), true, "own tabs remain selectable while locked")
     do
@@ -2352,9 +2553,9 @@ do
     local function retainedPage(reason)
         expect(nativePanel._nisNative ~= nil, true, reason .. " keeps native membership")
         expect(nativePanel.root, root, reason .. " retains the actual panel root")
-        expect(nativePanel.content, content, reason .. " retains consumer controls")
-        expect(nativePanel.scrollY, scrollY, reason .. " preserves scroll position")
-        expect(drawable(rows[4], nativePanel), true, reason .. " leaves real content drawable")
+        expect(nativePanel.content ~= nil, true, reason .. " mounts consumer controls when selected")
+        expect(nativePanel.scrollY, scrollY, reason .. " restores scroll position")
+        expect(drawable(rows[4], nativePanel), true, reason .. " leaves rebuilt content drawable")
     end
     local sameIDBackground = notes.backgrounds[1]
     notes:rebuild({ 9001, 9002 }, 1)
@@ -2363,9 +2564,15 @@ do
     retainedPage("unchanged-ID native tab replacement")
     expect(next(sameIDBackground.namedSubscriptions[ui.Hook.ONCLICK] or {}), nil,
         "unchanged-ID replacement releases the retired observer")
+    local oldNativeRow, oldBuilds = rows[4], nativeBuilds
     nativeClick(notes.backgrounds[1])
     expect(nativePanel.root.hidden, true, "rebuilt same-ID native tab clicks still select native content")
+    expect(nativePanel.content, nil, "native tab switch unmounts own content")
+    expect(oldNativeRow.destroyed, true, "native tab switch destroys old row handles")
+    expect(nativeCleanups > 0, true, "native page switch calls consumer cleanup")
     nativePanel:SelectTab()
+    expect(nativeBuilds, oldBuilds + 1, "return from native tab rebuilds own content")
+    expect(rows[4] == oldNativeRow, false, "native return replaces control handles")
     local retiredBackground = notes.backgrounds[1]
     notes:rebuild({ 9002, 9001 }, 2)
     ranged:rebuild({ 9002, 9001 }, 1)
@@ -2419,7 +2626,8 @@ do
     expect(nativePanel.root.hidden, true, "same-selected native click hides the own page")
     expect(overlay.hidden, true, "native return suppresses sibling popouts")
     expect(notes.body.hidden, false, "native return restores its body")
-    expect(drawable(rows[4], nativePanel), false, "native return prevents the retained row drawing through its hidden page")
+    expect(nativePanel.content, nil, "native return unmounts the old row tree")
+    expect(rows[4].destroyed, true, "native return destroys rows rather than merely hiding them")
     nativePanel:SelectTab()
     expect(nativePanel.scrollY, scrollY, "native selection round-trip retains scroll")
     expect(drawable(rows[4], nativePanel), true, "own-tab return makes the retained scrolled row drawable again")
@@ -2429,7 +2637,7 @@ do
     expect(nativePanel.root.hidden, true, "native frame selection restores native page authority")
     nativePanel:SelectTab()
     expect(ranged.body.hidden, true, "own page can be selected from the other native frame")
-    expect(nativePanel.content, content, "native frame changes do not rebuild content")
+    retainedPage("own page selected from another native frame")
     local function captureTab()
         for _, child in ipairs(area.children) do
             if child ~= overlay and child ~= nativePanel.dragLayer and not child.hidden
@@ -2471,7 +2679,7 @@ do
     expect(nativePanel.dragState ~= nil, true, "drag-out enters normal placement")
     emit("KeyDown", { gameKey = GameKey.ESCAPE })
     expect(nativePanel._nisNative ~= nil, true, "escape restores the native membership")
-    expect(nativePanel.content, content, "cancelled drag-out retains content")
+    expect(nativePanel.content ~= nil, true, "cancelled drag-out remounts selected content")
     expect(ranged.body.hidden, true, "cancelled drag restores native concealment")
     capture = captureTab()
     fire(capture, ui.Hook.ONCLICK, 10, 10)
@@ -2480,7 +2688,7 @@ do
     fire(capture, ui.Hook.ONRELEASE, 200, 450)
     expect(nativePanel._nisNative, nil, "valid drop commits a standalone panel")
     expect(nativePanel.root, root, "committed native drag-out retains the root")
-    expect(nativePanel.content, content, "committed native drag-out retains content")
+    expect(nativePanel.content ~= nil, true, "committed drag-out has mounted standalone content")
     expect(ranged.body.hidden, false, "dragging the last tab out restores native content")
     expect(capture.destroyed, true, "committed drag-out releases the retained capture")
     local freeX, freeY, freeWidth, freeHeight = root.x, root.y, root.width, root.height
@@ -2659,7 +2867,7 @@ do
                 end
                 assert(delivered, "native tab exposes its sort lifecycle hook")
             end
-            local originalRoot, originalContent = peer.root, peer.content
+            local originalRoot = peer.root
             local originalScroll = nativePanel.scrollY
             for _, finish in ipairs({ "release", "complete", "escape", "focus", "lock" }) do
                 local binding = peer._nisNative
@@ -2687,7 +2895,7 @@ do
                 expect(binding.tabs[group.current].visual.x, 92,
                     "PrettyUI tab occupies its live mixed slot before native release")
                 expect(peer.root, originalRoot, "native drag retains the actual own root")
-                expect(peer.content, originalContent, "native drag retains consumer content")
+                expect(peer.content, nil, "native selection releases the inactive own page during sorting")
                 if finish == "escape" or finish == "focus" or finish == "lock" then
                     source:SetPos(44, 0)
                     if finish == "escape" then emit("KeyDown", { gameKey = GameKey.ESCAPE })
@@ -2868,7 +3076,7 @@ do
     expect(nativePanel._nisNative, nil, "library shutdown detaches retained native members")
     expect(wrapper.y, 0, "library shutdown restores the native wrapper inset")
     expect(wrapper.hidden, false, "library shutdown restores native visibility")
-    expect(nativePanel.content, content, "library shutdown does not destroy consumer controls")
+    expect(nativePanel.content ~= nil, true, "library shutdown restores selected standalone content")
     nativePanel:_UnregisterOverlay(overlay)
     overlay:Destroy()
     nativePanel:Destroy()
@@ -2878,10 +3086,11 @@ do
         for _, captured in ipairs(standaloneHosts) do
             local item, embedded = captured.host, captured.root
             local panelID = "native-standalone:" .. captured.label
+            local title
             local owner = NisPanel.new(area, { id = panelID, categoryID = "auto",
-                x = 30, y = 450, width = 280, height = 180 })
+                x = 30, y = 450, width = 280, height = 180,
+                buildContent = function(panel) title = panel:AddTitle(captured.label .. " native host") end })
             local content = owner.content
-            local title = owner:AddTitle(captured.label .. " native host")
             item.frame.nativeShown = true
             embedded:SetSize(-10, 0, 1, 1)
             expect(owner:DockTo(item.frame), false, captured.label .. " partial root cannot establish safe reflow")
@@ -2905,10 +3114,14 @@ do
             expect(owner.content, content, captured.label .. " docking retains consumer controls")
             local binding = owner._nisNative
             fire(binding.group.hosts[1].nativeTab.hit, ui.Hook.ONCLICK)
+            expect(owner.content, nil, captured.label .. " native tab destroys its controls")
+            expect(title.destroyed, true, captured.label .. " native tab retires the old title")
             expect(embedded.hidden, false, captured.label .. " native tab restores embedded content")
             expect(item.scroll.hidden, false, captured.label .. " native tab restores scrollbar visibility")
             expect(edit.hidden, false, captured.label .. " native tab restores edit visibility")
             owner:SelectTab()
+            content = owner.content
+            expect(drawable(title, owner), true, captured.label .. " own-tab return rebuilds the title")
             if captured.label == "Prayer" then
                 local retainedBinding, retainedRoot = owner._nisNative, owner.root
                 local nativeWrites = 0
@@ -2954,7 +3167,8 @@ do
                     emit("Logic")
                     expect(owner._nisNative, retainedBinding, "Prayer lock transition retains its native binding")
                     expect(owner.root, retainedRoot, "Prayer lock transition retains the populated root")
-                    expect(owner.content, content, "Prayer lock transition retains consumer controls")
+                    expect(owner.content, active == owner and content or nil,
+                        "Prayer lock preserves only the selected page's content")
                     expect(retainedBinding.group.active, active, "Prayer lock transition preserves selected page")
                     local top, height = value and 4 or 16, captured.height + (value and 12 or 0)
                     expectRect(embedded, 0, 28, captured.width, height - 28, "Prayer lock reflow reapplies one native inset")
@@ -2984,14 +3198,17 @@ do
                 prayerLock(false, false, false)
                 expect(embedded.hidden, false, "Prayer unlock preserves the selected native page")
                 owner:SelectTab()
+                content = owner.content
                 local peer = NisPanel.new(area, { categoryID = "auto", x = 20, y = 20 })
                 expect(peer:DockTo(owner), true, "Prayer lock regression includes an inactive own tab")
                 owner:SelectTab()
+                content = owner.content
                 prayerLock(true, false, true)
                 expect(peer.root.hidden, true, "Prayer lock rebuild does not reveal inactive retained pages")
                 peer:SelectTab()
                 expect(owner.root.hidden, true, "Prayer own tabs remain selectable while locked")
                 owner:SelectTab()
+                content = owner.content
                 peer:Destroy()
                 prayerLock(false, true, false)
                 embedded:SetPos(1, 28)
@@ -3029,9 +3246,10 @@ do
             item.frame.nativeShown = false
             locked = false; transmit(12)
         end
+        local title
         local owner = NisPanel.new(area, { categoryID = "auto", x = 30, y = 450,
-            width = 280, height = 180 })
-        local title = owner:AddTitle("Scroll-less native host")
+            width = 280, height = 180,
+            buildContent = function(panel) title = panel:AddTitle("Scroll-less native host") end })
 
         chat.frame.nativeShown = true
         begin(owner); move(owner, 650, 130); release(owner)
@@ -3095,8 +3313,10 @@ do
         restart()
         locked = true; transmit(12)
         notes.frame.visible = false
-        c = create("c")
-        local restoredTitle = c:AddTitle("Restored native content")
+        local restoredTitle
+        c = create("c", { buildContent = function(panel)
+            restoredTitle = panel:AddTitle("Restored native content")
+        end })
         emit("Logic")
         expect(c._nisNative, nil, "unavailable host leaves a usable standalone panel")
         expect(drawable(restoredTitle, c), true, "pending native restore retains actual content")
@@ -3142,11 +3362,19 @@ do
         a:Destroy()
         restart()
         locked = true; transmit(12)
-        a = create("a")
+        local inactiveNativeBuilds = 0
+        a = create("a", { buildContent = function(panel)
+            inactiveNativeBuilds = inactiveNativeBuilds + 1
+            panel:AddTitle("Saved native page")
+        end })
         expect(a._nisNative ~= nil, true, "native-selected group restores membership")
         expect(a._nisNative.group.active, nil, "native selection survives restart")
         expect(wrapper.hidden, false, "restoring inactive own page leaves native content visible")
-        a:Undock(); a:Destroy()
+        expect(inactiveNativeBuilds, 0, "saved native-selected startup skips inactive own builder")
+        expect(a.content, nil, "saved native-selected startup has no own controls")
+        a:Undock()
+        expect(inactiveNativeBuilds, 1, "undocking inactive native page builds standalone content")
+        a:Destroy()
 
         -- An explicit change cancels a pending restore, even before a host exists.
         notes.frame.visible = false
@@ -3228,11 +3456,10 @@ do
         notes.frame:SetPos(20, 20)
         prayer.host.frame.nativeShown = true
         local function create(name)
-            local owner = NisPanel.new(area, { id = "prayer-transfer:" .. name, categoryID = "auto",
+            return NisPanel.new(area, { id = "prayer-transfer:" .. name, categoryID = "auto",
                 x = name == "a" and 100 or 50, y = 450, width = 300,
-                height = name == "a" and 200 or 260, minWidth = 64, minHeight = 64 })
-            owner:AddTitle("Retained Prayer page " .. name)
-            return owner
+                height = name == "a" and 200 or 260, minWidth = 64, minHeight = 64,
+                buildContent = function(panel) panel:AddTitle("Prayer page " .. name) end })
         end
         local function saved(name)
             return savedLayouts["prettyui.nis-layout.v1"].panels["prayer-transfer:" .. name]
@@ -3421,9 +3648,10 @@ do
         local rootY = captured.rootY or 0
         local rootHeight = captured.height + (captured.heightOffset or 0)
         local panelID = "native-expanded:" .. captured.name
+        local title
         local owner = NisPanel.new(area, { id = panelID, categoryID = "auto",
-            x = 30, y = 450, width = 280, height = 180 })
-        local title = owner:AddTitle(captured.name)
+            x = 30, y = 450, width = 280, height = 180,
+            buildContent = function(panel) title = panel:AddTitle(captured.name) end })
         local content = owner.content
         if captured.quest then
             item.body:SetSize(captured.width, 50)
@@ -3473,7 +3701,7 @@ do
         end
         emit("Logic")
         expect(drawable(title, owner), true, captured.name .. " retains drawable consumer controls")
-        expect(owner.content, content, captured.name .. " retains its populated page")
+        expect(owner.content, content, captured.name .. " active page keeps its current controls")
         if captured.row then
             nativeClick(item.tabs)
         else
@@ -3584,9 +3812,10 @@ do
         local parked = removePage()
         item.frame.nativeShown, edit.visible = true, true
         addPlaceholders()
+        local title
         local owner = NisPanel.new(area, { id = "native-familiar:availability", categoryID = "auto",
-            x = 30, y = 450, width = 280, height = 180 })
-        local title = owner:AddTitle("Familiar companion page")
+            x = 30, y = 450, width = 280, height = 180,
+            buildContent = function(panel) title = panel:AddTitle("Familiar companion page") end })
         local root, content = owner.root, owner.content
         placeholders[2]:SetPos(6, 5)
         expect(owner:DockTo(item.frame), false, "unrecognized familiar placeholder layout rejects docking")
@@ -3602,8 +3831,12 @@ do
         expect(parked.hidden, false, "unavailable docking does not conceal the unmounted familiar page")
         expect(placeholders[2].visibleGlobal, false, "own page hides unavailable familiar message")
         fire(binding.group.hosts[1].nativeTab.hit, ui.Hook.ONCLICK)
+        expect(owner.content, nil, "native familiar page selection releases old content")
+        expect(title.destroyed, true, "native familiar page selection destroys old title")
         expect(rendered(placeholders[2]), true, "native page restores the actual unavailable familiar message")
         owner:SelectTab()
+        expect(owner.content == content, false, "return to familiar own tab rebuilds content")
+        content = owner.content
         locked = true; transmit(12)
         baseline(); emit("Logic")
         expect(owner._nisNative, binding, "unavailable familiar lock reflow retains membership")

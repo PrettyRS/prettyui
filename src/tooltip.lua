@@ -105,6 +105,16 @@ local function destroyContext(context)
     context.children = {}
     context.tooltips = {}
     context.ownerWindow = nil
+    local parentContext = context.parentContext
+    if parentContext then
+        for index = #parentContext.children, 1, -1 do
+            if parentContext.children[index] == context then
+                table.remove(parentContext.children, index)
+                break
+            end
+        end
+        context.parentContext = nil
+    end
 end
 
 function Tooltip.unregisterContext(collection)

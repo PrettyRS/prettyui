@@ -40,6 +40,12 @@ local function limits(list)
 end
 
 local function refresh(group)
+    -- Release every outgoing page before allocating the selected page's controls.
+    for _, panel in ipairs(group.members) do
+        if loaded(panel) and (panel ~= group.active or panel._nisHidden) then
+            panel:_SyncContent(false)
+        end
+    end
     for _, panel in ipairs(group.members) do
         if loaded(panel) then
             local active = panel == group.active and not panel._nisHidden
@@ -48,6 +54,7 @@ local function refresh(group)
                 panel._nisTabs:Refresh(nil)
             end
             Components.setHidden(panel.root, not active)
+            panel:_SyncContent(active)
             panel:_SyncChrome()
             panel:_SyncOverlays(not active)
             if active then
@@ -107,6 +114,7 @@ local function updateStandalone(panel)
     if not loaded(panel) then return end
     Components.setHidden(panel.root, panel._nisHidden == true)
     panel:_LayoutBody()
+    panel:_SyncContent(not panel._nisHidden)
     panel:RefreshRowBackgrounds()
     panel:_SyncChrome()
     panel:_SyncOverlays(panel.root.hidden)

@@ -51,6 +51,84 @@ local function loaded(self)
     return self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
 end
 
+-- Only the shell and tab inputs survive deactivation. Consumer controls belong
+-- to one buildContent invocation; its cleanup runs before their handles expire.
+function NisPanel:_ReleaseContent()
+    if self._scroll == nil or self._releasingContent then return end
+    self._releasingContent = true
+    local cleanup = self._contentCleanup
+    self._contentCleanup = nil
+    local ok, problem = true, nil
+    if cleanup then ok, problem = pcall(cleanup) end
+    self.scrollY = self._scroll.scrollY
+    self.scrollable = self._scroll.scrollable
+    self.scrollStep = self._scroll.scrollStep
+    if self.tooltip then self.tooltip:Hide() end
+    RowBackgrounds.clear(self.rowBackgrounds, self.interfaceID)
+    self.rowBackgrounds = {}
+    Tooltip.unregisterContext(self.content)
+    self.tooltipContext = nil
+    Layout.destroyManaged(self)
+    self._scroll:Destroy()
+    self._scroll = nil
+    self.viewport, self.content = nil, nil
+    self._onScrollWheel = self._contentWheelHandler
+    self.scrollbarVisible = false
+    self._flowLayout = nil
+    self._releasingContent = nil
+    if loaded(self) then Components.refresh(self.parent) end
+    if not ok then error(problem, 0) end
+end
+
+function NisPanel:_SyncContent(visible)
+    if not visible then self:_ReleaseContent(); return end
+    if not self._contentReady or self._destroyed or self._scroll or self._buildingContent
+        or self._releasingContent or not loaded(self) then return end
+    self._buildingContent = true
+    local scrollY = self.scrollY or 0
+    local parentContext = Tooltip.getContext(self.parent)
+    local tooltipParent = parentContext and parentContext.parent or self.parent
+    local ok, problem = pcall(function()
+        Scroll.attach(self, self.surface.container, {
+            width = 0, height = 0, widthAnchor = 1, heightAnchor = 1,
+            contentHeight = self._minimumContentHeight,
+            scrollable = self.scrollable,
+            scrollStep = self.scrollStep,
+            _onScrollWheel = self._contentWheelHandler,
+            parentContext = parentContext,
+            overlayParent = tooltipParent,
+            ownerWindow = self,
+            isVisible = function() return self.root.hidden ~= true end,
+            position = function(scrollRoot)
+                local rootX, rootY = self.root.x or 0, self.root.y or 0
+                if parentContext then rootX, rootY = parentContext.position(self.root) end
+                return rootX + (self.surface.container.x or 0) + (scrollRoot.x or 0),
+                    rootY + (self.surface.container.y or 0) + (scrollRoot.y or 0)
+            end,
+        })
+        self.tooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
+            local rootX, rootY = self._scroll:_AbsolutePosition()
+            return rootX + (target.x or 0), rootY + (target.y or 0) - self._scroll.scrollY
+        end, parentContext)
+        self.tooltipContext.ownerWindow = self
+        Layout.configure(self, self._contentLayout)
+        if self.buildContent then
+            local cleanup = self.buildContent(self)
+            assert(cleanup == nil or type(cleanup) == "function",
+                "PrettyUI: NisPanel buildContent must return a cleanup function or nil")
+            self._contentCleanup = cleanup
+        end
+        self:SetScrollPosition(scrollY)
+        self:RefreshRowBackgrounds()
+    end)
+    self._buildingContent = nil
+    if not ok then
+        self:_ReleaseContent()
+        self.scrollY = scrollY
+        error(problem, 0)
+    end
+end
+
 function NisPanel:_SyncDragLayer()
     if not loaded(self) or self.dragLayer == nil then return end
     local capture = self.dragState and self.dragState.capture == self.dragLayer
@@ -149,7 +227,7 @@ function NisPanel:_LayoutBody()
         if self._tabGapHit then Components.setHidden(self._tabGapHit, true) end
         self.surface.container:SetPos(0, 0)
         self.surface.container:SetSize(0, 0, 1, 1)
-        self._scroll:SetSize(0, 0, 1, 1)
+        if self._scroll then self._scroll:SetSize(0, 0, 1, 1) end
         self._nisTabs:Refresh(nil)
         return
     end
@@ -208,7 +286,7 @@ function NisPanel:_LayoutBody()
     self.tabBackground:SetSize(-BORDER * 2, contentTop - bodyTop, 1.0)
     self.surface.container:SetPos(BORDER, contentTop)
     self.surface.container:SetSize(-BORDER * 2, -contentTop - BORDER, 1.0, 1.0)
-    self._scroll:SetSize(0, 0, 1.0, 1.0)
+    if self._scroll then self._scroll:SetSize(0, 0, 1.0, 1.0) end
     self.surface.bottomLeft:MoveToFront()
     self.surface.bottomRight:MoveToFront()
 end
@@ -233,7 +311,6 @@ function NisPanel:_ApplyRectSingle(x, y, width, height)
     self.root:SetSize(width, height)
     self.width, self.height = self.root.width, self.root.height
     self:_LayoutBody()
-    self.contentWidth = self._scroll.contentWidth
     self:RefreshRowBackgrounds()
     self:_SyncChrome()
     self:_SyncOverlays(self.root.hidden == true)
@@ -296,7 +373,7 @@ end
 
 function NisPanel:RefreshRowBackgrounds()
     RowBackgrounds.clear(self.rowBackgrounds, self.interfaceID)
-    if not loaded(self) then
+    if not loaded(self) or self.content == nil then
         self.rowBackgrounds = {}
         return
     end
@@ -325,6 +402,7 @@ function NisPanel:Show()
         return
     end
     Components.setHidden(self.root, false)
+    self:_SyncContent(true)
     self.root:MoveToFront()
     self:_SyncChrome()
     if not self.dragLayer.hidden then self.dragLayer:MoveToFront() end
@@ -333,17 +411,19 @@ end
 
 function NisPanel:Hide()
     self:_CancelDrag()
+    self._nisHidden = true
+    local ok, problem = pcall(self._ReleaseContent, self)
     NisNative.detach(self)
     NisGroup.clearPanel(self)
     NisGroup.undock(self)
     NisPersistence.detach(self)
-    self._nisHidden = true
-    if self.content then Tooltip.hideContextTooltips(self.content) end
-    if not loaded(self) then return end
-    Components.setHidden(self.root, true)
-    self:_SyncChrome()
-    self:_SyncOverlays(true)
-    self:_NotifyBoundsChange()
+    if loaded(self) then
+        Components.setHidden(self.root, true)
+        self:_SyncChrome()
+        self:_SyncOverlays(true)
+        self:_NotifyBoundsChange()
+    end
+    if not ok then error(problem, 0) end
 end
 
 function NisPanel:Close()
@@ -356,7 +436,10 @@ function NisPanel:Close()
 end
 
 function NisPanel:Destroy()
-    if self._destroyed then return end
+    if self._destroyed or self._destroying then return end
+    self._destroying = true
+    self._contentReady = false
+    local ok, problem = pcall(self._ReleaseContent, self)
     WorldMap.unwatch(self)
     self:_CancelDrag()
     NisNative.detach(self)
@@ -374,14 +457,7 @@ function NisPanel:Destroy()
     end
     self._resizeHookID = nil
     self:_SyncOverlays(true)
-    RowBackgrounds.clear(self.rowBackgrounds, self.interfaceID)
-    self.rowBackgrounds = {}
-    if self.content then Tooltip.unregisterContext(self.content) end
-    self.tooltipContext = nil
-    Layout.destroyManaged(self)
     Tooltip.unbind(self)
-    if self._scroll then self._scroll:Destroy(); self._scroll = nil end
-    self.viewport, self.content = nil, nil
     if self._nisTabs then self._nisTabs:Destroy(); self._nisTabs = nil end
     if self.dragLayer then
         InterfaceMouse.EndCapture(self.dragLayer)
@@ -394,10 +470,36 @@ function NisPanel:Destroy()
     end
     self.surface = nil
     self.overlays = {}
+    if not ok then error(problem, 0) end
 end
 
 ContentMethods.installSingle(NisPanel)
-Scroll.install(NisPanel)
+-- Inactive pages retain scroll preferences without allocating a viewport.
+function NisPanel:SetScrollable(value)
+    self.scrollable = value ~= false
+    if not self.scrollable then self.scrollY = 0 end
+    if self._scroll then self._scroll:SetScrollable(value) end
+end
+
+function NisPanel:SetScrollPosition(y)
+    if self._scroll then return self._scroll:SetScrollPosition(y) end
+    self.scrollY = self.scrollable and math.max(0, math.floor(y or 0)) or 0
+end
+
+function NisPanel:ScrollBy(delta)
+    self:SetScrollPosition(self.scrollY + delta)
+end
+
+function NisPanel:ScrollToChild(child, topOffset)
+    assert(self._scroll, "PrettyUI: select the NisPanel tab before scrolling to a child")
+    return self._scroll:ScrollToChild(child, topOffset)
+end
+
+function NisPanel:SetContentHeight(height)
+    if self._scroll then return self._scroll:SetContentHeight(height) end
+    self._minimumContentHeight = math.max(0, math.floor(height or 0))
+    self.contentHeight = self._minimumContentHeight
+end
 NisDrag.install(NisPanel)
 
 function NisPanel:DockTo(target)
@@ -441,6 +543,18 @@ local function buildPanel(parent, options, policy)
     self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
     self.rowBackgrounds = {}
     self.overlays = {}
+    assert(options.buildContent == nil or type(options.buildContent) == "function",
+        "PrettyUI: NisPanel buildContent must be a function")
+    self.buildContent = options.buildContent
+    self._contentLayout = options.layout or options.textLayout
+    self._minimumContentHeight = options.contentHeight or 0
+    self._contentWheelHandler = options._onScrollWheel
+    self.scrollable = options.scrollable ~= false
+    self.scrollStep = options.scrollStep or 32
+    self.scrollY = 0
+    self.contentHeight = self._minimumContentHeight
+    self.contentWidth = 0
+    self.scrollbarVisible = false
 
     local surface = PanelSurface.new(parent, {
         _categoryPolicy = policy,
@@ -515,31 +629,6 @@ local function buildPanel(parent, options, policy)
     end)
     self.closeButton:MoveToFront()
 
-    local parentContext = Tooltip.getContext(parent)
-    local tooltipParent = parentContext and parentContext.parent or parent
-    Scroll.attach(self, surface.container, {
-        width = 0, height = 0, widthAnchor = 1.0, heightAnchor = 1.0,
-        contentHeight = options.contentHeight,
-        scrollable = options.scrollable,
-        scrollStep = options.scrollStep,
-        _onScrollWheel = options._onScrollWheel,
-        parentContext = parentContext,
-        overlayParent = tooltipParent,
-        ownerWindow = self,
-        isVisible = function() return self.root.hidden ~= true end,
-        position = function(scrollRoot)
-            local rootX, rootY = self.root.x or 0, self.root.y or 0
-            if parentContext then rootX, rootY = parentContext.position(self.root) end
-            return rootX + (surface.container.x or 0) + (scrollRoot.x or 0),
-                rootY + (surface.container.y or 0) + (scrollRoot.y or 0)
-        end,
-    })
-    self.tooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
-        local rootX, rootY = self._scroll:_AbsolutePosition()
-        return rootX + (target.x or 0), rootY + (target.y or 0) - self._scroll.scrollY
-    end, parentContext)
-    self.tooltipContext.ownerWindow = self
-    Layout.configure(self, options.layout or options.textLayout)
     Wheel.bind(self.root, options)
     Wheel.bind(surface.background, options)
     Tooltip.bind(self, self.root, parent, options.tooltip)
@@ -596,7 +685,7 @@ local function buildPanel(parent, options, policy)
         if not loaded(self) then return end
         if WorldMap.isSuspended() or NisGroup.boundsChanged(self) then return end
         self:_SyncDragLayer()
-        self._scroll:_LayoutThumbDrag()
+        if self._scroll then self._scroll:_LayoutThumbDrag() end
         self:_SyncOverlays(self.root.hidden == true)
         self:_NotifyBoundsChange()
     end)
@@ -646,12 +735,19 @@ local function buildPanel(parent, options, policy)
             self:_CancelDrag()
             if not self._nisNative then self.dragBounds:Refresh() end
             self:_LayoutBody()
+            if self.root.hidden ~= true then self:_SyncContent(true) end
             self:_SyncChrome()
             self:_SyncOverlays(self.root.hidden == true)
         end
     end)
     NisPersistence.register(self, options, NisGroup)
     NisNative.register(self)
+    self._contentReady = true
+    local ok, problem = pcall(function() self:_SyncContent(self.root.hidden ~= true) end)
+    if not ok then
+        self:Destroy()
+        error(problem, 0)
+    end
     return self
 end
 

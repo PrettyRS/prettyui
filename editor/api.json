@@ -179,14 +179,15 @@
         "rowBackgroundColours": "number[]",
         "rowBackgroundColors": "number[]",
         "rowBackgroundEdgeToEdge": "boolean",
+        "buildContent": "fun(panel: PrettyUI.NisPanel): (fun()|nil)",
         "onClose": "fun(panel: PrettyUI.NisPanel)",
         "onBoundsChange": "fun(panel: PrettyUI.NisPanel, x: number, y: number, width: number, height: number)",
         "destroyOnClose": "boolean"
       },
       "fields": {
         "root": "any",
-        "content": "any",
-        "viewport": "any",
+        "content": "any?",
+        "viewport": "any?",
         "width": "number",
         "height": "number",
         "scrollable": "boolean",
