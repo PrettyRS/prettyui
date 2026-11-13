@@ -125,7 +125,7 @@ local function buildCollapseButton(parent, text, options)
     self.content = Components.newContent(self.root)
     self.content:SetPos(self.indent, SEGMENT_SIZE + CONTENT_GAP)
     self.content:SetSize(-self.indent, 0, 1.0)
-    self.content.hidden = not self.expanded
+    Components.setHidden(self.content, not self.expanded)
     self.content.clickthrough = false
     Wheel.bind(self.content, options)
 
@@ -332,7 +332,7 @@ function CollapseButton:SetExpanded(expanded)
     expanded = expanded == true
     if self.expanded == expanded then return end
     self.expanded = expanded
-    self.content.hidden = not expanded
+    Components.setHidden(self.content, not expanded)
     self:_Resize()
     self:_UpdateState()
     if self.onToggle then self.onToggle(self, expanded) end

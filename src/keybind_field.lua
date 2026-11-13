@@ -243,8 +243,8 @@ function KeybindField:_UpdateState()
     if not self.root or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     self.label.content = KeybindField.FormatValue(self.pending or self.value)
     self.label.rgba = self.disabled and Palette.DISABLED_TEXT or self.textColour
-    self.clearSprite.hidden = self.disabled or not self.hovered
-    self.focusOutline.hidden = self.disabled or not (self.hovered or active == self)
+    Components.setHidden(self.clearSprite, self.disabled or not self.hovered)
+    Components.setHidden(self.focusOutline, self.disabled or not (self.hovered or active == self))
     self.focusOutline.rgba = active == self and Palette.CARET or Palette.SELECTED
 end
 

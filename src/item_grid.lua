@@ -148,7 +148,7 @@ function ItemGrid:_FinishDrag(commit)
     end
     local overlayLoaded = ui.Interfaces:GetInterface(self.overlayInterfaceID) ~= nil
     if self.dragSprite and overlayLoaded then
-        self.dragSprite.hidden = true
+        Components.setHidden(self.dragSprite, true)
         self.dragSprite.alpha = 1
     end
     if self.dragCapture then
@@ -212,7 +212,7 @@ function ItemGrid:_BeginDrag(index)
     local width = slot.item.width or (SLOT_SIZE - slot.itemInset * 2)
     local height = slot.item.height or (SLOT_SIZE - slot.itemInset * 2)
     self.dragSprite:SetSize(width, height)
-    self.dragSprite.hidden = false
+    Components.setHidden(self.dragSprite, false)
     self.dragSprite.alpha = 1
     self.dragSprite:SetAssociatedObject(math.tointeger(entry.object.id))
     self.dragSprite.associatedObjectQuantityMode = slot.item.associatedObjectQuantityMode

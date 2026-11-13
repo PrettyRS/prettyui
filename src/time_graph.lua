@@ -132,7 +132,7 @@ function TimeGraph.new(parent, options)
     self.root = Components.new(ui.Layer, parent, options)
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height, self.widthAnchor, self.heightAnchor)
-    self.root.hidden = options.visible == false
+    Components.setHidden(self.root, options.visible == false)
     self.root.clickthrough = false
     Wheel.bind(self.root, options)
 
@@ -183,11 +183,11 @@ function TimeGraph.new(parent, options)
     -- Allocate once: even idle buckets and hoverable zero values need no new UI.
     for index = 1, model.capacity do
         self.bars[index] = rectangle(self.plot, self.barRGBA)
-        self.bars[index].hidden = true
+        Components.setHidden(self.bars[index], true)
     end
     self.baseline = rectangle(self.plot, 0xBBA06DFF)
     self.highlight = rectangle(self.plot, 0xF2C66D33)
-    self.highlight.hidden = true
+    Components.setHidden(self.highlight, true)
     self.readout = label(self.root, TEXT_RGBA, ui.AlignMode.BOTTOMRIGHT)
 
     local function hover(_, x, y)
@@ -266,7 +266,7 @@ function TimeGraph:_RenderHover()
     if index and index >= 1 and index <= model.count then
         value, startSeconds, endSeconds = model:GetBucket(index)
     end
-    self.highlight.hidden = value == nil or self.plotWidth <= 0 or self.plotHeight <= 0
+    Components.setHidden(self.highlight, value == nil or self.plotWidth <= 0 or self.plotHeight <= 0)
     if not self.highlight.hidden then
         local left = math.floor((self.hoverSlot - 1) * self.plotWidth / self.visibleCount)
         local right = math.floor(self.hoverSlot * self.plotWidth / self.visibleCount)
@@ -349,7 +349,7 @@ function TimeGraph:_Render()
         local right = math.floor(slot * plotWidth / self.visibleCount)
         local valueY = math.floor((high - value / scale) / span * drawableHeight + 0.5)
         local barHeight = math.abs(zeroY - valueY)
-        bar.hidden = index < 1 or value == 0 or right <= left or barHeight == 0
+        Components.setHidden(bar, index < 1 or value == 0 or right <= left or barHeight == 0)
         if not bar.hidden then
             local gap = clamp(right - left - 1, 0, BAR_GAP)
             place(bar, left + math.floor(gap / 2), math.min(zeroY, valueY), right - left - gap, barHeight)
@@ -360,7 +360,7 @@ function TimeGraph:_Render()
             if slot == self.visibleCount then self.liveOpacity = opacity end
         end
     end
-    for slot = self.visibleCount + 1, model.capacity do self.bars[slot].hidden = true end
+    for slot = self.visibleCount + 1, model.capacity do Components.setHidden(self.bars[slot], true) end
     local _, _, currentEnd = model:GetBucket(model.count)
     -- Labels describe session time at plot boundaries; before-origin positions
     -- stay blank while the initial history grows from the right-hand edge.
@@ -428,7 +428,7 @@ end
 
 function TimeGraph:SetVisible(visible)
     if self.root == nil then return false end
-    self.root.hidden = visible ~= true
+    Components.setHidden(self.root, visible ~= true)
     if self.root.hidden then Tooltip.hideContextTooltips(self.root) end
     self.hoverSlot = nil
     self.dirty = true

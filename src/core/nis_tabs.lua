@@ -103,7 +103,7 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
         })
         tab.hit:SetSize(NisTabs.WIDTH, NisTabs.HEIGHT)
         tab.hit.clickthrough = false
-        tab.hit.hidden = true
+        Components.setHidden(tab.hit, true)
         tab.hit.enabled = false
         -- Lua owns the gesture, as for header dragging and resize handles.
         -- Native self-dragging would also move/hide this capture component.
@@ -152,7 +152,7 @@ local function navigation(view, x, text, action)
     })
     hit:SetSize(NAV_WIDTH, NisTabs.HEIGHT)
     hit.clickthrough = false
-    hit.hidden = true
+    Components.setHidden(hit, true)
     hit.enabled = false
     Cursor.apply(hit, nil, false)
     hit:Subscribe(ui.Hook.ONCLICK, function()
@@ -179,7 +179,7 @@ function NisTabs.new(panel)
     self.root:SetSize(math.max(0, panel.root.width - CORNER * 2), NisTabs.HEIGHT)
     self.root.clickthrough = true
     self.root.alpha = 1
-    self.root.hidden = true
+    Components.setHidden(self.root, true)
     return self
 end
 
@@ -197,13 +197,13 @@ function NisTabs:Sync(hidden)
     end
     if self.root.width ~= width then self.root:SetSize(width, NisTabs.HEIGHT) end
     local visible = self.visible == true and not hidden and root.hidden ~= true
-    self.root.hidden = not visible
+    Components.setHidden(self.root, not visible)
     if visible then self.root:MoveToFront() end
     for _, tab in ipairs(self.tabs) do
         local hit = tab.hit
         if hit and not tab.retained then
             if hit.x ~= x + tab.x or hit.y ~= y then hit:SetPos(x + tab.x, y) end
-            hit.hidden = not visible
+            Components.setHidden(hit, not visible)
             hit.enabled = visible
             if visible then hit:MoveToFront() end
         end
@@ -211,7 +211,7 @@ function NisTabs:Sync(hidden)
     for _, item in ipairs(self.navigationHits) do
         local hit = item.component
         if hit.x ~= x + item.x or hit.y ~= y then hit:SetPos(x + item.x, y) end
-        hit.hidden = not visible
+        Components.setHidden(hit, not visible)
         hit.enabled = visible
         if visible then hit:MoveToFront() end
     end

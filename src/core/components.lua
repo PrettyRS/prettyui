@@ -1,3 +1,4 @@
+local WorldMap = require("src/core/world_map")
 local Components = {}
 
 -- Different Lua handles can refer to the same native component.
@@ -24,6 +25,7 @@ local LEGACY_NOTICE = 'PrettyUI: legacy category allocation will be deprecated i
 local states = setmetatable({}, { __mode = "k" })
 local policies = setmetatable({}, { __mode = "k" })
 local knownHosts = setmetatable({}, { __mode = "k" })
+local owned = setmetatable({}, { __mode = "k" })
 local warned = false
 
 local function visitKey(component)
@@ -64,6 +66,12 @@ function Components.setPolicy(component, policy)
     policies[component] = policy
     knownHosts[component] = staticParentOf(component)
     return component
+end
+
+-- Visibility writes preserve the caller's intent while the world map occludes
+-- top-level PrettyUI roots. Nested/native components are written normally.
+function Components.setHidden(component, hidden)
+    WorldMap.setHidden(component, hidden)
 end
 
 local function pairAt(index)
@@ -246,6 +254,13 @@ local function register(component, staticParent, state, policy)
         -- Passing it directly to C pcall leaves no caller environment.
         pcall(function() log(LEGACY_NOTICE) end)
     end
+    local ancestor, nested = component.parent, false
+    while ancestor do
+        if owned[ancestor] then nested = true; break end
+        ancestor = ancestor.parent
+    end
+    owned[component] = true
+    if not nested then WorldMap.track(component) end
     return component
 end
 

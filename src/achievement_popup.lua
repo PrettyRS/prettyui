@@ -203,7 +203,7 @@ function AchievementPopup.new(parent, options)
         if self.elapsedTicks <= FADE_IN_TICKS then
             self.flash.alpha = 1 - self.elapsedTicks / FADE_IN_TICKS
         elseif self.elapsedTicks <= FADE_IN_TICKS + HOLD_TICKS then
-            self.flash.hidden = true
+            Components.setHidden(self.flash, true)
         elseif self.elapsedTicks <= TOTAL_TICKS then
             self:_SetVisualAlpha(1 -
                 (self.elapsedTicks - FADE_IN_TICKS - HOLD_TICKS) / FADE_OUT_TICKS)

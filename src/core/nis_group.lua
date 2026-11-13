@@ -1,7 +1,10 @@
 local Tooltip = require("src/tooltip")
 local NisTabs = require("src/core/nis_tabs")
 local Persistence = require("src/core/nis_persistence")
-local sameComponent = require("src/core/components").sameComponent
+local Components = require("src/core/components")
+local sameComponent = Components.sameComponent
+local NativeInterfaceSettings = require("src/core/native_interface_settings")
+local WorldMap = require("src/core/world_map")
 local NisGroup = {}
 
 local panels = setmetatable({}, { __mode = "k" })
@@ -14,8 +17,10 @@ local function loaded(panel)
 end
 
 local function visible(panel)
-    return loaded(panel) and not panel._nisHidden and not panel.root.hidden
-        and panel.root.visibleGlobal ~= false and not panel.locked
+    local ghost = panel and panel.dragState and panel.dragState.previewHidden
+    return loaded(panel) and not panel._nisHidden and not panel.locked
+        and (ghost and panel.parent.visibleGlobal ~= false
+            or not panel.root.hidden and panel.root.visibleGlobal ~= false)
 end
 
 local function members(panel)
@@ -42,7 +47,7 @@ local function refresh(group)
                 if panel.content then Tooltip.hideContextTooltips(panel.content) end
                 panel._nisTabs:Refresh(nil)
             end
-            panel.root.hidden = not active
+            Components.setHidden(panel.root, not active)
             panel:_SyncChrome()
             panel:_SyncOverlays(not active)
             if active then
@@ -100,7 +105,7 @@ end
 
 local function updateStandalone(panel)
     if not loaded(panel) then return end
-    panel.root.hidden = panel._nisHidden == true
+    Components.setHidden(panel.root, panel._nisHidden == true)
     panel:_LayoutBody()
     panel:RefreshRowBackgrounds()
     panel:_SyncChrome()
@@ -111,7 +116,7 @@ end
 function NisGroup.register(panel)
     nextOrder = nextOrder + 1
     panel._nisOrder = nextOrder
-    panel._nisHidden = panel.root.hidden == true
+    panel._nisHidden = WorldMap.isHidden(panel.root)
     panels[panel] = true
 end
 
@@ -204,6 +209,10 @@ end
 function NisGroup.reorder(panel, pointerX)
     local group = panel._nisGroup
     if not group or group.active ~= panel or not loaded(panel) then return false end
+    if NativeInterfaceSettings.isLocked() then return false end
+    for _, member in ipairs(group.members) do
+        if member.locked then return false end
+    end
     local view = panel._nisTabs
     local first = view.tabs[1] and view.tabs[1].member
     local firstIndex, sourceIndex = 1, nil

@@ -250,11 +250,11 @@ function Slider:_LayoutValue()
     local filledWidth = thumbX + math.ceil(THUMB_WIDTH / 2)
     local middleWidth = math.max(0, filledWidth - BAR_END_WIDTH * 2)
     local barHidden = self.value <= self.min
-    self.barLeft.hidden = barHidden
+    Components.setHidden(self.barLeft, barHidden)
     self.barMiddle:SetWidth(middleWidth)
-    self.barMiddle.hidden = barHidden or middleWidth == 0
+    Components.setHidden(self.barMiddle, barHidden or middleWidth == 0)
     self.barRight:SetX(math.max(BAR_END_WIDTH, filledWidth - BAR_END_WIDTH))
-    self.barRight.hidden = barHidden
+    Components.setHidden(self.barRight, barHidden)
     if self.dragStart == nil then self:_LayoutThumbDrag() end
 end
 

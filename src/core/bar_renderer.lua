@@ -93,7 +93,7 @@ function Renderer.init(self, parent, options)
     self.interfaceID = self.root.interfaceID
     self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height, self.widthAnchor, self.heightAnchor)
-    self.root.hidden = options.visible == false
+    Components.setHidden(self.root, options.visible == false)
     self.root.clickthrough = false
     Wheel.bind(self.root, options)
     self.background = rectangle(self.root, 0x2E2825FF)
@@ -115,7 +115,7 @@ function Renderer.init(self, parent, options)
     self.baseline = rectangle(self.plot, 0xBBA06DFF)
     -- A sibling overlay stays above dynamically created bars in the plot layer.
     self.highlight = rectangle(self.body, 0xF2C66D33)
-    self.highlight.hidden = true
+    Components.setHidden(self.highlight, true)
     self.axisLabels = { label(self.body),
         label(self.body, self.orientation == "horizontal" and ui.AlignMode.BOTTOMRIGHT or ui.AlignMode.TOPLEFT) }
     if self.kind == "histogram" then
@@ -157,7 +157,7 @@ end
 function Renderer:_ClearHover()
     self.hoverX, self.hoverY = nil, nil
     if self.highlight and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
-        self.highlight.hidden = true
+        Components.setHidden(self.highlight, true)
     end
     if self.tooltip then self.tooltip:Hide() end
 end
@@ -228,7 +228,7 @@ function Renderer:_RenderHover()
         end
     end
     local row = slot and self.rows[slot]
-    self.highlight.hidden = row == nil
+    Components.setHidden(self.highlight, row == nil)
     if row == nil then
         if self.tooltip then self.tooltip:Hide() end
         return
@@ -296,14 +296,14 @@ function Renderer:_Render()
         else place(self.grid[index], 0, edge, pw, math.min(1, ph)) end
         local value = ((horizontal and index == 1) or (not horizontal and index == 2)) and minimum or maximum
         setText(self.axisLabels[index], compact(value))
-        self.axisLabels[index].hidden = count == 0
-        if self.rangeLabels then self.rangeLabels[index].hidden = count == 0 end
+        Components.setHidden(self.axisLabels[index], count == 0)
+        if self.rangeLabels then Components.setHidden(self.rangeLabels[index], count == 0) end
     end
     if histogram and count > 0 then
         setText(self.rangeLabels[1], compact(rows[1].lower))
         setText(self.rangeLabels[2], compact(rows[count].upper))
     end
-    self.empty.hidden = count > 0 and (not histogram or self.sampleCount > 0)
+    Components.setHidden(self.empty, count > 0 and (not histogram or self.sampleCount > 0))
     local categoryExtent = horizontal and ph or pw
     for index = 1, count + 1 do
         local unit
@@ -325,7 +325,7 @@ function Renderer:_Render()
         local value = histogram and row.count or row.value
         local endpoint = coordinate(value)
         local gap = histogram and 0 or clamp(finish - start - 1, 0, 4)
-        bar.hidden = value == 0 or finish <= start or endpoint == zero or pw == 0 or ph == 0
+        Components.setHidden(bar, value == 0 or finish <= start or endpoint == zero or pw == 0 or ph == 0)
         if not bar.hidden then
             if horizontal then
                 place(bar, math.min(zero, endpoint), start + math.floor(gap / 2), math.abs(endpoint - zero), finish - start - gap)
@@ -336,7 +336,7 @@ function Renderer:_Render()
         end
     end
     for index = count + 1, #self.bars do
-        self.bars[index].hidden = true
+        Components.setHidden(self.bars[index], true)
     end
     self.baseline:MoveToFront()
     self.empty:MoveToFront()
@@ -351,7 +351,7 @@ end
 
 function Renderer:SetVisible(visible)
     if self.root == nil then return false end
-    self.root.hidden = visible ~= true
+    Components.setHidden(self.root, visible ~= true)
     self:_ClearHover()
     self.dirty = true
     self:_Render()

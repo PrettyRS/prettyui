@@ -71,7 +71,7 @@ local function isSnapTarget(other, movingWindow, visibleOnly)
         and (visibleOnly ~= true or other.root.visibleGlobal ~= false)
 end
 
-function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID)
+function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID, nativeCache)
     rects = rects or {}
     local count = 0
     local parentOrigin = movingWindow.parent.xyGlobal
@@ -97,15 +97,32 @@ function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID)
     local layoutLayer = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
     local excludedInterface = excludedNativeID and (excludedNativeID >> 16)
     local excludedStatic = excludedNativeID and (excludedNativeID & 0xFFFF)
+    local function addNative(child)
+        if child and child.visibleGlobal and (excludedNativeID == nil or
+            child.interfaceID ~= excludedInterface or child.staticID ~= excludedStatic) then
+            local origin = child.xyGlobal
+            add(origin.x - parentOrigin.x, origin.y - parentOrigin.y, child.width, child.height)
+        end
+    end
     if layoutLayer ~= nil then
-        layoutLayer:IterateStaticComponents(function(child)
-            if child.visibleGlobal and (excludedNativeID == nil or
-                child.interfaceID ~= excludedInterface or child.staticID ~= excludedStatic) then
-                local origin = child.xyGlobal
-                add(origin.x - parentOrigin.x, origin.y - parentOrigin.y, child.width, child.height)
+        if nativeCache and nativeCache.ids then
+            -- Keep identities, not native handles: rebuilds may replace a
+            -- component without changing its ID. Bounds/visibility stay live.
+            for _, packed in ipairs(nativeCache.ids) do
+                addNative(ui.Interfaces:GetComponent(packed))
             end
-            return false
-        end)
+        else
+            local ids = nativeCache and {}
+            layoutLayer:IterateStaticComponents(function(child)
+                if ids then ids[#ids + 1] = (child.interfaceID << 16) | child.staticID end
+                addNative(child)
+                return false
+            end)
+            -- Publish only a complete enumeration, including hidden children.
+            if nativeCache then nativeCache.ids = ids end
+        end
+    elseif nativeCache then
+        nativeCache.ids = nil
     end
     for index = #rects, count + 1, -1 do rects[index] = nil end
     return rects

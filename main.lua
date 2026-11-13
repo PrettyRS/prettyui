@@ -12,6 +12,7 @@ local OverheadBar = require("src/overhead_bar")
 local CategoryGroups = require("src/core/category_groups")
 local Components = require("src/core/components")
 local NisNative = require("src/core/nis_native")
+local WorldMap = require("src/core/world_map")
 
 local resources = Plugin.resources
 TextField.SetDefaultSprite(resources and (resources.input_default or resources["input_default.png"]))
@@ -63,6 +64,7 @@ local PrettyUI = {
 PrettyUI.version = "1.4.0"
 
 PrettyMiniMenu.Start()
+WorldMap.start(true)
 
 function PluginShutdown()
     NisNative.shutdown()
@@ -74,6 +76,7 @@ function PluginShutdown()
     BarChart.Shutdown()
     Histogram.Shutdown()
     OverheadBar.Shutdown()
+    WorldMap.shutdown()
 end
 
 return PrettyUI

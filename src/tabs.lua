@@ -285,7 +285,7 @@ local function configurePage(tabs, index, options)
     page.root = Components.newContent(tabs.content)
     page.root:SetSize(0, 0, 1.0, 1.0)
     page.root.clickthrough = true
-    page.root.hidden = true
+    Components.setHidden(page.root, true)
 
     local parentContext = tabs.tooltipContext
     local tooltipParent = parentContext and parentContext.parent or tabs.parent
@@ -438,7 +438,7 @@ function Tabs:SetActive(index, notify)
     local previous = self.activeIndex
     self.activeIndex = index
     for pageIndex, page in ipairs(self.pages) do
-        page.root.hidden = pageIndex ~= index
+        Components.setHidden(page.root, pageIndex ~= index)
         if page.root.hidden then Tooltip.hideContextTooltips(page.content) end
         page._scroll:Refresh()
     end

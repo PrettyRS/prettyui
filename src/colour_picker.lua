@@ -361,7 +361,7 @@ function ColourPicker:_UpdateValueAppearance()
     root.text.rgba = self.valueEditing and WHITE or VALUE_TEXT_COLOUR
     root.caretRGBA = self.valueEditing and WHITE or 0
     root.selectionHighlightRGBA = self.valueEditing and 0x465A66FF or 0
-    self.valueUnderline.hidden = self.valueEditing or not self.valueHovered
+    Components.setHidden(self.valueUnderline, self.valueEditing or not self.valueHovered)
 end
 
 function ColourPicker:_FinishValueEdit(cancel)

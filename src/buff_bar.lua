@@ -80,8 +80,8 @@ local function cancelPendingTooltip(entry)
 end
 
 local function setEntryHidden(entry, hidden)
-    forEachVisual(entry, function(component) component.hidden = hidden end)
-    if entry.tooltipTarget ~= nil then entry.tooltipTarget.hidden = hidden end
+    forEachVisual(entry, function(component) Components.setHidden(component, hidden) end)
+    if entry.tooltipTarget ~= nil then Components.setHidden(entry.tooltipTarget, hidden) end
     if hidden then
         cancelPendingTooltip(entry)
         if entry.tooltip ~= nil then entry.tooltip:Hide() end
@@ -446,7 +446,7 @@ local function setTooltip(bar, entry, value, deferLayout)
         end,
     })
     trackComponent(bar, entry.tooltip.root)
-    entry.tooltipTarget.hidden = not entry.visible
+    Components.setHidden(entry.tooltipTarget, not entry.visible)
     if deferLayout ~= true then layout(bar, true) end
     return true
 end

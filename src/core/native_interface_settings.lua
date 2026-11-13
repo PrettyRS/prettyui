@@ -87,6 +87,7 @@ local function unwatch(setting, owner)
     if not anyWatched() then Event.VarTransmit.Unsubscribe(EVENT_ID) end
 end
 
+function NativeInterfaceSettings.isLocked() return lock.read() end
 function NativeInterfaceSettings.watchLock(owner, callback) watch(lock, owner, callback) end
 function NativeInterfaceSettings.unwatchLock(owner) unwatch(lock, owner) end
 function NativeInterfaceSettings.watchTransparency(owner, callback) watch(transparency, owner, callback) end

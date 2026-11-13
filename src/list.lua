@@ -228,9 +228,9 @@ function List.new(parent, options)
 end
 
 function List:_SetScrollbarHidden(hidden)
-    self.upArrow.hidden = hidden
-    self.downArrow.hidden = hidden
-    self.track.hidden = hidden
+    Components.setHidden(self.upArrow, hidden)
+    Components.setHidden(self.downArrow, hidden)
+    Components.setHidden(self.track, hidden)
 end
 
 function List:_ResolvedWidth()

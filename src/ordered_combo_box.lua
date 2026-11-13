@@ -150,7 +150,7 @@ local function buildOrderedComboBox(parent, options, overlayParent, policy)
             self:_Close()
         end,
     })
-    self.dropdown.root.hidden = true
+    Components.setHidden(self.dropdown.root, true)
 
     self.input:Subscribe(ui.Hook.ONCLICK, function()
         if not self.disabled then self:_Open() end
@@ -274,13 +274,13 @@ function OrderedComboBox:_Open(clearInput)
     self.open = true
     if clearInput ~= false then self:_SetInput("") end
     self:_Filter(self.input.content)
-    self.dropdown.root.hidden = false
+    Components.setHidden(self.dropdown.root, false)
     self.dropdown.root:MoveToFront()
 end
 
 function OrderedComboBox:_Close()
     self.open = false
-    self.dropdown.root.hidden = true
+    Components.setHidden(self.dropdown.root, true)
     self:_SetInput(self.selectedLabel or "")
 end
 

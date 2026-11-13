@@ -190,7 +190,7 @@ local function buildParts(self)
     local parts = {}
     parts.root = Components.newContent(self.parent, { _categoryPolicy = self._categoryPolicy })
     parts.root:SetSize(self.width, self.height)
-    parts.root.hidden = true
+    Components.setHidden(parts.root, true)
     parts.root.clickthrough = true
 
     local frame = Sprites.CONTENT_FRAME
@@ -384,7 +384,7 @@ function Tooltip:Show()
         y = clamp(y, margin, maxY)
     end
     self._parts.root:SetPos(x, y)
-    self._parts.root.hidden = false
+    Components.setHidden(self._parts.root, false)
     self._parts.root:MoveToFront()
 end
 
@@ -408,7 +408,7 @@ function Tooltip:Hide()
     if not self.keepBuilt then
         release(self)
     elseif self._parts ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
-        self._parts.root.hidden = true
+        Components.setHidden(self._parts.root, true)
     end
 end
 

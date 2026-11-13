@@ -1,5 +1,6 @@
 local Persistence = {}
 local sameComponent = require("src/core/components").sameComponent
+local WorldMap = require("src/core/world_map")
 local database = PersistentDB
 local KEY = "prettyui.nis-layout.v1"
 local state
@@ -195,7 +196,7 @@ end
 
 function Persistence.bounds(panel)
     local panelID = panel._nisPersistenceID
-    if not panelID or restoring or not loaded(panel) or busy(panel) then return end
+    if WorldMap.isSuspended() or not panelID or restoring or not loaded(panel) or busy(panel) then return end
     local record = state.panels[panelID]
     local group = record.group and state.groups[record.group]
     local changed = false
@@ -214,7 +215,7 @@ function Persistence.bounds(panel)
 end
 
 function Persistence.capture(panel)
-    if restoring or not state or not loaded(panel) then return end
+    if WorldMap.isSuspended() or restoring or not state or not loaded(panel) then return end
     local group = panel._nisGroup
     if not group then return Persistence.bounds(panel) end
     local ids = {}
@@ -235,11 +236,12 @@ end
 -- Persist names and standalone bounds only, never native component handles.
 function Persistence.native(panel, snapshot)
     local panelID = panel._nisPersistenceID
-    if not panelID or restoring then return end
+    if WorldMap.isSuspended() or not panelID or restoring then return end
     local record = state.panels[panelID]
     local old = record.native
     local changed = geometry(record, snapshot.free)
     local same = old and old.frame == snapshot.frame and old.index == snapshot.index
+        and old.beforeNative == snapshot.beforeNative
         and old.selected == snapshot.selected and #old.frames == #snapshot.frames
     if same then
         for index, frame in ipairs(snapshot.frames) do

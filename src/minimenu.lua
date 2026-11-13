@@ -235,7 +235,7 @@ local function reset()
 end
 
 local function setRowHovered(row, hovered)
-    row.background.hidden = not hovered
+    Components.setHidden(row.background, not hovered)
     row.label.rgba = hovered and HOVER_TEXT_COLOUR or TEXT_COLOUR
 end
 
@@ -245,7 +245,7 @@ local function refreshRows(menuOverlay)
         local childIndex = menuOverlay.scrollOffset + rowIndex
         local child = children[childIndex]
         row.childIndex = childIndex
-        row.root.hidden = child == nil
+        Components.setHidden(row.root, child == nil)
         row.label.content = child and tostring(child.label) or ""
         setRowHovered(row, false)
     end
@@ -336,7 +336,7 @@ local function mountOverlay(menuOverlay, state)
         background:SetSize(0, 0, 1.0, 1.0)
         background.fill = true
         background.rgba = HOVER_COLOUR
-        background.hidden = true
+        Components.setHidden(background, true)
         background.clickthrough = true
 
         local label = Components.new(ui.Text, rowRoot)

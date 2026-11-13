@@ -27,16 +27,19 @@ local function component(parent, kind, categoryID, dynamicID)
         subscriptions = {}, namedSubscriptions = {},
         x = 0, y = 0, width = 0, height = 0, hidden = false,
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
+        position = { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
         cursorConfig = {},
         dragConfig = {},
         resizeOrder = {},
     }
     local position, size = { 0, 0, 0, 0 }, { 0, 0, 0, 0 }
-    function result:SetPos(x, y, xAnchor, yAnchor)
+    function result:SetPos(x, y, xAnchor, yAnchor, xSelf, ySelf)
         assert(not self.destroyed, "positioning destroyed component")
-        position = { x, y, xAnchor or 0, yAnchor or 0 }
-        self.x = x + ((parent and parent.width or 0) * position[3])
-        self.y = y + ((parent and parent.height or 0) * position[4])
+        position = { x, y, xAnchor or 0, yAnchor or 0, xSelf or 0, ySelf or 0 }
+        self.position = { x = x, y = y, xParentPc = position[3], yParentPc = position[4],
+            xSelfPc = position[5], ySelfPc = position[6] }
+        self.x = x + ((parent and parent.width or 0) * position[3]) - self.width * position[5]
+        self.y = y + ((parent and parent.height or 0) * position[4]) - self.height * position[6]
     end
     function result:EmitResize()
         for _, key in ipairs(self.resizeOrder) do
@@ -80,6 +83,9 @@ local function component(parent, kind, categoryID, dynamicID)
     end
     function result:Unsubscribe(hook, name)
         if name then
+            if self.strictNativeHooks and not (self.namedSubscriptions[hook] and self.namedSubscriptions[hook][name]) then
+                error("Component doesn't have an active hook of type " .. tostring(hook))
+            end
             if self.namedSubscriptions[hook] then self.namedSubscriptions[hook][name] = nil end
         else
             self.subscriptions[hook] = nil
@@ -176,11 +182,15 @@ local function event(name)
     events[name] = {}
     return {
         Subscribe = function(key, callback) events[name][key] = callback end,
-        Unsubscribe = function(key) events[name][key] = nil end,
+        Unsubscribe = function(key)
+            -- Native event bindings need a Lua caller to resolve plugin ownership.
+            assert(debug.getinfo(2, "S").what ~= "C", "native unsubscribe lost its Lua plugin caller")
+            events[name][key] = nil
+        end,
     }
 end
 Event = {
-    Logic = event("Logic"), VarTransmit = event("VarTransmit"),
+    Logic = event("Logic"), Draw = event("Draw"), VarTransmit = event("VarTransmit"),
     KeyDown = event("KeyDown"), WindowFocusChanged = event("WindowFocusChanged"),
 }
 local locked, transparency = true, 0
@@ -206,7 +216,7 @@ end
 local function hitAt(area, x, y)
     for index = #area.renderChildren, 1, -1 do
         local child = area.renderChildren[index]
-        if not child.hidden and child.enabled ~= false and
+        if not child.hidden and child.visibleGlobal ~= false and child.enabled ~= false and
             x >= child.x and x < child.x + child.width and
             y >= child.y and y < child.y + child.height then
             local target = hitAt(child, x - child.x, y - child.y)
@@ -371,21 +381,30 @@ local obstacles = {
     { x = 520, y = 300, width = 480, height = 400 },
 }
 local enumerationFails = false
+local nativeEnumerations = 0
 local nativeLayer = {}
-function nativeLayer:IterateStaticComponents(callback)
-    if enumerationFails then error("native enumeration failed") end
+local function nativeObstacle(index, rect)
     local origin = parent.xyGlobal
+    return {
+        interfaceID = rect.interfaceID or 1477, staticID = rect.staticID or (100 + index),
+        xyGlobal = { x = rect.x + origin.x, y = rect.y + origin.y },
+        width = rect.width, height = rect.height, visibleGlobal = rect.visibleGlobal ~= false,
+    }
+end
+function nativeLayer:IterateStaticComponents(callback)
+    nativeEnumerations = nativeEnumerations + 1
+    if enumerationFails then error("native enumeration failed") end
     for index, rect in ipairs(obstacles) do
-        callback({
-            interfaceID = rect.interfaceID or 1477, staticID = rect.staticID or (100 + index),
-            xyGlobal = { x = rect.x + origin.x, y = rect.y + origin.y },
-            width = rect.width, height = rect.height, visibleGlobal = true,
-        })
+        callback(nativeObstacle(index, rect))
     end
 end
 local getComponent = ui.Interfaces.GetComponent
 function ui.Interfaces:GetComponent(packed, ...)
     if packed == id.Component.TOPLEVEL_V2__GAME_AREA then return nativeLayer end
+    for index, rect in ipairs(obstacles) do
+        local key = ((rect.interfaceID or 1477) << 16) | (rect.staticID or (100 + index))
+        if packed == key then return nativeObstacle(index, rect) end
+    end
     return getComponent(self, packed, ...)
 end
 local function emit(name, payload)
@@ -421,10 +440,13 @@ begin(moving)
 move(moving, 460, 450)
 expectRect(moving.dragFeedback.origin, 100, 100, 300, 200, "white source stays fixed")
 expectRect(moving.dragFeedback.active, 400, 300, 120, 400, "orange fills native corridor and matches neighbor height")
-expectRect(moving.root, 310, 444, 300, 200, "body follows its pointer grip without adopting orange's snapped position or size")
+expect(moving.root.hidden, false, "free placement keeps the dragged body visible")
+expectRect(moving.root, 310, 444, 300, 200, "visible body follows the pointer at its original size")
+expect(moving.dragLayer.enabled, true, "visible drag body retains its active pointer capture")
 local white, orange = moving.dragFeedback.origin, moving.dragFeedback.active
 release(moving)
 expectRect(moving.root, 400, 300, 120, 400, "release commits exact filled orange")
+expect(moving.root.hidden, false, "committed placement reveals the panel body")
 expect(white.destroyed, true, "release destroys white")
 expect(orange.destroyed, true, "release destroys orange")
 fire(moving.dragLayer, ui.Hook.ONDRAGCOMPLETE)
@@ -434,14 +456,14 @@ move(moving, 460, 100)
 release(moving)
 expectRect(moving.root, 400, 94, 120, 400, "leaving a gap retains committed dimensions")
 
--- A blocked pointer moves orange to free space, not the freely dragged body.
+-- A blocked pointer moves orange to free space while the body follows the pointer.
 begin(moving)
 move(moving, 200, 450)
 expectRect(moving.dragFeedback.active, 400, 300, 120, 400, "blocked pointer finds and fills nearest gap")
 obstacles[2].x, obstacles[2].width = 500, 500
 emit("Logic")
 expectRect(moving.dragFeedback.active, 400, 300, 100, 400, "logic refreshes the narrowed native gap")
-expectRect(moving.root, 140, 444, 120, 400, "changing the fitted destination cannot move or resize the held body")
+expect(moving.root.hidden, false, "fitted destination changes keep the held body visible")
 obstacles[2].x, obstacles[2].width = 480, 520
 release(moving)
 expectRect(moving.root, 400, 300, 80, 400, "release revalidates changed native geometry")
@@ -449,7 +471,7 @@ obstacles = { { x = 0, y = 0, width = 1000, height = 700 } }
 begin(moving)
 move(moving, 700, 200)
 expect(moving.dragFeedback.active.hidden, true, "no destination hides orange")
-expectRect(moving.root, 660, 194, 80, 400, "without a valid destination the body still follows the cursor until release")
+expect(moving.root.hidden, false, "invalid placement keeps the held body visible")
 release(moving)
 expectRect(moving.root, 400, 300, 80, 400, "impossible release preserves source")
 
@@ -477,6 +499,45 @@ for _, cancellation in ipairs({ "lock", "escape", "focus", "hide", "size" }) do
 end
 moving:Destroy()
 
+-- Native identities are indexed once per gesture, but their bounds and
+-- visibility remain live. A final full scan catches newly mounted obstacles.
+do
+    obstacles = {
+        { x = 0, y = 300, width = 400, height = 400 },
+        { x = 520, y = 300, width = 480, height = 400, visibleGlobal = false },
+    }
+    local owner = makePanel()
+    local before = nativeEnumerations
+    local layout = require("src/core/nis_layout")
+    local buildSpaces, builds = layout.spaces, 0
+    layout.spaces = function(...)
+        builds = builds + 1
+        return buildSpaces(...)
+    end
+    begin(owner)
+    move(owner, 460, 450)
+    expect(nativeEnumerations - before, 1, "first movement indexes native identities once")
+    for index = 1, 20 do move(owner, 460 + index, 450); emit("Logic") end
+    expect(nativeEnumerations - before, 1, "movement and Logic reuse the gesture's native index")
+    expect(builds, 1, "unchanged obstacles reuse the free-space decomposition")
+    obstacles[2].visibleGlobal = true
+    emit("Logic")
+    expectRect(owner.dragFeedback.active, 400, 300, 120, 400,
+        "previously hidden native obstacles participate without reindexing")
+    obstacles[2] = { x = 500, y = 300, width = 500, height = 400 }
+    emit("Logic")
+    expectRect(owner.dragFeedback.active, 400, 300, 100, 400,
+        "same-ID native replacements supply fresh bounds")
+    expect(nativeEnumerations - before, 1, "live native changes do not enumerate topology")
+    obstacles[3] = { x = 400, y = 300, width = 100, height = 400 }
+    release(owner)
+    expect(nativeEnumerations - before, 2, "drop revalidates the complete native topology")
+    expect(owner.root.y + owner.root.height <= 300, true,
+        "newly mounted obstacles cannot be overlapped by the committed drop")
+    owner:Destroy()
+    layout.spaces = buildSpaces
+end
+
 -- Raw screen pixels and hook-local interface units agree with a nonzero parent
 -- origin and non-100% scaling; release also consumes the newest pointer.
 obstacles = {
@@ -494,7 +555,7 @@ for _, rawMouse in ipairs({ false, true }) do
     if rawMouse then raw = { x = (40 + 460) * 1.25, y = (30 + 450) * 1.25 } end
     move(owner, 460, 450)
     expectRect(owner.dragFeedback.active, 400, 300, 120, 400, "scaled pointer fills native gap in parent units")
-    expectRect(owner.root, 310, 444, 300, 200, "scaled body tracks the pointer independently of the fitted preview")
+    expect(owner.root.hidden, false, "scaled free placement keeps the body and its outline visible")
     if rawMouse then raw = { x = (40 + 200) * 1.25, y = (30 + 100) * 1.25 } end
     fire(owner.dragLayer, ui.Hook.ONRELEASE, 200, 100)
     expectRect(owner.root, 50, 94, 300, 200, "latest release pointer wins")
@@ -786,6 +847,7 @@ do
         local source, target = pair()
         begin(source); move(source, point[1], point[2])
         expect(target._nisTabs.root.hidden, true, "outside tab band does not show nesting feedback")
+        expect(source.root.hidden, false, "outside a nesting tab band the held body stays visible")
         release(source)
         expect(source.root.hidden, false, "outside-band release leaves source independent")
         expect(target.root.hidden, false, "outside-band release leaves target independent")
@@ -799,8 +861,12 @@ do
         expect(target._nisTabs.root.hidden, false, "strict strip interior shows the incoming tab")
         expectRect(source.dragFeedback.active, point[1] - 100, point[2] - 6, 200, 180,
             "nesting keeps orange at the dragged size and grip")
-        expectRect(source.root, point[1] - 100, point[2] - 6, 200, 180,
-            "nesting preview does not relocate or resize the body to the target")
+        expect(source.root.hidden, true, "nesting preview cannot clip the destination tabs with a body ghost")
+        expect(source.dragLayer.hidden, false, "hidden nesting ghost keeps header capture visible")
+        expect(source.dragLayer.enabled, true, "hidden nesting ghost keeps header capture enabled")
+        expect(hitAt(parent, point[1], point[2]), source.dragLayer, "pointer capture survives hidden source content")
+        emit("Logic")
+        expect(target._nisTabs.root.hidden, false, "hidden source remains eligible through repeated preview ticks")
         release(source)
         sameBounds(source, target, "docked panels share target bounds")
         expect(source.root.hidden, false, "incoming panel is selected")
@@ -825,6 +891,12 @@ do
     begin(source); move(source, 650, 130)
     move(source, 650, 250)
     expect(target._nisTabs.root.hidden, true, "leaving strip immediately clears incoming-tab feedback")
+    expect(source.root.hidden, false, "leaving strip immediately restores the dragged body")
+    move(source, 650, 130)
+    expect(source.root.hidden, true, "re-entering the nesting strip hides the dragged body again")
+    move(source, 650, 250)
+    emit("Logic")
+    expect(source.root.hidden, false, "free dragging stays visible after leaving nesting again")
     release(source)
     expect(target.root.hidden, false, "leaving strip cannot commit a remembered docking target")
     endPair(source, target)
@@ -849,6 +921,7 @@ do
         end
         if source.dragState then source:_CancelDrag() end
         expect(source.surface.container.y, locked and 4 or 16, cancellation .. " cannot create a group")
+        expect(source.root.hidden, false, cancellation .. " restores the source body after preview")
         locked = false; transmit(12)
         endPair(source, target)
     end
@@ -1038,6 +1111,7 @@ do
         fire(tab, ui.Hook.ONCLICK, 12, 12)
         raw = { x = 200, y = 500 }
         fire(tab, ui.Hook.ONDRAG, 12, 100)
+        expect(source.root.hidden, false, "a torn-out PrettyUI tab shows its body during free placement")
         expect(target.root.hidden, false, "dragging one tab leaves the other content visible")
         expect(hitAt(parent, 200, 500), tab, "intentional tab drag keeps capture on the original native hit")
         expect(source.dragLayer.height, 12, "actual tab detachment does not expand the header hitbox")
@@ -1505,6 +1579,8 @@ do
     local function nativeNode(interfaceID, staticID, owner, x, y, width, height)
         local node = component(nil, "native")
         node.type = 20
+        node.clickthrough = true -- structural layers; native inputs are their children
+        node.strictNativeHooks = true
         node.interfaceID, node.staticID = interfaceID, staticID
         node.parentStatic = nil
         Interfaces.component(node)
@@ -1622,6 +1698,7 @@ do
             for index, iconID in ipairs(order) do
                 local background = component(tabs, "sprite", 0, (index - 1) * 4)
                 background.type, background.visible, background.nativeShown = 3, true, true
+                background.strictNativeHooks = true
                 setmetatable(background, getmetatable(tabs))
                 background:SetPos((index - 1) * 44, 0)
                 background:SetSize(44, 28)
@@ -1630,6 +1707,7 @@ do
                 self.backgrounds[index] = background
                 local icon = component(tabs, "sprite", 0, (index - 1) * 4 + 1)
                 icon.type, icon.visible, icon.nativeShown = 3, true, true
+                icon.strictNativeHooks = true
                 setmetatable(icon, getmetatable(tabs))
                 icon:SetPos((index - 1) * 44 + 10, 2)
                 icon:SetSize(24, 24)
@@ -1715,6 +1793,104 @@ do
         return loaded
     end
     parent = area
+    do
+        local previousLog, messages = log, {}
+        log = function(message) messages[#messages + 1] = message end
+        local candidate = NisPanel.new(area, { categoryID = "auto",
+            x = 50, y = 450, width = 280, height = 180 })
+        local subscribe = notes.tabs.Subscribe
+        function notes.tabs:Subscribe(kind, name, callback)
+            if kind == ui.Hook.ONDRAG then error("injected native registration failure") end
+            return subscribe(self, kind, name, callback)
+        end
+        expect(candidate:DockTo(notes.frame), false, "partial native hook registration rejects docking")
+        notes.tabs.Subscribe = subscribe
+        expect(candidate._nisNative, nil, "failed hook registration keeps the panel standalone")
+        expectRect(candidate.root, 50, 450, 280, 180, "failed registration retains the source placement")
+        expect(#messages, 1, "partial registration reports its failure without secondary cleanup spam")
+        expect(messages[1]:find("injected native registration failure", 1, true) ~= nil, true,
+            "actual registration failures remain visible in the console")
+        expect(candidate:DockTo(notes.frame), true, "failed registration releases the native stack for a later dock")
+        candidate:Destroy()
+        expect(#messages, 1, "successful docking and teardown add no missing-hook warnings")
+        log = previousLog
+    end
+    do
+        local serial = 0
+        for _, occupied in ipairs({ false, true }) do
+            for before = 0, 1 do
+                for _, finish in ipairs({ "release", "escape", "leave" }) do
+                    serial = serial + 1
+                    local anchor
+                    if occupied then
+                        anchor = NisPanel.new(area, { categoryID = "auto", x = 10, y = 450 })
+                        expect(anchor:DockTo(notes.frame), true, "first-drop preview can target an existing own group")
+                    end
+                    local panelID = "native:first-drop:" .. serial
+                    local incoming = NisPanel.new(area, { categoryID = "auto", id = panelID,
+                        x = 50, y = 450, width = 280, height = 180 })
+                    local root, content = incoming.root, incoming.content
+                    local overlay = component(area, "preview input overlay")
+                    overlay:SetSize(20, 20)
+                    incoming:_RegisterOverlay(overlay, function() return true end)
+                    incoming:_SyncOverlays(false)
+                    begin(incoming)
+                    move(incoming, notes.frame.x + notes.tabs.x + before * 44 + 12,
+                        notes.frame.y + notes.tabs.y + 12)
+                    expect(incoming.dragState.nativeInsertion.beforeNative, before,
+                        "first native hover chooses the requested mixed insertion point")
+                    for _ = 1, 13 do emit("Logic") end
+                    expect(incoming.root.hidden, true, "native drop preview hides the incoming body")
+                    expect(incoming.dragFeedback.active.hidden, false, "native drop preview leaves the outline visible")
+                    expect(incoming.dragLayer.enabled, true, "native drop preview retains drag input")
+                    expect(overlay.hidden, true, "native drop preview hides sibling content/input overlays")
+                    expect(notes.backgrounds[1].x, before == 0 and 40 or 0,
+                        "first-drop preview makes room before the requested native tab")
+                    expect(notes.backgrounds[2].x, 84, "first-drop preview displaces following native tabs")
+                    expect(incoming._nisNative, nil, "insertion preview does not commit native membership")
+                    expect(savedLayouts["prettyui.nis-layout.v1"].panels[panelID].native, nil,
+                        "insertion preview does not save temporary membership")
+                    if anchor then
+                        local binding = anchor._nisNative
+                        expect(binding.tabs[binding.group.current].visual.x, 132,
+                            "existing own tabs make room for the incoming tab")
+                    end
+                    if finish == "release" then
+                        release(incoming)
+                        local binding = incoming._nisNative
+                        expect(binding ~= nil, true, "first drop commits native membership")
+                        expect(binding.tabs[binding.group.current].visual.x, before == 0 and 4 or 48,
+                            "first drop commits the previewed mixed slot")
+                        expect(savedLayouts["prettyui.nis-layout.v1"].panels[panelID].native.beforeNative,
+                            before, "first drop persists its mixed insertion point immediately")
+                        expect(incoming.root, root, "first mixed drop retains the panel root")
+                        expect(incoming.content, content, "first mixed drop retains consumer content")
+                        incoming:Undock()
+                    else
+                        if finish == "leave" then
+                            move(incoming, 650, 250)
+                            expect(notes.backgrounds[2].x, 44, "leaving native hover restores borrowed positions")
+                            expect(incoming.root.hidden, false, "leaving native hover immediately restores the dragged body")
+                            expect(overlay.hidden, false, "leaving native hover immediately restores sibling overlays")
+                        end
+                        incoming:_CancelDrag()
+                    end
+                    expect(notes.backgrounds[1].x, 0, "ended first-drop preview releases the first native offset")
+                    expect(notes.backgrounds[2].x, 44, "ended first-drop preview releases the second native offset")
+                    expect(incoming.root.hidden, false, "ended native drop preview restores the retained body")
+                    expect(overlay.hidden, false, "ended native drop preview restores sibling overlays")
+                    if anchor then
+                        expect(anchor._nisNative.tabs[anchor._nisNative.group.current].visual.x, 92,
+                            "ended first-drop preview restores existing own positions")
+                        anchor:Undock()
+                        anchor:Destroy()
+                    end
+                    incoming:Destroy()
+                    overlay:Destroy()
+                end
+            end
+        end
+    end
     local nativePanel = NisPanel.new(area, {
         categoryID = "auto", x = 50, y = 450, width = 280, height = 180, id = "native:retained",
     })
@@ -1724,9 +1900,31 @@ do
     local root, content = nativePanel.root, nativePanel.content
     local overlay = component(area, "overlay")
     nativePanel:_RegisterOverlay(overlay, function() return true end)
-    begin(nativePanel); move(nativePanel, 650, 250)
-    expect(nativePanel.dragState.nativeTarget == nil, true, "native body overlap is not a tab-band drop target")
-    nativePanel:_CancelDrag()
+    do
+        local tabEnumerations, iterate = 0, notes.tabs.IterateDynamicComponents
+        local unrelatedEnumerations, unrelatedIterate = 0, magic.tabs.IterateDynamicComponents
+        magic.frame.nativeShown = true
+        function magic.tabs:IterateDynamicComponents(callback)
+            unrelatedEnumerations = unrelatedEnumerations + 1
+            return unrelatedIterate(self, callback)
+        end
+        function notes.tabs:IterateDynamicComponents(callback)
+            tabEnumerations = tabEnumerations + 1
+            return iterate(self, callback)
+        end
+        begin(nativePanel); move(nativePanel, 650, 250)
+        for _ = 1, 10 do emit("Logic") end
+        expect(nativePanel.dragState.nativeTarget, nil, "native body overlap is not a tab-band drop target")
+        expect(tabEnumerations, 0, "native body dragging never enumerates tab children")
+        move(nativePanel, 650, 130)
+        expect(nativePanel.dragState.nativeTarget ~= nil, true, "entering a native header still validates docking")
+        expect(tabEnumerations > 0, true, "native header docking captures its current tab layout")
+        expect(unrelatedEnumerations, 0, "header dragging skips unrelated visible native tab trees")
+        nativePanel:_CancelDrag()
+        notes.tabs.IterateDynamicComponents = iterate
+        magic.tabs.IterateDynamicComponents = unrelatedIterate
+        magic.frame.nativeShown = false
+    end
     local bounded = NisPanel.new(area, { categoryID = "auto", maxWidth = 300 })
     expect(bounded:DockTo(notes.frame), false, "native viewport exceeding member limits is rejected")
     expect(notes.body.hidden, false, "rejected native docking leaves native content visible")
@@ -1742,11 +1940,14 @@ do
     expectRect(nativePanel.dragFeedback.active, 510, 124, 280, 180,
         "native nesting keeps the dragged dimensions instead of wrapping its host")
     expect(visibleIcons(area, nativePanel.tabIcon), 1, "native nesting previews the incoming tab icon")
+    expect(nativePanel.root.hidden, true, "a visible incoming native tab hides the dragged body")
     expect(notes.body.hidden, false, "native nesting preview does not conceal native content")
     expect(nativePanel._nisNative, nil, "native nesting preview does not commit membership")
     move(nativePanel, 650, 250)
     expect(visibleIcons(area, nativePanel.tabIcon), 0, "leaving the native band removes its incoming tab")
+    expect(nativePanel.root.hidden, false, "leaving the native tab band immediately restores the body")
     move(nativePanel, 650, 130)
+    expect(nativePanel.root.hidden, true, "re-entering the native band hides the body with its tab preview")
     release(nativePanel)
     expect(nativePanel._nisNative ~= nil, true, "header drop joins the native group")
     expect(nativePanel.root, root, "native docking retains the original root")
@@ -1757,6 +1958,163 @@ do
     emit("Logic")
     expect(drawable(title, nativePanel), true, "native docking keeps an actual title visible inside the viewport")
     expectRect(nativePanel.viewport, 0, 0, 353, 309, "native docking retains a nonzero clipped content viewport")
+    -- Opening the map temporarily removes native top-level visibility. This is
+    -- not a close/undock request, and no PrettyUI sibling may paint above it.
+    do
+        local WorldMap = require("src/core/world_map")
+        local Components = require("src/core/components")
+        local focus = { id = 999999, configName = "WORLDMAP_FOCUS", value = -1 }
+        var.VarClient = { WORLDMAP_FOCUS = focus }
+        WorldMap.start(true)
+        local function map(value)
+            focus.value = value
+            emit("VarTransmit", { var = focus, newValue = value })
+        end
+        local changes = 0
+        local free = NisPanel.new(area, { categoryID = "auto", id = "worldmap:free",
+            x = 100, y = 400, width = 240, height = 180,
+            onBoundsChange = function() changes = changes + 1 end })
+        local peer = NisPanel.new(area, { categoryID = "auto", id = "worldmap:peer",
+            x = 100, y = 400, width = 240, height = 180 })
+        expect(peer:DockTo(free), true, "world-map fixture creates a retained PrettyUI group")
+        local group, binding = peer._nisGroup, nativePanel._nisNative
+        local savedNative = copy(savedLayouts["prettyui.nis-layout.v1"].panels["native:retained"].native)
+        local hidden = NisPanel.new(area, { categoryID = "auto" })
+        hidden:Hide()
+        local window = Window.new(area, { x = 20, y = 450, width = 260, height = 180 })
+        local shownOnReturn = Window.new(area, { x = 20, y = 450, width = 260, height = 180 })
+        shownOnReturn:Hide()
+        local removed = Window.new(area, { x = 20, y = 450, width = 260, height = 180 })
+        local popout = require("src/panel").new(area, { categoryID = "auto", popout = true,
+            poppedOut = true, popoutX = 50, popoutY = 500, width = 240, height = 180 })
+        local raw = Components.new(ui.Layer, area, { categoryID = "auto" })
+        raw:SetSize(20, 20)
+        changes = 0
+        map(0)
+        expect(nativePanel.root.hidden, true, "map immediately suppresses the native-docked page")
+        expect(binding.tabs[binding.group.current].hit.hidden, true, "map suppresses native tab input siblings")
+        expect(binding.group.hosts[binding.group.current].chrome.hidden, true, "map suppresses native chrome siblings")
+        expect(peer.root.hidden, true, "map suppresses the active PrettyUI group page")
+        expect(window.root.hidden, true, "map suppresses ordinary windows")
+        expect(popout.overlay.root.hidden, true, "map suppresses independent panel popouts")
+        expect(raw.hidden, true, "shared allocation suppresses arbitrary PrettyUI root components")
+        window:Hide()
+        shownOnReturn:Show()
+        removed:Destroy()
+        local created = Window.new(area, { x = 20, y = 450, width = 260, height = 180 })
+        expect(created.root.hidden, true, "windows created over the map start suppressed")
+        expect(shownOnReturn.root.hidden, true, "Show cannot lift a window over the map")
+        local visibility = {}
+        for _, frame in ipairs(frames) do
+            visibility[#visibility + 1] = { frame = frame, visible = frame.visible }
+            frame.visible = false
+        end
+        area.nativeShown = false
+        area:SetSize(0, 0)
+        for _ = 1, 3 do emit("Logic"); emit("Draw") end
+        expect(nativePanel._nisNative, binding, "missing top-level frames cannot discard native membership")
+        expect(peer._nisGroup, group, "map retains PrettyUI group identity")
+        expect(group.active, peer, "map retains the selected PrettyUI tab")
+        expectRect(peer.root, 100, 400, 240, 180, "map cannot clamp retained group bounds to zero")
+        expect(changes, 0, "temporary map bounds do not notify or persist placement changes")
+        expect(savedLayouts["prettyui.nis-layout.v1"].panels["worldmap:free"].y, 400,
+            "temporary map bounds do not overwrite saved placement")
+        map(-1)
+        emit("Logic"); emit("Draw")
+        expect(nativePanel.root.hidden, true, "focus close waits for top-level restoration")
+        expect(nativePanel._nisNative, binding, "focus-close ordering cannot discard native membership")
+        for _, saved in ipairs(visibility) do saved.frame.visible = saved.visible end
+        area.nativeShown = true
+        area:SetSize(1000, 700)
+        emit("Logic"); emit("Logic"); emit("Draw")
+        expect(nativePanel._nisNative, binding, "map close restores the original native binding")
+        expect(nativePanel.root, root, "map close retains native page component identity")
+        expect(nativePanel.content, content, "map close retains populated consumer content")
+        expect(binding.group.active, nativePanel, "map close retains the selected native-docked tab")
+        expect(drawable(title, nativePanel), true, "retained native page renders again after map close")
+        expectRect(peer.root, 100, 400, 240, 180, "map close restores group placement exactly")
+        expect(peer.root.hidden, false, "active PrettyUI page returns after map close")
+        expect(free.root.hidden, true, "inactive PrettyUI page stays hidden after map close")
+        expect(hidden.root.hidden, true, "explicitly hidden NisPanel stays hidden")
+        expect(window.root.hidden, true, "Hide during map suspension is retained")
+        expect(shownOnReturn.root.hidden, false, "Show during map suspension takes effect on return")
+        expect(created.root.hidden, false, "map-time windows become visible only after map close")
+        expect(raw.hidden, false, "shared root visibility restores after map close")
+        expect(popout.poppedOut, true, "map retains panel popout mode")
+        expect(popout.overlay.root.hidden, false, "independent popout returns after map close")
+        expect(popout.dock.root.hidden, true, "map close does not reveal the inactive docked surface")
+        expectRect(popout.overlay.root, 50, 500, 240, 180, "map retains independent popout placement")
+        local nativeRecord = savedLayouts["prettyui.nis-layout.v1"].panels["native:retained"].native
+        expect(nativeRecord.frame, savedNative.frame, "map retains the saved native host")
+        expect(nativeRecord.beforeNative, savedNative.beforeNative, "map retains saved mixed-tab placement")
+        expectRect(nativeRecord.free, savedNative.free.x, savedNative.free.y,
+            savedNative.free.width, savedNative.free.height, "map retains the saved standalone rectangle")
+        local held = NisPanel.new(area, { categoryID = "auto", x = 30, y = 500, width = 240, height = 100 })
+        begin(held); move(held, 700, 500)
+        map(0)
+        release(held)
+        emit("Logic"); emit("Draw")
+        expect(held.root.hidden, true, "interrupted drag stays below the map")
+        map(-1)
+        emit("Logic"); emit("Logic")
+        expectNoDrag(held, "world-map interruption")
+        expectRect(held.root, 30, 500, 240, 100, "map cancels placement without committing its preview")
+        expect(held.root.hidden, false, "cancelled held body returns after map close")
+        held:Destroy(); popout:Destroy()
+        -- An inactive native stack can restore only its selected row. The other
+        -- rows may stay hidden/empty until clicked; that is not a group split.
+        for _, unavailable in ipairs({ "hidden", "cleared" }) do
+            local function clickNative(source)
+                for _, callback in pairs(source.namedSubscriptions[ui.Hook.ONCLICK] or {}) do
+                    callback(source, 10, 10)
+                end
+            end
+            local function savedFrame(name)
+                local saved = savedLayouts["prettyui.nis-layout.v1"].panels["native:retained"].native
+                if saved then
+                    for _, frame in ipairs(saved.frames) do if frame == name then return true end end
+                end
+                return false
+            end
+            clickNative(notes.backgrounds[1])
+            emit("Logic"); emit("Draw")
+            expect(binding.group.active, nil, unavailable .. " map case starts with a native page selected")
+            map(0)
+            if unavailable == "hidden" then ranged.tabs.visible = false
+            else ranged:rebuild({}, nil) end
+            map(-1)
+            emit("Logic"); emit("Logic"); emit("Draw")
+            expect(nativePanel._nisNative, binding, unavailable .. " hidden row retains native docking")
+            expect(savedFrame("TOPLEVEL_V2__ABILITY_WINDOW_RANGED"), true,
+                unavailable .. " row absence cannot erase saved stack membership")
+            expect(nativePanel.root.hidden, true, unavailable .. " map return keeps the native page selected")
+            clickNative(notes.tabs)
+            notes.frame.visible, notes.frame.nativeShown, notes.tabs.visible = false, false, false
+            ranged.tabs.visible = true
+            ranged:rebuild({ 9001, 9002 }, 2)
+            ranged.frame.visible, ranged.frame.nativeShown = true, true
+            -- Native selection can land between Logic and Draw.
+            emit("Draw"); emit("Logic")
+            expect(nativePanel._nisNative, binding, unavailable .. " selecting a restored native peer cannot detach")
+            expect(nativePanel.root, root, unavailable .. " native peer selection retains the panel tree")
+            expect(nativePanel.content, content, unavailable .. " native peer selection retains populated content")
+            expect(binding.group.active, nil, unavailable .. " native peer selection retains native authority")
+            expect(nativePanel.root.hidden, true, unavailable .. " native peer selection leaves the own page hidden")
+            expect(ranged.body.hidden, false, unavailable .. " newly selected native page remains visible")
+            expect(savedFrame("TOPLEVEL_V2__NOTES_WINDOW"), true,
+                unavailable .. " lazily hidden previous page retains saved membership")
+            nativePanel:SelectTab()
+            expect(drawable(title, nativePanel), true, unavailable .. " retained own tab is selectable in the restored row")
+            expect(binding.beforeNative, savedNative.beforeNative, unavailable .. " map preserves the mixed tab slot")
+            notes.frame.visible, notes.frame.nativeShown, notes.tabs.visible = nil, true, true
+            ranged.frame.visible, ranged.frame.nativeShown = nil, false
+            notes:rebuild({ 9001, 9002 }, 1)
+            ranged:rebuild({ 9001, 9002 }, 2)
+            emit("Logic"); emit("Draw")
+        end
+        free:Destroy(); peer:Destroy(); hidden:Destroy()
+        window:Destroy(); shownOnReturn:Destroy(); created:Destroy(); raw:Destroy()
+    end
     local bodyIndex, overlayIndex
     for index, child in ipairs(area.children) do
         if child == root then bodyIndex = index end
@@ -1773,6 +2131,7 @@ do
             expect(callback(tabs, 10, 10), true, "native observer preserves native handling")
         end
         emit("Logic")
+        emit("Draw")
     end
     local function nativeLock(value, repaintBeforeNotification, repaintAfterLogic)
         local function repaint()
@@ -1810,11 +2169,58 @@ do
         if not repaintBeforeNotification then repaint() end
         emit("Logic")
     end
+    do
+        local previousLog, messages = log, {}
+        log = function(message) messages[#messages + 1] = message end
+        local binding = nativePanel._nisNative
+        for _ = 1, 3 do
+            nativeLock(true, false)
+            notes:rebuild({ 9001, 9002 }, 1)
+            ranged:rebuild({ 9001, 9002 }, 2)
+            emit("Logic"); emit("Draw")
+            nativeClick(notes.backgrounds[1])
+            expect(nativePanel.root.hidden, true, "locked rebuilt native tabs remain selectable")
+            nativePanel:SelectTab()
+            expect(drawable(title, nativePanel), true, "locked own selection retains its content after row replacement")
+            nativeLock(false, false)
+            notes:rebuild({ 9001, 9002 }, 1)
+            ranged:rebuild({ 9001, 9002 }, 2)
+            emit("Logic"); emit("Draw")
+            expect(nativePanel._nisNative, binding, "lock/rebuild cycles retain the native binding")
+        end
+        log = previousLog
+        expect(table.concat(messages, "\n"), "", "locked tab replacement and unlock cycles keep the console quiet")
+    end
     nativePanel:SetScrollPosition(80)
     local lockedPeer = NisPanel.new(area, { categoryID = "auto", x = 20, y = 20 })
     expect(lockedPeer:DockTo(nativePanel), true, "lock scenario starts with multiple own native tabs")
     nativePanel:SelectTab()
     local nativeBinding = nativePanel._nisNative
+    do
+        local group = nativeBinding.group
+        local function nativeHook(source, hook, ...)
+            local delivered = false
+            for _, callback in pairs(source.namedSubscriptions[hook] or {}) do
+                delivered = true
+                expect(callback(source, ...), true, "locked observers preserve native click handling")
+            end
+            if hook == ui.Hook.ONCLICK then assert(delivered, "locked native source remains selectable") end
+        end
+        -- The client lock can change before VarTransmit updates panel caches.
+        locked = true
+        nativeHook(notes.backgrounds[1], ui.Hook.ONCLICK, 10, 10)
+        nativeHook(notes.backgrounds[1], ui.Hook.ONHOLD, 11, 10)
+        nativeHook(notes.backgrounds[1], ui.Hook.ONDRAG, 11, 10)
+        expect(group.nativeSort, nil, "live lock rejects native sorting before watcher delivery")
+        local tab = nativeBinding.tabs[group.current]
+        fire(tab.hit, ui.Hook.ONCLICK, 10, 10)
+        expect(nativePanel._nisTabPress, nil, "live lock rejects own sorting before watcher delivery")
+        expect(require("src/core/nis_native").reorder(nativePanel, notes.frame.x, 10), false,
+            "live lock also protects the mixed reorder entry point")
+        nativeHook(notes.backgrounds[1], ui.Hook.ONRELEASE, 11, 10)
+        nativeHook(notes.backgrounds[1], ui.Hook.ONDRAGCOMPLETE, nil, 11, 10)
+        nativePanel:SelectTab()
+    end
     nativeLock(true, true)
     expect(nativePanel._nisNative, nativeBinding, "locking retains native membership")
     expect(drawable(rows[4], nativePanel), true, "locking native chrome does not discard the selected content")
@@ -1846,6 +2252,69 @@ do
     expect(drawable(rows[4], nativePanel), false, "locked own-tab switching hides the previous content")
     nativePanel:SelectTab()
     expect(drawable(rows[4], nativePanel), true, "own tabs remain selectable while locked")
+    do
+        local group = nativeBinding.group
+        local beforeNative = nativeBinding.beforeNative
+        local function nativeInput(source, hook, ...)
+            for _, callback in pairs(source.namedSubscriptions[hook] or {}) do
+                expect(callback(source, ...), true, "locked native input preserves other listeners")
+            end
+        end
+        local function dragClick(source)
+            local x, y = source.x, source.y
+            nativeInput(source, ui.Hook.ONCLICK, 10, 10)
+            -- Native pointer capture reacts to registered drag hooks independently
+            -- of whether PrettyUI's Lua sorting callbacks choose to do anything.
+            for delta = 1, 3 do
+                if next(source.namedSubscriptions[ui.Hook.ONDRAG] or {})
+                    or next(source.namedSubscriptions[ui.Hook.ONDRAGCOMPLETE] or {}) then
+                    source:SetPos(x + delta, y + delta)
+                end
+                nativeInput(source, ui.Hook.ONHOLD, 10 + delta, 10 + delta)
+                nativeInput(source, ui.Hook.ONDRAG, 10, 10)
+                expect(source.x, x, "locked native tab cannot shift before the next Logic repair")
+                expect(source.y, y, "locked native tab cannot lift into a drag overlay")
+                emit("Logic")
+                expect(nativePanel.root.hidden, true, "locked drag-click still selects the native page")
+            end
+            nativeInput(source, ui.Hook.ONRELEASE, 13, 13)
+            nativeInput(source, ui.Hook.ONDRAGCOMPLETE, nil, 13, 13)
+        end
+        local nativePositions = {}
+        for _, host in ipairs({ notes, ranged }) do
+            for _, child in ipairs(host.tabs.children) do
+                nativePositions[#nativePositions + 1] = { child = child, x = child.x, y = child.y }
+            end
+        end
+        for _, source in ipairs({ notes.tabs, notes.backgrounds[1], notes.backgrounds[2] }) do
+            dragClick(source)
+            for _, hook in ipairs({ ui.Hook.ONCLICK, ui.Hook.ONHOLD, ui.Hook.ONDRAG,
+                ui.Hook.ONRELEASE, ui.Hook.ONDRAGCOMPLETE }) do
+                for _, callback in pairs(source.namedSubscriptions[hook] or {}) do
+                    expect(callback(source, hook == ui.Hook.ONCLICK and 10 or 11, 10), true,
+                        "locked lifecycle keeps native handlers active")
+                end
+                expect(group.nativeSort, nil, "locked native click/hold/drag cannot enter live sorting")
+                emit("Logic")
+            end
+            expect(group.tabDrag, nil, "locked native input cannot create a mixed tab drag")
+            expect(nativeBinding.beforeNative, beforeNative, "locked native input preserves mixed insertion")
+            for _, saved in ipairs(nativePositions) do
+                expect(saved.child.x, saved.x, "locked native tab selection preserves horizontal slots")
+                expect(saved.child.y, saved.y, "locked native tab selection preserves vertical slots")
+            end
+            lockedPeer:SelectTab()
+            nativePanel:SelectTab()
+            expectRect(nativePanel.root, 504, 132, 371, 321,
+                "locked page switching cannot start moving the retained body")
+            expect(drawable(rows[4], nativePanel), true, "locked page switching retains actual content")
+        end
+        notes:rebuild({ 9001, 9002 }, 1)
+        ranged:rebuild({ 9001, 9002 }, 2)
+        emit("Logic")
+        dragClick(notes.backgrounds[1])
+        nativePanel:SelectTab()
+    end
     nativeClick(notes.tabs)
     expect(nativePanel.root.hidden, true, "real native tabs remain selectable while locked")
     nativeLock(false, false)
@@ -1989,6 +2458,7 @@ do
         expect(nativePanel._nisNative, nil, "native " .. edge .. " edge allows tear-out")
         expect(nativePanel.dragState ~= nil, true, "native edge tear-out enters placement")
         expect(nativePanel.dragState.nativeTarget, nil, "native empty source strip does not redock during tear-out")
+        expect(nativePanel.root.hidden, false, "a torn-out native tab shows its body during free placement")
         emit("KeyDown", { gameKey = GameKey.ESCAPE })
         expect(nativePanel._nisNative ~= nil, true, "native edge tear-out cancellation restores membership")
         Mouse.GetPosition = function() return nil end
@@ -2056,6 +2526,269 @@ do
         expect(hit.height, 28, "native reorder release restores normal input height")
         Mouse.GetPosition = function() return nil end
     end
+
+    do
+        local targets, nativeClicks = {}, 0
+        for _, host in ipairs({ notes, ranged }) do
+            local target = component(host.tabs, "native input", 0, 20)
+            target:SetPos(0, 0)
+            target:SetSize(44, 28)
+            target.clickthrough = false
+            target:Subscribe(ui.Hook.ONCLICK, function(self)
+                nativeClicks = nativeClicks + 1
+                nativeClick(self)
+            end)
+            targets[#targets + 1] = target
+        end
+        emit("Logic")
+        local function dragTo(owner, x)
+            local binding = owner._nisNative
+            local tab = binding.tabs[binding.group.current]
+            local raw = { x = tab.hit.xyGlobal.x + 12, y = tab.hit.xyGlobal.y + 12 }
+            Mouse.GetPosition = function() return raw end
+            fire(tab.hit, ui.Hook.ONCLICK, 12, 12)
+            raw.x = area.xyGlobal.x + x
+            fire(tab.hit, ui.Hook.ONHOLD, 12, 12)
+            return tab.hit
+        end
+        for _, finish in ipairs({ "escape", "release" }) do
+            nativePanel:SelectTab()
+            local held = dragTo(peer, ranged.frame.x + ranged.tabs.x + 12)
+            expect(peer.dragState, nil, "dragging before native tabs stays in the mixed row")
+            emit("Logic")
+            expect(ranged.backgrounds[1].x > 0 and ranged.backgrounds[1].x < 40, true,
+                "native tab slides out of the incoming PrettyUI tab's way")
+            expect(targets[2].x, ranged.backgrounds[1].x, "native input slides with its background")
+            for _ = 1, 12 do emit("Logic") end
+            expect(ranged.backgrounds[1].x, 40, "first native tab makes room for a leading PrettyUI tab")
+            expect(ranged.backgrounds[2].x, 84, "native relative order and native widths are retained")
+            for _, child in ipairs(ranged.tabs.children) do
+                if child.width == 24 then
+                    expect(child.x == 50 or child.x == 94, true, "native icons move with their original tabs")
+                end
+            end
+            if finish == "escape" then
+                emit("KeyDown", { gameKey = GameKey.ESCAPE })
+                expect(ranged.backgrounds[1].x, 0, "cancelled mixed reorder restores native positions")
+                expect(targets[2].x, 0, "cancelled mixed reorder restores native input")
+                expect(peer._nisNative.tabs[peer._nisNative.group.current].visual.x, 92,
+                    "cancelled mixed reorder restores the own tab behind native tabs")
+            else
+                fire(held, ui.Hook.ONRELEASE)
+                local tab = peer._nisNative.tabs[peer._nisNative.group.current]
+                expect(tab.visual.x, 4, "release commits a PrettyUI tab before the native row")
+                expect(tab.hit.x, ranged.frame.x + 4, "leading PrettyUI input matches artwork")
+                local input = hitAt(area, ranged.frame.x + ranged.tabs.x + targets[2].x + 12,
+                    ranged.frame.y + ranged.tabs.y + 12)
+                expect(input, targets[2], "shifted native tab remains the actual hit target")
+                fire(input, ui.Hook.ONCLICK, 12, 12)
+                expect(nativeClicks, 1, "shifted native input retains its original handler")
+                expect(peer.root.hidden, true, "shifted native click returns to the real native page")
+                peer:SelectTab()
+                expect(peer.root.hidden, false, "leading PrettyUI tab still selects retained content")
+            end
+            Mouse.GetPosition = function() return nil end
+        end
+        for _, target in ipairs(targets) do target:Destroy() end
+        emit("Logic")
+        expect(ranged.backgrounds[1].x, 40, "native child rebuild preserves the mixed insertion point")
+        local function rapidNativeSwitch(firstX, secondX, ownX)
+            local binding = peer._nisNative
+            local group = binding.group
+            nativeLock(true, true)
+            local function click(destination, beforeScript)
+                local current = notes.frame.nativeShown and notes or ranged
+                local source = current.backgrounds[destination == notes and 1 or 2]
+                for _, callback in pairs(source.namedSubscriptions[ui.Hook.ONCLICK] or {}) do
+                    expect(callback(source, 10, 10), true, "rapid switching retains native click handling")
+                end
+                if beforeScript then emit("Logic") end
+                notes.frame.nativeShown, ranged.frame.nativeShown = destination == notes, destination == ranged
+                -- The native selection/frame-copy script runs after the plugin's
+                -- Logic callback and rebuilds a row at native-only coordinates.
+                destination:rebuild({ 9001, 9002 }, destination == notes and 1 or 2)
+            end
+            for frame = 1, 6 do
+                click(frame % 2 == 1 and notes or ranged, frame == 1)
+                if frame == 3 then click(ranged, false) end -- multiple inputs before a single paint
+                emit("Draw") -- subsequent switches have no intervening Logic tick
+                expect(peer._nisNative, binding, "rapid native switching retains mixed membership")
+                for _, host in ipairs({ notes, ranged }) do
+                    expect(host.backgrounds[1].x, firstX, "first native slot is correct before painting")
+                    expect(host.backgrounds[2].x, secondX, "second native slot is correct before painting")
+                    for _, child in ipairs(host.tabs.children) do
+                        if child.width == 24 then
+                            local x = child.dynamicID == 1 and firstX or secondX
+                            expect(child.x, x + 10, "native icon follows its mixed slot before painting")
+                        end
+                    end
+                end
+                local tab = binding.tabs[group.current]
+                expect(tab.visual.x, ownX, "rapid native selection does not displace the PrettyUI slot")
+                expect(tab.hit.x, tab.host.frame.x + ownX, "mixed input matches the pre-draw artwork")
+                expect(peer.root.hidden, true, "latest native page remains selected before painting")
+                expect(group.nativeSort, nil, "rapid locked selection cannot begin sorting")
+            end
+            -- An own selection after native input supersedes the earlier click,
+            -- even if the native row is repainted again before Draw.
+            click(notes, false)
+            peer:SelectTab()
+            notes:rebuild({ 9001, 9002 }, 1)
+            emit("Draw")
+            expect(group.active, peer, "pre-draw repair retains a later PrettyUI selection")
+            expect(peer.root.hidden, false, "latest PrettyUI page remains visible after late native repaint")
+            notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+            nativeLock(false, true)
+            peer:SelectTab()
+        end
+        rapidNativeSwitch(40, 84, 4)
+        local held = dragTo(peer, ranged.frame.x + ranged.tabs.x + 44 + 12)
+        fire(held, ui.Hook.ONRELEASE)
+        Mouse.GetPosition = function() return nil end
+        expect(ranged.backgrounds[1].x, 0, "insertion between natives releases the preceding native tab")
+        expect(ranged.backgrounds[2].x, 84, "insertion between natives displaces only the following native tab")
+        expect(peer._nisNative.tabs[peer._nisNative.group.current].visual.x, 48,
+            "PrettyUI tab occupies the gap between native tabs")
+        rapidNativeSwitch(0, 84, 48)
+        do
+            local function nativeHook(source, hook, ...)
+                local delivered = false
+                for _, callback in pairs(source.namedSubscriptions[hook] or {}) do
+                    delivered = true
+                    expect(callback(source, ...), true, "native sort observer preserves client handlers")
+                end
+                assert(delivered, "native tab exposes its sort lifecycle hook")
+            end
+            local originalRoot, originalContent = peer.root, peer.content
+            local originalScroll = nativePanel.scrollY
+            for _, finish in ipairs({ "release", "complete", "escape", "focus", "lock" }) do
+                local binding = peer._nisNative
+                local group = binding.group
+                local ownHit = dragTo(peer, ranged.frame.x + ranged.tabs.x + 44 + 12)
+                fire(ownHit, ui.Hook.ONRELEASE)
+                Mouse.GetPosition = function() return nil end
+                local source = ranged.backgrounds[2]
+                nativeClick(source)
+                nativeHook(source, ui.Hook.ONDRAG, 12, 12)
+                expect(rendered(binding.tabs[group.current].background), true,
+                    "native sort start keeps the real PrettyUI tab visibly present")
+                source:SetPos(-12, 0) -- a transient native-only move, before its icon/frame copies follow
+                emit("Logic")
+                expect(peer._nisNative, binding, "native drag start cannot eject the interleaved own page")
+                expect(peer._nisNative.group, group, "native drag preserves the original group")
+                expect(source.x, -12, "native drag positions are not overwritten by mixed layout")
+                expect(rendered(binding.tabs[group.current].background), true,
+                    "transient native source positions do not hide PrettyUI tab artwork")
+                expect(binding.tabs[group.current].hit.enabled, false,
+                    "visible PrettyUI tab cannot steal an active native drag capture")
+                expect(binding.tabs[group.current].visual.x > 48 and binding.tabs[group.current].visual.x < 92,
+                    true, "PrettyUI tab slides aside while the native source crosses it")
+                for _ = 1, 12 do emit("Logic") end
+                expect(binding.tabs[group.current].visual.x, 92,
+                    "PrettyUI tab occupies its live mixed slot before native release")
+                expect(peer.root, originalRoot, "native drag retains the actual own root")
+                expect(peer.content, originalContent, "native drag retains consumer content")
+                if finish == "escape" or finish == "focus" or finish == "lock" then
+                    source:SetPos(44, 0)
+                    if finish == "escape" then emit("KeyDown", { gameKey = GameKey.ESCAPE })
+                    elseif finish == "lock" then nativeLock(true, true)
+                    else emit("WindowFocusChanged", { hasFocus = false }) end
+                    for _ = 1, 3 do emit("Logic") end
+                else
+                    ranged:rebuild({ 9002, 9001 }, 2)
+                    emit("Logic")
+                    expect(peer._nisNative, binding, "in-flight native row replacement retains membership")
+                    expect(rendered(binding.tabs[group.current].background), true,
+                        "same-ID native source rebuild keeps PrettyUI tabs drawn during the drag")
+                    if finish == "release" then nativeHook(source, ui.Hook.ONRELEASE, 12, 12)
+                    else nativeHook(source, ui.Hook.ONDRAGCOMPLETE, nil, 12, 12) end
+                    for _ = 1, 3 do emit("Logic") end
+                    expect(peer._nisNative, binding, "staggered native frame rebuild waits without ejecting content")
+                    expect(rendered(binding.tabs[group.current].background), true,
+                        "staggered native release does not remove the visible PrettyUI tab")
+                    notes:rebuild({ 9002, 9001 }, 1)
+                    for _ = 1, 3 do emit("Logic") end
+                end
+                expect(peer._nisNative, binding, "native sort completion retains the own binding")
+                local cancelled = finish == "escape" or finish == "focus" or finish == "lock"
+                expect(binding.tabs[group.current].visual.x, cancelled and 48 or 92,
+                    "native sort keeps its live mixed insertion on release and restores it on cancellation")
+                expect(ranged.backgrounds[2].x, cancelled and 84 or 44,
+                    "native sort restores non-overlapping mixed spacing without accumulating offsets")
+                expect(nativePanel.scrollY, originalScroll, "native sorting preserves retained scroll state")
+                peer:SelectTab()
+                expect(peer.root.hidden, false, "own content remains selectable after native sorting")
+                if finish == "lock" then nativeLock(false, true) end
+                notes:rebuild({ 9001, 9002 }, 1)
+                ranged:rebuild({ 9001, 9002 }, 2)
+                emit("Logic")
+                -- Independent rebuilds get a settled frame; continuous
+                -- baseline overwrites remain an unsupported native write fight.
+                emit("Logic")
+                expect(peer._nisNative, binding, "completed native sort survives its delayed baseline repaint")
+            end
+            local function placeOwn(owner, localX)
+                local hit = dragTo(owner, ranged.frame.x + ranged.tabs.x + localX + 12)
+                fire(hit, ui.Hook.ONRELEASE)
+                Mouse.GetPosition = function() return nil end
+            end
+            for leading = 1, 2 do
+                for _, finish in ipairs({ "release", "escape" }) do
+                    placeOwn(nativePanel, 128)
+                    placeOwn(peer, 0)
+                    if leading == 2 then placeOwn(nativePanel, 40) end
+                    local binding = peer._nisNative
+                    local group = binding.group
+                    local source = ranged.backgrounds[1]
+                    expect(source.x, leading * 40, "native source starts after the leading PrettyUI prefix")
+                    nativeClick(source)
+                    nativeHook(source, ui.Hook.ONDRAG, 12, 12)
+                    emit("Logic")
+                    expect(binding.tabs[group.current].visual.x, 4,
+                        "starting a native sort does not overtake a leading tab before movement")
+                    expect(binding.beforeNative, 0, "press-time mixed coordinates preserve the leading order")
+                    source:SetPos(0, 0) -- native dragging clamps at the strip's left edge
+                    emit("Logic")
+                    expect(binding.tabs[group.current].visual.x > 4
+                        and binding.tabs[group.current].visual.x < 48, true,
+                        "a native source at the left clamp slides the leading PrettyUI tab aside")
+                    for _ = 1, 12 do emit("Logic") end
+                    expect(binding.tabs[group.current].visual.x, 48,
+                        "native tab overtakes the leading PrettyUI tab before release")
+                    expect(source.x, 0, "leading-edge crossing does not move the captured native source")
+                    expect(rendered(binding.tabs[group.current].background), true,
+                        "leading PrettyUI tab stays visible while being overtaken")
+                    if finish == "escape" then emit("KeyDown", { gameKey = GameKey.ESCAPE })
+                    else nativeHook(source, ui.Hook.ONRELEASE, 12, 12) end
+                    for _ = 1, 3 do emit("Logic") end
+                    local before = finish == "escape" and 0 or 1
+                    expect(binding.beforeNative, before, "leading crossing commits or rolls back the mixed order")
+                    expect(binding.tabs[group.current].visual.x, before == 0 and 4 or 48,
+                        "leading crossing restores the correct settled artwork")
+                    if leading == 2 then
+                        local other = nativePanel._nisNative
+                        expect(other.beforeNative, before, "native tab can overtake every leading PrettyUI tab")
+                        expect(other.tabs[group.current].visual.x, before == 0 and 44 or 88,
+                            "multiple leading PrettyUI tabs retain their relative order")
+                        expect(savedLayouts["prettyui.nis-layout.v1"].panels["native:retained"].native.beforeNative,
+                            before, "leading crossing saves even when native relative order is unchanged")
+                    end
+                end
+            end
+            placeOwn(nativePanel, 128)
+            placeOwn(peer, 44)
+            for _ = 1, 2 do emit("Logic") end
+        end
+        notes:rebuild({ 9001, 9002 }, 1)
+        ranged:rebuild({ 9001, 9002 }, 2)
+        emit("Logic")
+        expect(peer._nisNative ~= nil, true, "same-ID native rebuild retains mixed membership")
+        expect(ranged.backgrounds[1].x, 0, "rebuilt preceding native tab remains in place")
+        expect(ranged.backgrounds[2].x, 84, "rebuilt following native tab regains the owned offset")
+        peer:Undock()
+        expect(ranged.backgrounds[2].x, 44, "removing the mixed member restores original native positions")
+        expect(peer:DockTo(nativePanel), true, "a removed mixed member can rejoin normally")
+    end
     nativePanel:SelectTab()
     peer:Destroy()
     expect(nativePanel.root.hidden, false, "destroying an inactive native member preserves selection")
@@ -2100,6 +2833,30 @@ do
     expect(wrapper.height, 309, "standalone wrapper shrinks without moving individual native controls")
     expect(notes.body.y, 16, "standalone docking does not rewrite the script-owned outer slot")
     expect(wrapper.hidden, true, "own selection conceals the whole standalone native wrapper")
+    do
+        local binding = nativePanel._nisNative
+        local host = binding.group.hosts[binding.group.current]
+        local hit = binding.tabs[binding.group.current].hit
+        local nativeTab = host.nativeTab
+        local raw = { x = hit.xyGlobal.x + 12, y = hit.xyGlobal.y + 12 }
+        Mouse.GetPosition = function() return raw end
+        fire(hit, ui.Hook.ONCLICK, 12, 12)
+        raw.x = host.frame.xyGlobal.x + host.content.x + 12
+        fire(hit, ui.Hook.ONHOLD, 12, 12)
+        emit("Logic")
+        expect(nativeTab.visual.x > 4 and nativeTab.visual.x < 44, true,
+            "synthetic native tab slides aside for a leading PrettyUI tab")
+        fire(hit, ui.Hook.ONRELEASE)
+        Mouse.GetPosition = function() return nil end
+        expect(binding.tabs[binding.group.current].visual.x, 4,
+            "PrettyUI tab can precede the synthetic native page")
+        expect(nativeTab.visual.x, 44, "synthetic native page settles after the leading own tab")
+        expect(nativeTab.hit.x, host.frame.x + 44, "synthetic native input follows mixed artwork")
+        fire(nativeTab.hit, ui.Hook.ONCLICK)
+        expect(wrapper.hidden, false, "shifted synthetic native tab selects real native content")
+        nativePanel:SelectTab()
+        expect(wrapper.hidden, true, "leading synthetic own tab retains its selected content")
+    end
     nativePanel:Undock()
     expect(wrapper.y, 0, "standalone detach restores the native wrapper origin")
     expect(wrapper.height, 337, "standalone detach restores the native wrapper height")
@@ -2418,6 +3175,51 @@ do
         expect(c._nisNative ~= nil, true, "alternate saved native frame restores the group")
         expect(c._nisNative.group.active, c, "grouped native own selection survives restart")
         c:Undock(); c:Destroy()
+
+        locked = false; transmit(12)
+        a, b = create("mixed-a"), create("mixed-b")
+        expect(a:DockTo(notes.frame), true, "mixed persistence starts with a native row")
+        expect(b:DockTo(a), true, "mixed persistence adds a second own tab")
+        local function place(owner, localX)
+            owner:SelectTab()
+            local binding = owner._nisNative
+            local host = binding.group.hosts[binding.group.current]
+            local hit = binding.tabs[binding.group.current].hit
+            local raw = { x = hit.xyGlobal.x + 12, y = hit.xyGlobal.y + 12 }
+            Mouse.GetPosition = function() return raw end
+            fire(hit, ui.Hook.ONCLICK, 12, 12)
+            raw.x = host.frame.xyGlobal.x + host.tabs.x + localX + 12
+            fire(hit, ui.Hook.ONHOLD, 12, 12)
+            fire(hit, ui.Hook.ONRELEASE)
+            Mouse.GetPosition = function() return nil end
+        end
+        place(a, 0)
+        expect(saved("mixed-a").native.beforeNative, 0,
+            "leading insertion persists even without changing own index or selection")
+        place(b, 84)
+        expect(saved("mixed-b").native.beforeNative, 1, "between-native insertion persists")
+        expect(notes.backgrounds[1].x, 40, "two mixed members shift the first native once")
+        expect(notes.backgrounds[2].x, 124, "two mixed members shift the second native twice")
+        require("src/core/nis_native").shutdown()
+        expect(notes.backgrounds[1].x, 0, "shutdown restores the first native tab")
+        expect(notes.backgrounds[2].x, 44, "shutdown restores the second native tab")
+        b:Destroy(); a:Destroy()
+        restart()
+        locked = true; transmit(12)
+        b = create("mixed-b")
+        a = create("mixed-a")
+        local mixed = a._nisNative.group
+        expect(mixed.members[1], a, "reverse startup restores the leading mixed member")
+        expect(mixed.members[2], b, "reverse startup restores the between-native member")
+        expect(a._nisNative.tabs[mixed.current].visual.x, 4, "startup places the leading tab before native tabs")
+        expect(b._nisNative.tabs[mixed.current].visual.x, 88, "startup restores the gap between native tabs")
+        expect(notes.backgrounds[1].x, 40, "startup displaces the first native tab exactly once")
+        expect(notes.backgrounds[2].x, 124, "startup displaces the second native tab exactly twice")
+        expect(mixed.active, b, "mixed startup retains the saved selected page")
+        a:Undock(); b:Undock()
+        a:Destroy(); b:Destroy()
+        expect(notes.backgrounds[1].x, 0, "last-member removal restores the first native tab")
+        expect(notes.backgrounds[2].x, 44, "last-member removal restores the second native tab")
         locked = false; transmit(12)
     end
     do

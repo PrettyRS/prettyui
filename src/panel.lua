@@ -20,6 +20,7 @@ local DragFeedback = require("src/core/drag_feedback")
 local DragBounds = require("src/core/drag_bounds")
 local Resize = require("src/core/resize")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
+local WorldMap = require("src/core/world_map")
 
 local Panel = {}
 Panel.__index = Panel
@@ -149,7 +150,7 @@ local function createDragLayer(parent, surface, panel)
     layer:SetSize(surface.root.width, surface.root.height)
     layer.clickthrough = true
     layer.enabled = false
-    layer.hidden = true
+    Components.setHidden(layer, true)
 
     layer:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
         if not isAltDown() then return true end
@@ -453,6 +454,17 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     end
     self:_WatchNativeTransparency()
     self:_WatchNativeLock()
+    WorldMap.watch(self, function(suspended)
+        if suspended then
+            self:_StopDrag()
+            if self.dockResize then self.dockResize:Cancel() end
+            if self.overlayResize then self.overlayResize:Cancel() end
+        elseif self.root and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil then
+            if self.dockBounds then self.dockBounds:Refresh() end
+            if self.overlayBounds then self.overlayBounds:Refresh() end
+            self:_UpdateVisibility()
+        end
+    end)
     return self
 end
 
@@ -553,7 +565,7 @@ function Panel:_SetAltDragActive(active, notify)
         local enabled = activeSurface == surface
         layer.enabled = enabled
         layer.clickthrough = not enabled
-        layer.hidden = not enabled
+        Components.setHidden(layer, not enabled)
         Cursor.apply(layer, config.Cursor.TOPLEVEL_V2_MOVE, enabled)
         if enabled then
             layer:SetPos(surface.root.x, surface.root.y)
@@ -675,8 +687,8 @@ end
 
 -- Ensures the visual state of the panel is consistent with its properties.
 function Panel:_UpdateVisibility()
-    self.dock.root.hidden = self._hidden or self.poppedOut
-    self.overlay.root.hidden = self._hidden or not self.poppedOut
+    Components.setHidden(self.dock.root, self._hidden or self.poppedOut)
+    Components.setHidden(self.overlay.root, self._hidden or not self.poppedOut)
     self:_UpdateFlowHeight()
     self.dock.scroll:Refresh()
     self.overlay.scroll:Refresh()
@@ -1111,6 +1123,7 @@ function Panel:AddSlider(options)
 end
 
 function Panel:Destroy()
+    WorldMap.unwatch(self)
     NativeInterfaceSettings.unwatchTransparency(self)
     NativeInterfaceSettings.unwatchLock(self)
     if self.dockResize then self.dockResize:Destroy(); self.dockResize = nil end

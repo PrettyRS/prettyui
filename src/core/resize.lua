@@ -3,6 +3,7 @@ local Components = require("src/core/components")
 local DragFeedback = require("src/core/drag_feedback")
 local InterfaceMouse = require("src/core/mouse")
 local clamp = require("src/core/math").clamp
+local WorldMap = require("src/core/world_map")
 
 local Resize = {}
 Resize.__index = Resize
@@ -39,7 +40,7 @@ local function loaded(self)
 end
 
 local function available(self)
-    return loaded(self) and self.enabled and not self.root.hidden and
+    return not WorldMap.isSuspended() and loaded(self) and self.enabled and not self.root.hidden and
         self.root.visibleGlobal ~= false and self.isVisible()
 end
 
@@ -80,7 +81,7 @@ end
 local function place(self, key, x, y, width, height, visible, raise)
     local handle = self.handles[key]
     local enabled = visible and width > 0 and height > 0
-    if handle.hidden ~= not enabled then handle.hidden = not enabled end
+    if handle.hidden ~= not enabled then Components.setHidden(handle, not enabled) end
     if handle.enabled ~= enabled then
         handle.enabled = enabled
         handle.clickthrough = not enabled
@@ -230,6 +231,7 @@ end
 
 function Resize:Destroy()
     if self.root == nil then return end
+    WorldMap.unwatch(self)
     self:_Clear()
     if loaded(self) then
         for _, key in ipairs(order) do self.handles[key]:Destroy() end
@@ -287,6 +289,9 @@ function Resize.new(parent, root, options)
         end)
     end
     self:Refresh()
+    WorldMap.watch(self, function(suspended)
+        if suspended then self:_Clear() else self:Refresh() end
+    end)
     return self
 end
 

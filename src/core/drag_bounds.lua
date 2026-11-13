@@ -1,4 +1,5 @@
 local clamp = require("src/core/math").clamp
+local WorldMap = require("src/core/world_map")
 
 local DragBounds = {}
 DragBounds.__index = DragBounds
@@ -26,7 +27,7 @@ function DragBounds.new(parent, root, onResize)
 end
 
 function DragBounds:Refresh()
-    if ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    if WorldMap.isSuspended() or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     local root, parent = self.root, self.parent
     local parentWidth, parentHeight = parent.width, parent.height
     local rootWidth, rootHeight = root.width, root.height
@@ -55,7 +56,7 @@ function DragBounds:RememberPosition()
 end
 
 function DragBounds:Clamp()
-    if ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    if WorldMap.isSuspended() or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     local root, parent = self.root, self.parent
     local x = clamp(root.x, 0, parent.width - root.width)
     local y = clamp(root.y, 0, parent.height - root.height)

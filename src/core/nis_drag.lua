@@ -6,10 +6,18 @@ local Cursor = require("src/core/cursor")
 local NisGroup = require("src/core/nis_group")
 local Persistence = require("src/core/nis_persistence")
 local Native = require("src/core/nis_native")
+local Tooltip = require("src/tooltip")
+local NativeInterfaceSettings = require("src/core/native_interface_settings")
+local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local NisDrag = {}
 local activePanel
 local EVENT_ID = "prettyui_nis_panel_drag"
+
+local function locked(panel)
+    return WorldMap.isSuspended() or panel.locked or NativeInterfaceSettings.isLocked()
+end
 
 local function scaleSetting()
     local option = game and game.options and game.options.InterfaceScale
@@ -51,12 +59,12 @@ end
 
 -- Normalize before comparing: registry order, duplicate obstacles and fractional
 -- changes within the same occupied units must not invalidate the free-space cache.
-local function collectSpaces(panel, drag)
+local function collectSpaces(panel, drag, reindex)
     local width, height = math.floor(panel.parent.width), math.floor(panel.parent.height)
     -- The native plugin-host layer spans the viewport but is not a NIS panel.
     -- Exclude its proven identity only; Window's default collection is unchanged.
     local ok = pcall(Snap.collect, panel, drag.rects, true,
-        id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM)
+        id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM, not reindex and drag.nativeCache or nil)
     if not ok then
         drag.spaces = nil
         drag.snapshotValid = false
@@ -159,7 +167,7 @@ local function preview(panel, drag)
     drag.target = target
     local feedback = panel.dragFeedback
     local hidden = target == nil
-    if feedback.active.hidden ~= hidden then feedback.active.hidden = hidden end
+    if feedback.active.hidden ~= hidden then Components.setHidden(feedback.active, hidden) end
     local x = math.floor(drag.pointerX - drag.gripFractionX * drag.width + 0.5)
     local y = math.floor(drag.pointerY - drag.gripY + 0.5)
     if candidate or nativeTarget then
@@ -182,7 +190,19 @@ local function preview(panel, drag)
         feedback.active:MoveToFront()
         drag.capture:MoveToFront()
     end
-    if Native.preview(panel, nativeTarget) then
+    local nativeChrome, insertion = Native.preview(panel, nativeTarget, drag.pointerX)
+    drag.nativeInsertion = insertion
+    -- Only a displayed incoming tab replaces the dragged body. Free placement,
+    -- including an invalid drop position, keeps the original-size body visible.
+    local previewHidden = nativeChrome ~= nil
+        or candidate ~= nil and candidate._nisTabs.root.hidden ~= true
+    local visibilityChanged = drag.previewHidden ~= previewHidden
+    if visibilityChanged then
+        drag.previewHidden = previewHidden
+        Components.setHidden(panel.root, previewHidden or drag.sourceHidden)
+        panel:_SyncOverlays(panel.root.hidden == true)
+    end
+    if nativeChrome or visibilityChanged then
         feedback.origin:MoveToFront()
         feedback.active:MoveToFront()
         drag.capture:MoveToFront()
@@ -201,8 +221,13 @@ function NisDrag.install(NisPanel)
     function NisPanel:_CheckDragEnvironment()
         local drag = self.dragState or self._nisTabPress
         if not drag then return false end
+        if WorldMap.isSuspended() then return true end
         if ui.Interfaces:GetInterface(self.interfaceID) == nil then
             self:Destroy()
+            return true
+        end
+        if locked(self) then
+            self:_CancelDrag()
             return true
         end
         local origin = self.parent.xyGlobal
@@ -216,7 +241,7 @@ function NisDrag.install(NisPanel)
     end
 
     function NisPanel:_BeginDrag(component, x, y, gripX, gripY, retainExpanded)
-        if self.locked or self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil
+        if locked(self) or self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil
             or self.root.hidden or self.root.visibleGlobal == false then return true end
         if not retainExpanded then InterfaceMouse.CalibrateFromHook(component, x, y) end
         local px, py = pointer(self, component, x, y)
@@ -233,13 +258,14 @@ function NisDrag.install(NisPanel)
         local origin = self.parent.xyGlobal
         self.dragState = {
             x = root.x, y = root.y, width = root.width, height = root.height,
+            sourceHidden = root.hidden == true,
             capture = component,
             gripFractionX = (gripX or x) / root.width, gripY = gripY or y,
             pressX = px, pressY = py, pointerX = px, pointerY = py,
             viewportWidth = self.parent.width, viewportHeight = self.parent.height,
             parentX = origin.x, parentY = origin.y, scale = scaleSetting(),
             captureExpanded = retainExpanded == true,
-            rects = {}, snapshot = {},
+            rects = {}, snapshot = {}, nativeCache = {},
         }
         root:MoveToFront()
         component:MoveToFront()
@@ -283,6 +309,9 @@ function NisDrag.install(NisPanel)
             capture:SetPos(0, 0)
             capture:SetSize(0, 0, 1, 1)
             InterfaceMouse.BeginCapture(capture)
+            drag.previewHidden = false
+            if self.content then Tooltip.hideContextTooltips(self.content) end
+            self:_SyncOverlays(false)
             self.dragFeedback.origin:MoveToFront()
             self.dragFeedback.active:MoveToFront()
             capture:MoveToFront()
@@ -300,12 +329,14 @@ function NisDrag.install(NisPanel)
         if loaded and commit and drag.moved then
             local px, py = pointer(self, component, x, y)
             if px then drag.pointerX, drag.pointerY = px, py end
-            collectSpaces(self, drag)
+            -- A drop always checks the complete current native topology.
+            collectSpaces(self, drag, true)
             preview(self, drag)
         end
         self.dragState = nil
         unsubscribe(self)
         InterfaceMouse.EndCapture(drag.capture)
+        if loaded and drag.previewHidden then Components.setHidden(self.root, drag.sourceHidden) end
         -- Retained tab capture survives source teardown until commit/rollback.
         local target = loaded and commit and drag.moved and drag.target
         local nisTarget = target and drag.nisTarget
@@ -315,7 +346,7 @@ function NisDrag.install(NisPanel)
             if target and drag.nativeTarget and Native.dock(self, drag.nativeTarget,
                 self._nisNativeTransaction and self._nisNativeTransaction.free or {
                     x = drag.x, y = drag.y, width = drag.width, height = drag.height,
-                }) then
+                }, drag.nativeInsertion) then
                 self._nisTabTransaction = nil
                 self._nisNativeTransaction = nil
             elseif nisTarget and NisGroup.dock(self, nisTarget, false) then
@@ -374,7 +405,7 @@ function NisDrag.install(NisPanel)
     end
 
     function NisPanel:_BeginNativeTabDrag(component, x, y, tab)
-        if self.locked or not self._nisNative then return false end
+        if locked(self) or not self._nisNative then return false end
         if activePanel then activePanel:_CancelDrag() end
         InterfaceMouse.CalibrateFromHook(component, x, y)
         local px, py = tabPointer(self, component, x, y)
@@ -410,7 +441,7 @@ function NisDrag.install(NisPanel)
             return false
         end
         if not press.native or self:_CheckDragEnvironment() then return false end
-        if self.locked or not self._nisNative then return self:_StopNativeTabDrag(nil, nil, nil, false) end
+        if locked(self) or not self._nisNative then return self:_StopNativeTabDrag(nil, nil, nil, false) end
         local px, py = tabPointer(self, component, x, y)
         if not px then return false end
         if not press.dragging then
@@ -443,7 +474,8 @@ function NisDrag.install(NisPanel)
             if press.tab then press.tab.retained, press.tab.dragOwner = nil, nil end
             return false
         end
-        capture.hidden, capture.enabled = false, true
+        Components.setHidden(capture, false)
+        capture.enabled = true
         capture:SetPos(0, 0)
         capture:SetSize(0, 0, 1, 1)
         Cursor.apply(capture, config.Cursor.TOPLEVEL_V2_MOVE, true)
@@ -463,6 +495,7 @@ function NisDrag.install(NisPanel)
 
     function NisPanel:_StopNativeTabDrag(component, x, y, commit)
         local press = self._nisTabPress
+        if WorldMap.isSuspended() and commit ~= false then return false end
         if not press then return self:_StopDrag(commit ~= false, component, x, y) end
         if not press.native then return false end
         if commit ~= false and press.dragging and component then
@@ -491,7 +524,7 @@ function NisDrag.install(NisPanel)
 
     function NisPanel:_BeginNisTabDrag(member, component, x, y, tab)
         if not member or not member._nisGroup or member._nisGroup ~= self._nisGroup
-            or member.locked or self.locked or ui.Interfaces:GetInterface(member.interfaceID) == nil then
+            or locked(member) or self.locked or ui.Interfaces:GetInterface(member.interfaceID) == nil then
             return false
         end
         if activePanel then activePanel:_CancelDrag() end
@@ -543,7 +576,7 @@ function NisDrag.install(NisPanel)
         end
         local member = press.member
         if member:_CheckDragEnvironment() then return false end
-        if not member._nisGroup or member.locked then
+        if not member._nisGroup or locked(member) then
             member:_CancelDrag()
             return false
         end
@@ -594,6 +627,7 @@ function NisDrag.install(NisPanel)
 
     function NisPanel:_StopNisTabDrag(component, x, y, commit)
         local press = self._nisTabPress
+        if WorldMap.isSuspended() and commit ~= false then return false end
         if self._nisTabPress and self._nisTabPress.native then
             return self:_StopNativeTabDrag(component, x, y, commit)
         end

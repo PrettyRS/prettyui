@@ -2,6 +2,7 @@ local Components = require("src/core/components")
 local clamp = require("src/core/math").clamp
 local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
+local WorldMap = require("src/core/world_map")
 
 local Scroll = {}
 Scroll.__index = Scroll
@@ -227,6 +228,9 @@ local function buildScroll(parent, options)
     self.downArrow:Subscribe(ui.Hook.ONSCROLLWHEEL, onWheel)
 
     self:Refresh()
+    WorldMap.watch(self, function(suspended)
+        if suspended then self:_StopDrag() else self:Refresh() end
+    end)
     return self
 end
 
@@ -341,10 +345,11 @@ function Scroll:_LayoutThumbDrag()
         rootY + (self.track.y or 0) + (self.thumb.y or 0)
     )
     self.thumbDrag:SetSize(BAR_WIDTH, self.thumbHeight)
-    self.thumbDrag.hidden = not self:_ShouldShow()
+    Components.setHidden(self.thumbDrag, not self:_ShouldShow())
 end
 
 function Scroll:_Layout()
+    if WorldMap.isSuspended() and self.width ~= nil then return end
     self.width = math.max(1, self.root.width or 1)
     self.height = math.max(1, self.root.height or 1)
     self.contentHeight = self.requestedContentHeight
@@ -369,9 +374,9 @@ function Scroll:_Layout()
     self.thumb:SetSize(BAR_WIDTH, self.thumbHeight)
     self.thumbCentre:SetSize(BAR_WIDTH, math.max(1, self.thumbHeight - END_SIZE * 2))
 
-    self.track.hidden = not self.scrollbarVisible
-    self.upArrow.hidden = not self.scrollbarVisible
-    self.downArrow.hidden = not self.scrollbarVisible
+    Components.setHidden(self.track, not self.scrollbarVisible)
+    Components.setHidden(self.upArrow, not self.scrollbarVisible)
+    Components.setHidden(self.downArrow, not self.scrollbarVisible)
     self:SetScrollPosition(self.scrollY)
 end
 
@@ -478,6 +483,7 @@ function Scroll:SetSize(width, height, widthAnchor, heightAnchor)
 end
 
 function Scroll:Destroy()
+    WorldMap.unwatch(self)
     self:_StopDrag()
     scrollByContent[self.content] = nil
     if self.parentScroll then
