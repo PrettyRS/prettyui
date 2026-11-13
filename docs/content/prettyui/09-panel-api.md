@@ -173,6 +173,27 @@ Panel.new(parent, options)
 
 {{% api-card %}}
 
+### Hiding and closing
+
+`onClose`
+: Callback receiving the panel, invoked by `Close()`.
+
+`destroyOnClose`
+: Makes `Close()` destroy the panel instead of hiding it.
+
+`Hide()`
+: Hides the panel without invoking **onClose**. 
+
+`Show()`
+: Shows and raises the panel.
+
+`Close()`
+: Invokes **onClose**, then hides or destroys the panel in accordance with the **destroyOnClose** setting.
+
+{{% /api-card %}}
+
+{{% api-card %}}
+
 ### Player interface settings
 
 `useNativeTransparency`

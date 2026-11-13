@@ -65,6 +65,15 @@ function Scroll.findOwnerWindow(context)
     return findOwnerWindow(context)
 end
 
+function Scroll.findContaining(context)
+    while context do
+        local scroll = scrollByContent[context.collection]
+        if scroll then return scroll end
+        context = context.parentContext
+    end
+    return nil
+end
+
 local function buildScroll(parent, options)
     options = options or {}
 
@@ -85,6 +94,7 @@ local function buildScroll(parent, options)
     self.clickthrough = options.clickthrough == true
     self.clipTargets = {}
     self.childScrolls = {}
+    self.widthTargets = {}
 
     self.root = Components.newContent(parent, options)
     self.interfaceID = self.root.interfaceID
@@ -110,18 +120,8 @@ local function buildScroll(parent, options)
     self.content.clickthrough = self.clickthrough
     self.content.enabled = not self.clickthrough
 
-    -- Follow native ancestry, not tooltip/overlay ancestry: popout surfaces have
-    -- independent viewports even when they share a logical content owner.
-    local ancestor = parent
-    while ancestor do
-        local controller = scrollByContent[ancestor]
-        if controller then
-            self.parentScroll = controller
-            controller.childScrolls[self] = true
-            break
-        end
-        ancestor = ancestor.parent
-    end
+    self.parentScroll = Scroll.findContaining(options.parentContext)
+    if self.parentScroll then self.parentScroll.childScrolls[self] = true end
     scrollByContent[self.content] = self
 
     self.upArrow = sprite(self.root, Sprites.SCROLL_ARROW_UP)
@@ -345,6 +345,7 @@ function Scroll:_LayoutThumbDrag()
 end
 
 function Scroll:_Layout()
+    local previousContentWidth = self.contentWidth
     self.width = math.max(1, self.root.width or 1)
     self.height = math.max(1, self.root.height or 1)
     self.contentHeight = self.requestedContentHeight
@@ -372,7 +373,19 @@ function Scroll:_Layout()
     self.track.hidden = not self.scrollbarVisible
     self.upArrow.hidden = not self.scrollbarVisible
     self.downArrow.hidden = not self.scrollbarVisible
+    if previousContentWidth ~= nil and previousContentWidth ~= self.contentWidth then
+        for target in pairs(self.widthTargets) do target:_OnContentWidthChanged() end
+        for child in pairs(self.childScrolls) do child:Refresh() end
+    end
     self:SetScrollPosition(self.scrollY)
+end
+
+function Scroll:RegisterWidthTarget(target)
+    self.widthTargets[target] = true
+end
+
+function Scroll:UnregisterWidthTarget(target)
+    self.widthTargets[target] = nil
 end
 
 function Scroll:Refresh()
@@ -496,6 +509,7 @@ function Scroll:Destroy()
         self.root = nil
     end
     self.clipTargets = {}
+    self.widthTargets = {}
     self.ownerWindow = nil
     self.overlayParent = nil
     self.parent = nil

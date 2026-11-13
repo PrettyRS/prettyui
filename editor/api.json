@@ -133,6 +133,9 @@
             "enabled": "boolean"
           }
         },
+        "Hide": {
+          "params": {}
+        },
         "Close": {
           "params": {}
         },
@@ -265,6 +268,8 @@
         "useNativeTransparency": "boolean",
         "respectInterfaceLock": "boolean",
         "onPopoutChange": "fun(panel: PrettyUI.Panel, poppedOut: boolean)",
+        "onClose": "fun(panel: PrettyUI.Panel)",
+        "destroyOnClose": "boolean",
         "tooltip": "string|PrettyUI.TooltipOptions",
         "layout": "PrettyUI.LayoutOptions",
         "textLayout": "PrettyUI.LayoutOptions"
@@ -305,6 +310,15 @@
           "params": {
             "enabled": "boolean"
           }
+        },
+        "Hide": {
+          "params": {}
+        },
+        "Show": {
+          "params": {}
+        },
+        "Close": {
+          "params": {}
         },
         "SetPopoutClickthrough": {
           "params": {
@@ -2004,6 +2018,9 @@
           "params": {
             "disabled": "boolean"
           }
+        },
+        "Refresh": {
+          "params": {}
         },
         "SetTooltip": {
           "params": {

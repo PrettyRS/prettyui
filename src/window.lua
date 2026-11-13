@@ -10,6 +10,7 @@ local Scroll = require("src/core/scroll")
 local RowBackgrounds = require("src/core/row_backgrounds")
 local DragFeedback = require("src/core/drag_feedback")
 local DragBounds = require("src/core/drag_bounds")
+local Snap = require("src/core/snap")
 local Cursor = require("src/core/cursor")
 local Resize = require("src/core/resize")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
@@ -28,6 +29,11 @@ local CLOSE_RIGHT = 8
 local MIN_WIDTH = 220
 local MIN_HEIGHT = 140
 
+-- Offsets used to compensate for the window's visible edge sitting 2 units inside its box
+local EDGE_STRIP = 2
+local TITLED_EDGE_OFFSETS = { left = EDGE_STRIP, top = 0, right = EDGE_STRIP, bottom = EDGE_STRIP }
+local UNTITLED_EDGE_OFFSETS = { left = EDGE_STRIP, top = EDGE_STRIP, right = EDGE_STRIP, bottom = EDGE_STRIP }
+
 local function sprite(parent, spriteID)
     local component = Components.new(ui.Sprite, parent)
     component.spriteID = spriteID
@@ -42,6 +48,7 @@ local function buildWindow(parent, options)
     self.parent = parent
     self.interfaceID = parent.interfaceID
     self.title = options.title
+    self.edgeOffsets = self.title ~= nil and TITLED_EDGE_OFFSETS or UNTITLED_EDGE_OFFSETS
     self.onClose = options.onClose
     self.hideCloseButton = options.hideCloseButton == true
     self.onPositionChange = options.onPositionChange
@@ -52,6 +59,7 @@ local function buildWindow(parent, options)
     self.maxHeight = options.maxHeight
     self.useNativeTransparency = options.useNativeTransparency == true
     self.respectInterfaceLock = options.respectInterfaceLock ~= false
+    self.snapToEdges = options.snapToEdges ~= false
     self.locked = false
     self.overlays = {}
     self.rowBackgroundColours = options.rowBackgroundColours
@@ -208,11 +216,21 @@ local function buildWindow(parent, options)
                     self.titleDrag:SetPos(0, 0)
                     self.titleDrag:SetSize(0, 0, 1.0, 1.0)
                     self.titleDrag:MoveToFront()
+                    if self.snapToEdges then
+                        local ok, positions = pcall(Snap.start, self)
+                        if ok then dragStart.snapPositions = positions end
+                    end
                 end
-                local nextX = clamp(dragStart.windowX + mouse.x - dragStart.mouseX,
-                    0, self.parent.width - self.root.width)
-                local nextY = clamp(dragStart.windowY + mouse.y - dragStart.mouseY,
-                    0, self.parent.height - self.root.height)
+                local rawX = dragStart.windowX + mouse.x - dragStart.mouseX
+                local rawY = dragStart.windowY + mouse.y - dragStart.mouseY
+                local snappedX, snappedY = rawX, rawY
+                if dragStart.snapPositions then
+                    snappedX, snappedY = Snap.apply(dragStart.snapPositions, rawX, rawY,
+                        self.root.width, self.root.height)
+                end
+                local offsets = self.edgeOffsets
+                local nextX = clamp(snappedX, -offsets.left, self.parent.width - self.root.width + offsets.right)
+                local nextY = clamp(snappedY, -offsets.top, self.parent.height - self.root.height + offsets.bottom)
                 if self.root.x ~= nextX or self.root.y ~= nextY then
                     self.root:SetPos(nextX, nextY)
                     self.dragBounds:RememberPosition()
@@ -257,7 +275,7 @@ local function buildWindow(parent, options)
             end
             if self.dragFeedback then self.dragFeedback:Update() end
             self:_SyncOverlays(self.root.hidden == true)
-        end)
+        end, self.edgeOffsets)
     else
         self.topBorder = sprite(self.root, Sprites.BORDER_BOTTOM)
         self.topBorder:SetPos(CORNER_SIZE, 0)
@@ -297,7 +315,7 @@ local function buildWindow(parent, options)
         end)
     end
 
-    
+
 
     local parentTooltipContext = Tooltip.getContext(parent)
     local tooltipParent = parentTooltipContext and parentTooltipContext.parent or parent
@@ -337,17 +355,19 @@ local function buildWindow(parent, options)
     self.tooltipContext.ownerWindow = self
     Layout.configure(self, options.layout or options.textLayout)
     Tooltip.bind(self, self.root, parent, options.tooltip)
+    Snap.register(self)
     if options.resizable == true then
         if not self.dragBounds then
             self.dragBounds = DragBounds.new(self.parent, self.root, function()
                 self:_SyncOverlays(self.root.hidden == true)
-            end)
+            end, self.edgeOffsets)
         end
         self.resize = Resize.new(self.parent, self.root, {
             minWidth = self.minWidth,
             minHeight = self.minHeight,
             maxWidth = self.maxWidth,
             maxHeight = self.maxHeight,
+            edgeOffsets = self.edgeOffsets,
             isVisible = function()
                 return self.root.hidden ~= true and self.root.visibleGlobal ~= false
             end,
@@ -500,17 +520,24 @@ function Window:Show()
     self:_SyncOverlays(false)
 end
 
-function Window:Close()
+-- Hides the window without calling onClose().
+function Window:Hide()
     if self._stopDrag then self._stopDrag() end
     if self.resize then self.resize:Cancel() end
     if self.content then Tooltip.hideContextTooltips(self.content) end
+    if self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    self.root.hidden = true
+    if self.titleDrag then self.titleDrag.hidden = true end
+    self:_SyncOverlays(true)
+end
+
+-- Closes the window as the player does with its close button
+function Window:Close()
     if self.onClose then self.onClose(self) end
     if self.destroyOnClose then
         self:Destroy()
-    elseif self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
-        self.root.hidden = true
-        if self.titleDrag then self.titleDrag.hidden = true end
-        self:_SyncOverlays(true)
+    else
+        self:Hide()
     end
 end
 
@@ -536,6 +563,7 @@ function Window:Destroy()
     end
     Layout.destroyManaged(self)
     Tooltip.unbind(self)
+    Snap.unregister(self)
     if self._scroll then
         self._scroll:Destroy()
         self._scroll = nil
