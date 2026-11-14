@@ -30,6 +30,11 @@ local function component(name)
     local packed = id.Component[names[name]]
     return packed and ui.Interfaces:GetComponent(packed) or nil
 end
+local function child(parent, name)
+    local packed = id.Component[names[name]]
+    return parent and type(packed) == "number" and parent:GetChild(packed & 0xffff) or nil
+end
+
 
 local function identity(value)
     if not value then return nil end
@@ -266,7 +271,8 @@ local function updateSlayer(current, width)
     if current.slayerBlocked then return end
     local saved = current.slayer
     if not saved then
-        local target, hud = component("slayer"), component("hud")
+        local hud = component("hud")
+        local target = child(hud, "slayer")
         if not target or target.isRestricted or not hud
             or identity(hud.parent) ~= current.viewportKey
             or identity(target.parent) ~= identity(hud) then return end

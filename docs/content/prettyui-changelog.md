@@ -45,6 +45,7 @@ hero:
 
 
 ### Fixed
+- Fixed Classic sidebar Slayer-counter reservation by resolving the counter through its `GAMEPLAY_HUDS` parent.
 - Reduced NIS drag-time allocation pressure by deduplicating placement slots before allocation and reusing unchanged native-tab layout baselines during reconciliation.
 - Returning to Modern Interface now waits 10 client logic ticks (about 200 ms) before native redocking, preserving saved tab selection and committing content visibility after the restoration batch.
 - Native docking now retains host membership, tab order, and selection when sidebar reflow temporarily shrinks a native host below docking capacity, restoring the group when space returns.

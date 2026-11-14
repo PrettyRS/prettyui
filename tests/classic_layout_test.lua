@@ -57,7 +57,7 @@ end
 local function component(interfaceID, staticID, parent, position, dimensions)
     local item = {
         interfaceID = interfaceID, staticID = staticID, categoryID = -1, dynamicID = -1,
-        parent = parent, position = position, size = dimensions, posWrites = 0, sizeWrites = 0,
+        parent = parent, children = {}, position = position, size = dimensions, posWrites = 0, sizeWrites = 0,
     }
     setmetatable(item, { __index = function(self, field)
         if field == "width" then return self.size.width + (parent and parent.width or 0) * self.size.widthParentPc end
@@ -87,6 +87,10 @@ local function component(interfaceID, staticID, parent, position, dimensions)
         for _, field in ipairs(sizeFields) do self.size[field] = nextSize[field] end
         if self.failSize == "after" then self.failSize = nil; error("native size setter failed") end
     end
+    function item:GetChild(childStaticID)
+        return self.children[childStaticID]
+    end
+    if parent and staticID then parent.children[staticID] = item end
     if staticID then components[(interfaceID << 16) | staticID] = item end
     live[interfaceID] = live[interfaceID] or {}
     return item
