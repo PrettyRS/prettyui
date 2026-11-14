@@ -36,6 +36,8 @@ hero:
 ### Changed
 - PrettyUI components are now hidden while the player is viewing the world map.
 - Added `Refresh()` to [sliders](index.html#slider-api), which can update the marker's position again after the slider's width changes.
+- Titles and body text now wrap and resize vertically as their available width changes.
+- Titles no longer default to a single-line limit.
 
 
 ### Fixed

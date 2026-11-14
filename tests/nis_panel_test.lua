@@ -380,6 +380,90 @@ expect(panel.dragLayer, nil, "destroy clears sibling capture")
 expect(panel._scroll, nil, "destroy clears scroll controller")
 expect(next(panel.overlays), nil, "destroy releases overlay registry")
 expect(next(events.VarTransmit), nil, "destroy unwatches native settings")
+
+-- Text remeasures against the actual viewport, including scrollbar width, and
+-- moves following rows on both shrinking and widening without rebuilding them.
+do
+    local oldCount = font.GetStringLineCount
+    local oldAscent, oldDescent = font.maxAscent, font.maxDescent
+    font.maxAscent, font.maxDescent = 14, 4
+    font.GetStringLineCount = function(_, text, width)
+        local count, used = 1, 0
+        text = text:gsub("<[^>]+>", "")
+        for word in text:gmatch("%S+") do
+            local length = #word * 7
+            if used > 0 and used + 7 + length > width then
+                count, used = count + 1, length
+            else
+                used = used == 0 and length or used + 7 + length
+            end
+        end
+        return count
+    end
+    local title, body, tail
+    local text = "word word word word word word"
+    local function build(owner)
+        title = owner:AddTitle(text)
+        body = owner:AddText("<col=ff0000>" .. text .. "</col>")
+        tail = owner:AddText("End")
+    end
+    local owner = NisPanel.new(parent, {
+        categoryID = "auto", width = 300, height = 160, buildContent = build,
+    })
+    local function checkRows(height, message)
+        expect(title.height, height, message .. " title height")
+        expect(body.height, height == 28 and 24 or height, message .. " body height")
+        expect(title.maxLines, 0, message .. " title permits every wrapped line")
+        expect(body.y, title.y + title.height + 8, message .. " body clears title")
+        expect(tail.y, body.y + body.height + 2, message .. " next row clears body")
+        expect(owner.contentHeight, tail.y + tail.height + 14, message .. " scroll extent")
+    end
+    checkRows(28, "wide construction")
+    for _ = 1, 2 do
+        owner:SetSize(110, 160)
+        expect(owner.scrollbarVisible, true, "wrapped text introduces scrolling")
+        expect(title.width, 56, "wrapping uses the scrollbar-reduced width")
+        checkRows(114, "narrow resize")
+        owner:SetScrollPosition(10000)
+        expect(owner.scrollY, owner.contentHeight - owner._scroll.height,
+            "last wrapped row remains reachable")
+        owner:SetSize(300, 160)
+        checkRows(28, "wide resize")
+        expect(owner.scrollbarVisible, false, "widening removes unneeded scrollbar")
+        expect(owner.scrollY, 0, "widening clamps the old scroll offset")
+    end
+    owner:SetSize(110, 160)
+    owner:Hide()
+    owner:Show()
+    checkRows(114, "narrow remount")
+    owner:Destroy()
+
+    local fixed, limited, spaced, nativeSpacing, anchored
+    local constrained = NisPanel.new(parent, {
+        categoryID = "auto", width = 200, height = 500,
+        buildContent = function(current)
+            fixed = current:AddTitle({ text = text, height = 35 })
+            limited = current:AddTitle({ text = text, width = 70, maxLines = 2 })
+            spaced = current:AddText({ text = text, width = 70, lineSpacing = 30 })
+            nativeSpacing = current:AddText({ text = text, width = -80, lineSpacing = 0 })
+            anchored = current:AddText({ text = text, height = 0, heightAnchor = 0.25 })
+        end,
+    })
+    expect(fixed.height, 35, "explicit title height remains caller-controlled")
+    expect(limited.height, 42, "explicit line cap limits auto height")
+    expect(spaced.height, 84, "custom line spacing sizes all three lines")
+    expect(nativeSpacing.height, 42, "zero line spacing uses font baseline")
+    constrained:SetSize(180, 500)
+    expect(fixed.height, 35, "explicit height survives resizing")
+    expect(limited.height, 42, "fixed-width text retains its wrapped height")
+    expect(nativeSpacing.height, 60, "negative width offset remeasures actual anchored width")
+    expect(anchored.height, anchored.parent.height * 0.25,
+        "explicit height anchors remain caller-controlled")
+    constrained:Destroy()
+    font.GetStringLineCount = oldCount
+    font.maxAscent, font.maxDescent = oldAscent, oldDescent
+end
+
 -- A plugin owns durable data, not UI handles: each visible mount gets fresh
 -- controls, tooltips, row backdrops, Scroll and sibling input overlays.
 do
