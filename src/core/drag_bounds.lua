@@ -6,12 +6,13 @@ DragBounds.__index = DragBounds
 local nextID = 0
 local NO_EDGE_OFFSETS = { left = 0, top = 0, right = 0, bottom = 0 }
 
-function DragBounds.new(parent, root, onResize, edgeOffsets)
+function DragBounds.new(parent, root, onResize, edgeOffsets, isSuspended)
     nextID = nextID + 1
     local self = setmetatable({
         parent = parent,
         root = root,
         edgeOffsets = edgeOffsets or NO_EDGE_OFFSETS,
+        isSuspended = isSuspended,
         interfaceID = parent.interfaceID,
         onResize = onResize,
         hookID = "prettyui_drag_bounds_" .. nextID,
@@ -29,7 +30,8 @@ function DragBounds.new(parent, root, onResize, edgeOffsets)
 end
 
 function DragBounds:Refresh()
-    if WorldMap.isSuspended() or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    if WorldMap.isSuspended() or self.isSuspended and self.isSuspended()
+        or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     local root, parent = self.root, self.parent
     local parentWidth, parentHeight = parent.width, parent.height
     local rootWidth, rootHeight = root.width, root.height
@@ -63,7 +65,8 @@ function DragBounds:RememberPosition()
 end
 
 function DragBounds:Clamp()
-    if WorldMap.isSuspended() or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    if WorldMap.isSuspended() or self.isSuspended and self.isSuspended()
+        or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     local root, parent = self.root, self.parent
     local offsets = self.edgeOffsets
     local x = clamp(root.x, -offsets.left, parent.width - root.width + offsets.right)
@@ -81,6 +84,7 @@ function DragBounds:Destroy()
     end
     self.parent = nil
     self.root = nil
+    self.isSuspended = nil
     self.onResize = nil
 end
 

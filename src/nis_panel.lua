@@ -699,10 +699,11 @@ function NisPanel:Destroy()
     if self.resize then self.resize:Destroy(); self.resize = nil end
     self._resizeRects = nil
     if self.dragBounds then self.dragBounds:Destroy(); self.dragBounds = nil end
+    if self._topLevelVisibilityID then Event.Logic.Unsubscribe(self._topLevelVisibilityID) end
+    self._topLevelVisibilityID = nil
     if self._resizeHookID and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
         self.parent:Unsubscribe(ui.Hook.ONRESIZE, self._resizeHookID)
     end
-    self._resizeHookID = nil
     self:_SyncOverlays(true)
     Tooltip.unbind(self)
     if self._nisTabs then self._nisTabs:Destroy(); self._nisTabs = nil end
@@ -780,16 +781,69 @@ function NisPanel:_CreateDragBounds()
     if self.dragBounds or self._nisClassic or not loaded(self) then return end
     self.dragBounds = DragBounds.new(self.parent, self.root, function()
         if self._nisClassic or not loaded(self) then return end
-        if WorldMap.isSuspended() or NisGroup.boundsChanged(self) then return end
+        if WorldMap.isSuspended() or self._nisTopLevelHidden or NisGroup.boundsChanged(self) then return end
         self:_SyncDragLayer()
         if self._scroll then self._scroll:_LayoutThumbDrag() end
         self:_SyncOverlays(self.root.hidden == true)
         -- Native hosts can return after the parent finishes its mode-change
         -- reflow. Automatic fallback placement must not discard that target.
         self:_NotifyBoundsChange(true)
+    end, nil, function()
+        return self._nisTopLevelHidden or self.parent.visibleGlobal == false
     end)
     self.dragBounds:Clamp()
     self:_SyncDragLayer()
+end
+
+function NisPanel:_IsTopLevelVisible()
+    if self.parent.visibleGlobal == false then return false end
+    local hudID = id.Component.TOPLEVEL_V2__GAMEPLAY_HUDS
+    if type(hudID) ~= "number" then return true end
+    local hud = ui.Interfaces:GetComponent(hudID)
+    return hud == nil or hud.interfaceID ~= self.parent.interfaceID or hud.visibleGlobal ~= false
+end
+
+function NisPanel:_SyncTopLevelVisibility()
+    if self._destroyed or not loaded(self) or WorldMap.isSuspended() then return false end
+    local hidden = not self:_IsTopLevelVisible()
+    if hidden == (self._nisTopLevelHidden == true) then return hidden end
+    self._nisTopLevelHidden = hidden or nil
+    if hidden then
+        self:_CancelDrag()
+        if self.resize then self.resize:Cancel() end
+        self._nisTopLevelBounds = {
+            x = self.root.x, y = self.root.y, width = self.root.width, height = self.root.height,
+        }
+        self._nisTopLevelEnabled = self.root.enabled
+        if self.content then Tooltip.hideContextTooltips(self.content) end
+        Components.setHidden(self.root, true)
+        self.root.enabled = false
+        self:_SyncChrome()
+        self:_SyncOverlays(true)
+        return true
+    end
+    local bounds, enabled = self._nisTopLevelBounds, self._nisTopLevelEnabled
+    self._nisTopLevelBounds, self._nisTopLevelEnabled = nil, nil
+    if not self._nisNative and bounds then
+        self.root:SetPos(bounds.x, bounds.y)
+        self.root:SetSize(bounds.width, bounds.height)
+        self.width, self.height = self.root.width, self.root.height
+        if self.dragBounds then self.dragBounds:RememberPosition() end
+    end
+    if self._nisNative then
+        NisNative.sync(self)
+        return false
+    end
+    local visible = not self._nisClassic and not self._nisHidden
+        and (not self._nisGroup or self._nisGroup.active == self)
+    Components.setHidden(self.root, not visible)
+    self.root.enabled = enabled
+    self:_LayoutBody()
+    self:_SyncContent(visible)
+    self:_SyncChrome()
+    self:_SyncOverlays(not visible)
+    if visible then self.root:MoveToFront() end
+    return false
 end
 
 local function buildPanel(parent, options, policy)
@@ -949,7 +1003,7 @@ local function buildPanel(parent, options, policy)
     nextResizeID = nextResizeID + 1
     self._resizeHookID = "prettyui_nis_panel_parent_" .. nextResizeID
     parent:Subscribe(ui.Hook.ONRESIZE, self._resizeHookID, function()
-        if WorldMap.isSuspended() or self._nisClassic then return true end
+        if WorldMap.isSuspended() or self._nisClassic or self:_SyncTopLevelVisibility() then return true end
         self:_CheckDragEnvironment()
         if self.resize then self.resize:Cancel() end
         return true
@@ -987,6 +1041,12 @@ local function buildPanel(parent, options, policy)
     NisGroup.register(self)
     NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
     self._lastBounds = { self.root.x, self.root.y, self.root.width, self.root.height }
+    nextResizeID = nextResizeID + 1
+    self._topLevelVisibilityID = "prettyui_nis_panel_visibility_" .. nextResizeID
+    Event.Logic.Subscribe(self._topLevelVisibilityID, function()
+        self:_SyncTopLevelVisibility()
+    end)
+    self:_SyncTopLevelVisibility()
     WorldMap.watch(self, function(suspended)
         if suspended then
             -- Keep rollback state until native hosts return. Releases over the
@@ -997,6 +1057,7 @@ local function buildPanel(parent, options, policy)
             if self.resize then self.resize:Cancel() end
             if self.content then Tooltip.hideContextTooltips(self.content) end
         elseif loaded(self) then
+            if self:_SyncTopLevelVisibility() then return end
             self:_CancelDrag()
             if self._nisClassic then
                 self:_SyncOverlays(false)

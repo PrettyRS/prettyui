@@ -88,7 +88,7 @@ local function live(group)
         and same(group.area, component(id.Component.TOPLEVEL_V2__GAME_AREA))
 end
 local function mapReady(group)
-    if not live(group) then return false end
+    if not live(group) or group.area.visibleGlobal == false then return false end
     for _, host in pairs(group.frames) do
         local frame = component(host.spec.frame)
         if frame and frame.visible ~= false and not frame.hidden
@@ -1675,13 +1675,20 @@ end
 -- art alone cannot confer ownership of an unrelated native window.
 local function reconcile(group)
     if not live(group) then error("native interface retired") end
-    local open = false
+    local open, mounted = false, false
     for _, host in pairs(group.frames) do
         local frame = component(host.spec.frame)
-        if frame and frame.visible ~= false and not frame.hidden
-            and same(frame.parent, group.area) then open = true; break end
+        if frame and same(frame.parent, group.area) then
+            mounted = true
+            if frame.visible ~= false and not frame.hidden then open = true; break end
+        end
     end
-    if not open then error("native group closed") end
+    -- Interface morphs temporarily hide every native host while retaining their
+    -- top-level components. Suspend until one returns; unmounted hosts are gone.
+    if not open then
+        if mounted then return nil end
+        error("native group closed")
+    end
     local found = discover(group.area)
     local previous = {}
     for _, host in ipairs(group.hosts) do previous[host.key] = host end
@@ -2091,7 +2098,12 @@ local function tick()
     -- Reconcile one shared group at a time; native clients own frame geometry.
     for index = #groups, 1, -1 do
         local group = groups[index]
-        if not group.dead and #group.members > 0 and (not group.mapPaused or mapReady(group)) then
+        if not group.dead and #group.members > 0 and (group.area.visibleGlobal == false
+            or group.members[1]._nisTopLevelHidden
+            or group.mapPaused and not mapReady(group)) then
+            group.mapPaused = true
+            suspend(group)
+        elseif not group.dead and #group.members > 0 then
             group.mapPaused = nil
             group.capacityLost = nil
             local ok, problem = pcall(function()
@@ -2723,8 +2735,11 @@ function Native.select(panel)
     local binding = panel and panel._nisNative
     if not binding then return false end
     local group = binding.group
-    if WorldMap.isSuspended() then group.mapSelection = panel; return true end
-    if group.mapPaused and not mapReady(group) then return false end
+    if WorldMap.isSuspended() then
+        group.mapSelection = panel
+        return true
+    end
+    if panel._nisTopLevelHidden then return false end
     if group.nativeSort then return false end
     local ok, selected = pcall(function()
         local changed = reconcile(group)
@@ -2764,9 +2779,9 @@ function Native.sync(panel)
     if WorldMap.isSuspended() then return false end
     local binding = panel and panel._nisNative
     if not binding then return false end
+    local group = binding.group
+    if panel._nisTopLevelHidden or group.mapPaused and not mapReady(group) then return false end
     local ok, problem = pcall(function()
-        local group = binding.group
-        if group.mapPaused and not mapReady(group) then return end
         if group.nativeSort then return end
         if reconcile(group) == nil then return end
         if group.pending then nativePage(group) end
@@ -2780,7 +2795,7 @@ function Native.sync(panel)
         if lockReflow or repainted or rootReflow then raiseGroup(group) end
         saveGroup(group)
     end)
-    if not ok then binding.group.failure = problem; warn(problem); return false end
+    if not ok then group.failure = problem; warn(problem); return false end
     return true
 end
 -- Native relative order remains client-owned; PrettyUI insertion points are

@@ -211,6 +211,12 @@ baseline once per lock transition, including delayed client reflow; its inset is
 then restored without replacing controls or selection. Unrecognized or repeated
 layout overwrites still detach safely rather than cause repeated native writes.
 
+When a top-level interface is temporarily hidden, its NIS panels hide with it.
+This includes interface morphs that conceal `TOPLEVEL_V2__GAMEPLAY_HUDS` while
+the chatbox and world map remain visible. Standalone panels retain their prior
+bounds; native-hosted panels resume at the returning native host's bounds
+without detaching or rebuilding their content.
+
 **Locking safety:** earlier live builds produced invisible nested pages and a
 client crash on tab interaction. Artwork now uses GAME_AREA rather than
 native-frame descendants. The latest Prayer report was a forced detach during

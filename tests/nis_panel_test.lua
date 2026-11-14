@@ -2535,6 +2535,71 @@ do
         free:Destroy(); peer:Destroy(); hidden:Destroy()
         window:Destroy(); shownOnReturn:Destroy(); created:Destroy(); raw:Destroy()
     end
+    -- Hidden top-level UIs temporarily collapse their geometry. NIS panels must
+    -- stay hidden with them and retain both native and standalone placement.
+    do
+        local standalone = NisPanel.new(area, {
+            categoryID = "auto", x = 120, y = 420, width = 240, height = 160,
+        })
+        local nativeBounds = {
+            x = nativePanel.root.x, y = nativePanel.root.y,
+            width = nativePanel.root.width, height = nativePanel.root.height,
+        }
+        local standaloneBounds = {
+            x = standalone.root.x, y = standalone.root.y,
+            width = standalone.root.width, height = standalone.root.height,
+        }
+        area.nativeShown = false
+        area:SetSize(0, 0)
+        emit("Logic")
+        expect(nativePanel.root.hidden, true, "hidden top-level UI hides native NIS content")
+        expect(standalone.root.hidden, true, "hidden top-level UI hides standalone NIS content")
+        expect(nativePanel._nisNative ~= nil, true, "hidden top-level UI retains native membership")
+        expectRect(standalone.root, standaloneBounds.x, standaloneBounds.y,
+            standaloneBounds.width, standaloneBounds.height,
+            "hidden top-level UI cannot relocate standalone NIS content")
+        area.nativeShown = true
+        area:SetSize(1000, 700)
+        emit("Logic"); emit("Logic")
+        expect(nativePanel._nisNative ~= nil, true, "restored top-level UI retains native membership")
+        expectRect(nativePanel.root, nativeBounds.x, nativeBounds.y,
+            nativeBounds.width, nativeBounds.height,
+            "restored top-level UI restores native NIS placement")
+        expectRect(standalone.root, standaloneBounds.x, standaloneBounds.y,
+            standaloneBounds.width, standaloneBounds.height,
+            "restored top-level UI restores standalone NIS placement")
+        expect(standalone.root.hidden, false, "restored top-level UI reveals standalone NIS content")
+        standalone:Destroy()
+    end
+    -- Morphing can hide the gameplay HUD while GAME_AREA, the chatbox and the
+    -- world map remain visible. That HUD is the top-level visibility signal.
+    do
+        local hudID = id.Component.TOPLEVEL_V2__GAMEPLAY_HUDS
+        local hud = nativeNode(1477, 199, area, 0, 0, 1000, 700)
+        id.Component.TOPLEVEL_V2__GAMEPLAY_HUDS = (1477 << 16) | 199
+        local standalone = NisPanel.new(area, {
+            categoryID = "auto", x = 140, y = 440, width = 220, height = 140,
+        })
+        local nativeBounds = {
+            x = nativePanel.root.x, y = nativePanel.root.y,
+            width = nativePanel.root.width, height = nativePanel.root.height,
+        }
+        hud.nativeShown = false
+        emit("Logic")
+        expect(nativePanel.root.hidden, true, "hidden gameplay HUD hides native NIS content")
+        expect(standalone.root.hidden, true, "hidden gameplay HUD hides standalone NIS content")
+        expect(nativePanel._nisNative ~= nil, true, "hidden gameplay HUD retains native membership")
+        hud.nativeShown = true
+        emit("Logic"); emit("Logic")
+        expect(nativePanel._nisNative ~= nil, true, "restored gameplay HUD retains native membership")
+        expectRect(nativePanel.root, nativeBounds.x, nativeBounds.y,
+            nativeBounds.width, nativeBounds.height,
+            "restored gameplay HUD restores native NIS placement")
+        expect(standalone.root.hidden, false, "restored gameplay HUD reveals standalone NIS content")
+        standalone:Destroy()
+        id.Component.TOPLEVEL_V2__GAMEPLAY_HUDS = hudID
+        hud:Destroy()
+    end
     local bodyIndex, overlayIndex
     for index, child in ipairs(area.children) do
         if child == root then bodyIndex = index end
@@ -3245,17 +3310,14 @@ do
     expect(ranged.body.hidden, true, "removing one own tab preserves native concealment for the survivor")
     notes.frame.visible, ranged.frame.visible = false, false
     emit("Logic")
-    expect(nativePanel._nisNative, nil, "closing every native host restores a standalone panel")
-    expect(drawable(rows[4], nativePanel), true, "closed native group cannot make retained consumer content disappear")
-    expectRect(nativePanel.root, freeX, freeY, freeWidth, freeHeight, "closed native group restores standalone bounds")
-    local restoredIndex, nativeIndex
-    for index, child in ipairs(area.children) do
-        if child == root then restoredIndex = index end
-        if child == ranged.frame then nativeIndex = index end
-    end
-    expect(restoredIndex > nativeIndex, true, "automatic native detach raises the restored standalone body")
+    expect(nativePanel._nisNative ~= nil, true,
+        "temporarily hidden native hosts retain their NIS binding")
+    expect(nativePanel.root.hidden, true, "temporarily hidden native hosts hide their NIS content")
     notes.frame.visible, ranged.frame.visible = true, true
-    expect(nativePanel:DockTo(ranged.frame), true, "reopened native group accepts the retained panel again")
+    emit("Logic"); emit("Logic")
+    expect(nativePanel._nisNative ~= nil, true,
+        "restored native hosts retain their NIS binding")
+    expect(nativePanel.root.hidden, false, "restored native hosts reveal their selected NIS content")
     nativePanel:Undock()
     expect(nativePanel._nisNative, nil, "explicit undock removes native binding")
     expectRect(nativePanel.root, freeX, freeY, freeWidth, freeHeight,
