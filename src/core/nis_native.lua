@@ -661,6 +661,12 @@ local function ownSprite(parent, resource)
     return item
 end
 
+local function selectTab(tab, selected)
+    local value = selected and art.tabSelected or art.tabUnselected
+    if tab.background.spriteID ~= value then tab.background.spriteID = value end
+    if tab.seam.hidden == (not selected) then Components.setHidden(tab.seam, selected) end
+end
+
 local function releaseTab(tab)
     if tab.tooltipAttachment then tab.tooltipAttachment:Hide() end
     Tooltip.unbind(tab, "tooltipAttachment")
@@ -691,6 +697,11 @@ local function makeVisual(tab, host, icon)
     tab.visual.clickthrough = true
     tab.background = ownSprite(tab.visual, art.tabUnselected)
     tab.background:SetSize(WIDTH, HEIGHT)
+    -- Unselected tab sprites can paint over the native strip's divider.
+    tab.seam = ownSprite(tab.visual, art.tabBarTile)
+    tab.seam:SetPos(0, HEIGHT - SEAM)
+    tab.seam:SetSize(WIDTH, SEAM)
+    tab.seam.isTiling = true
     local iconSprite = ownSprite(tab.visual, icon)
     iconSprite:SetPos(8, 2)
     iconSprite:SetSize(24, 24)
@@ -937,10 +948,7 @@ local function align(group)
             local target = band.x + nativeOffset(group, host, 1) + previewOffset(group, 1)
             local x = (group.tabDrag or group.dockPreview) and show and host.nativeTab.slideX or target
             alignTab(host.nativeTab, x or target, band.y, show)
-            local nativeSprite = (not group.active and show) and art.tabSelected or art.tabUnselected
-            if host.nativeTab.background.spriteID ~= nativeSprite then
-                host.nativeTab.background.spriteID = nativeSprite
-            end
+            selectTab(host.nativeTab, not group.active and show)
         end
         if host.divider then
             local dx, dy = band.x, band.y + HEIGHT - SEAM
@@ -961,9 +969,7 @@ local function align(group)
                 end
             end
             alignTab(tab, x, band.y, show)
-            local selected = show and group.active == panel
-            local value = selected and art.tabSelected or art.tabUnselected
-            if tab.background.spriteID ~= value then tab.background.spriteID = value end
+            selectTab(tab, show and group.active == panel)
         end
         local seam = host.seam
         if seam then
@@ -1167,9 +1173,10 @@ local function sortChildren(group, host, sort, pointerSampled)
             break
         end
     end
-    -- The confirmed frame-copy drag runs native peer reflow scripts between
-    -- our callbacks. Reapply mixed positions there, not during ordinary layout.
-    TabLayout.track(tabs, records, fresh or sourceConflict or sort.clientCopies)
+    -- Native scripts can reflow any frame copy during a drag and its release.
+    -- A drop-time write is part of that transaction, not an unrelated layout
+    -- conflict that should strand a tab until the next native row rebuild.
+    TabLayout.track(tabs, records, fresh or sourceConflict or sort.clientCopies or sort.finishing)
     local saved = {}
     for _, record in ipairs(records) do saved[record.key] = record end
     for _, bg in ipairs(mapped) do
@@ -1297,8 +1304,7 @@ local function presentNativeSort(group)
                 local tab = group.bindings[entry.panel].tabs[index]
                 tab.slideX = band.x + entry.slideX
                 alignSortTab(tab, tab.slideX, band.y, show)
-                local sprite = show and group.active == entry.panel and art.tabSelected or art.tabUnselected
-                if tab.background.spriteID ~= sprite then tab.background.spriteID = sprite end
+                selectTab(tab, show and group.active == entry.panel)
             end
         end
         if host.nativeTab then
@@ -1522,9 +1528,29 @@ local function unsubscribeHook(group, hook, kind)
     hook.subscribed[kind] = nil
 end
 
+local function restoreDragRendering(hook)
+    if not hook.overlayRendering then return end
+    local config = hook.component.dragConfig
+    if config.renderBehaviour == ui.DragRenderBehaviour.OPAQUE_OVERLAY then
+        config.renderBehaviour = ui.DragRenderBehaviour.OPAQUE
+    end
+    hook.overlayRendering = nil
+end
+
+local function overlayDragRendering(hook)
+    local config = hook.component.dragConfig
+    -- Preserve native invisible and translucent drag modes.
+    if config.renderBehaviour == ui.DragRenderBehaviour.OPAQUE then
+        hook.overlayRendering = true
+        config.renderBehaviour = ui.DragRenderBehaviour.OPAQUE_OVERLAY
+    end
+end
+
 local function unsubscribeHost(group, hook)
     if hook.removed then return end
     local failed
+    local ok, problem = pcall(restoreDragRendering, hook)
+    if not ok then failed = problem end
     for _, kind in ipairs(observedHooks) do
         if hook.subscribed[kind] then
             -- Retired same-ID drag sources can still deliver their release.
@@ -1538,6 +1564,7 @@ local function unsubscribeHost(group, hook)
 end
 
 local function stopObservingDrag(group, hook)
+    restoreDragRendering(hook)
     -- Removing drag listeners disarms client capture; early callback returns do not.
     for _, kind in ipairs(observedHooks) do
         if kind ~= ui.Hook.ONCLICK then unsubscribeHook(group, hook, kind) end
@@ -1578,6 +1605,7 @@ local function observeHost(group, hook, dragEnabled)
         stopObservingDrag(group, hook)
         return
     end
+    overlayDragRendering(hook)
     subscribeHook(group, hook, ui.Hook.ONHOLD, observe(function(_, x, y)
         if group.dead or group.nativeSort or editingLocked(group)
             or type(x) ~= "number" or type(y) ~= "number" then return end
@@ -1606,6 +1634,7 @@ local function syncObservers(group)
         if not hook.removed and hook.dragObserved ~= dragEnabled then
             observeHost(group, hook, dragEnabled)
         end
+        if not hook.removed and hook.dragObserved then overlayDragRendering(hook) end
     end
 end
 
@@ -2402,6 +2431,7 @@ local function beforeDraw()
             if group.nativeSort then
                 if not group.mapPaused and not group.members[1]._nisTopLevelHidden
                     and live(group) and group.area.visibleGlobal ~= false then
+                    syncObservers(group)
                     -- Native input can move the band and raise its opaque frame
                     -- after Logic, including multiple paints between logic ticks.
                     presentNativeSort(group)
@@ -2508,6 +2538,10 @@ local function preview(panel, host, pointerX)
             nativeTab.clickthrough = true
             local background = ownSprite(nativeTab, art.tabUnselected)
             background:SetSize(WIDTH, HEIGHT)
+            local seam = ownSprite(nativeTab, art.tabBarTile)
+            seam:SetPos(0, HEIGHT - SEAM)
+            seam:SetSize(WIDTH, SEAM)
+            seam.isTiling = true
             local icon = ownSprite(nativeTab, host.nativeIcon)
             icon:SetPos(8, 2)
             icon:SetSize(24, 24)
@@ -2522,6 +2556,12 @@ local function preview(panel, host, pointerX)
                 member == (panel._nisGroup and panel._nisGroup.active or panel)
                     and art.tabSelected or art.tabUnselected)
             background:SetSize(WIDTH, HEIGHT)
+            if background.spriteID == art.tabUnselected then
+                local seam = ownSprite(visual, art.tabBarTile)
+                seam:SetPos(0, HEIGHT - SEAM)
+                seam:SetSize(WIDTH, SEAM)
+                seam.isTiling = true
+            end
             local icon = ownSprite(visual, member.tabIcon or art.defaultIcon)
             icon:SetPos(8, 2)
             icon:SetSize(24, 24)

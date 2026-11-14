@@ -139,7 +139,7 @@ ui = {
         ONMOUSELEAVE = 8, ONMOUSEREPEAT = 9, ONRESIZE = 10,
     },
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
-    DragRenderBehaviour = { INVISIBLE = 0 },
+    DragRenderBehaviour = { INVISIBLE = 0, OPAQUE = 1, OPAQUE_OVERLAY = 2, TRANSPARENT_OVERLAY = 3 },
 }
 local nextSpriteID = 10000
 id = {
@@ -1983,6 +1983,7 @@ do
         node.type = 20
         node.clickthrough = true -- structural layers; native inputs are their children
         node.strictNativeHooks = true
+        node.dragConfig.renderBehaviour = ui.DragRenderBehaviour.OPAQUE
         node.interfaceID, node.staticID = interfaceID, staticID
         node.parentStatic = nil
         Interfaces.component(node)
@@ -2101,6 +2102,7 @@ do
                 local background = component(tabs, "sprite", 0, (index - 1) * 4)
                 background.type, background.visible, background.nativeShown = 3, true, true
                 background.strictNativeHooks = true
+                background.dragConfig.renderBehaviour = ui.DragRenderBehaviour.OPAQUE
                 setmetatable(background, getmetatable(tabs))
                 background:SetPos((index - 1) * 44, 0)
                 background:SetSize(44, 28)
@@ -2110,6 +2112,7 @@ do
                 local icon = component(tabs, "sprite", 0, (index - 1) * 4 + 1)
                 icon.type, icon.visible, icon.nativeShown = 3, true, true
                 icon.strictNativeHooks = true
+                icon.dragConfig.renderBehaviour = ui.DragRenderBehaviour.OPAQUE
                 setmetatable(icon, getmetatable(tabs))
                 icon:SetPos((index - 1) * 44 + 10, 2)
                 icon:SetSize(24, 24)
@@ -3179,6 +3182,27 @@ do
                 end
                 return node.spriteID and node or nil
             end
+            local function paintedWithDrag(source, x, y)
+                local mode = source.dragConfig.renderBehaviour
+                if mode == ui.DragRenderBehaviour.OPAQUE_OVERLAY
+                    or mode == ui.DragRenderBehaviour.TRANSPARENT_OVERLAY then
+                    local painted = paintedAt(source, x, y)
+                    if painted then return painted end
+                end
+                return paintedAt(area, x, y)
+            end
+            for _, selected in ipairs({ nativePanel, peer }) do
+                selected:SelectTab()
+                local group = selected._nisNative.group
+                for _, member in ipairs({ nativePanel, peer }) do
+                    local tab = member._nisNative.tabs[group.current]
+                    local origin = tab.visual.xyGlobal
+                    local painted = paintedAt(area, origin.x + 2, origin.y + 26)
+                    expect(painted and painted.spriteID, member == selected
+                        and id.Sprite.RS3_CHILD_TAB_SELECTED or id.Sprite.RS3_CHILD_TAB_BAR_TILE,
+                        "only the selected PrettyUI tab interrupts the native baseline")
+                end
+            end
             local function nativeHook(source, hook, ...)
                 local delivered = false
                 for _, callback in pairs(source.namedSubscriptions[hook] or {}) do
@@ -3260,6 +3284,48 @@ do
                 fire(hit, ui.Hook.ONRELEASE)
                 Mouse.GetPosition = function() return nil end
             end
+            for _, finish in ipairs({ "release", "complete" }) do
+                placeOwn(nativePanel, 44)
+                placeOwn(peer, 44)
+                local group = peer._nisNative.group
+                local source = ranged.backgrounds[2]
+                expect(source.x, 124, "settlement fixture has two PrettyUI tabs before the native source")
+                nativeClick(source)
+                nativeHook(source, ui.Hook.ONDRAG, 12, 12)
+                notes.frame.nativeShown, ranged.frame.nativeShown = true, false
+                emit("Logic")
+                local dropped = notes.backgrounds[2]
+                local droppedIcon
+                for _, child in ipairs(notes.tabs.children) do
+                    if child.dynamicID == dropped.dynamicID + 1 then droppedIcon = child; break end
+                end
+                local function nativeDropPosition(x)
+                    dropped:SetPos(x, 0)
+                    droppedIcon:SetPos(x + 10, 2)
+                end
+                -- The selected copy can receive its final native placement
+                -- independently of the hidden copy that delivered the press.
+                nativeDropPosition(200)
+                if finish == "release" then nativeHook(source, ui.Hook.ONRELEASE, 12, 12)
+                else nativeHook(source, ui.Hook.ONDRAGCOMPLETE, nil, 12, 12) end
+                expect(dropped.x, 124, "release closes the gap on the selected native frame copy")
+                expect(droppedIcon.x, 134, "release settles the native icon with its background")
+                -- A client setter may run after our release listener as well.
+                nativeDropPosition(190)
+                emit("Draw")
+                expect(dropped.x, 124, "first dropped draw repairs late native placement without a gap")
+                expect(droppedIcon.x, 134, "first dropped draw keeps native icon geometry aligned")
+                expect(peer._nisNative.group, group, "drop-time reflow preserves mixed membership")
+                notes:rebuild({ 9001, 9002 }, 1)
+                ranged:rebuild({ 9001, 9002 }, 2)
+                emit("Draw")
+                emit("Logic")
+                expect(group.nativeSort, nil, "committed native row settles on its first logic tick")
+                expect(peer._nisNative.tabs[group.current].hit.enabled, true,
+                    "settled native row restores PrettyUI tab interaction")
+                notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+                emit("Logic")
+            end
             for leading = 1, 2 do
                 for _, finish in ipairs({ "release", "escape" }) do
                     placeOwn(nativePanel, 128)
@@ -3280,6 +3346,14 @@ do
                     expect(binding.tabs[group.current].visual.x > 4
                         and binding.tabs[group.current].visual.x < 48, true,
                         "a native source at the left clamp slides the leading PrettyUI tab aside")
+                    local origin = source.xyGlobal
+                    expect(paintedWithDrag(source, origin.x + 42, origin.y + 12), source,
+                        "dragged native tab paints above the overlapping PrettyUI peer")
+                    source.dragConfig.renderBehaviour = ui.DragRenderBehaviour.OPAQUE
+                    ranged.frame:MoveToFront()
+                    emit("Draw")
+                    expect(paintedWithDrag(source, origin.x + 42, origin.y + 12), source,
+                        "pre-draw repair preserves native drag priority after a client reset")
                     for _ = 1, 12 do emit("Logic") end
                     expect(binding.tabs[group.current].visual.x, 48,
                         "native tab overtakes the leading PrettyUI tab before release")
@@ -3659,6 +3733,10 @@ do
     expect(nativePanel.surface.left.hidden, false, "undock restores standalone frame artwork")
     expect(nativePanel.dragLayer.hidden, false, "undock restores the standalone gesture")
     expect(next(notes.tabs.namedSubscriptions[ui.Hook.ONCLICK] or {}), nil, "undock removes native click observers")
+    expect(notes.tabs.dragConfig.renderBehaviour, ui.DragRenderBehaviour.OPAQUE,
+        "undocking restores the native strip's original drag rendering")
+    expect(ranged.backgrounds[1].dragConfig.renderBehaviour, ui.DragRenderBehaviour.OPAQUE,
+        "undocking restores native tab drag rendering")
     notes.frame.nativeShown, ranged.frame.nativeShown = true, false
     notes.tabs.visible = false
     notes.body:SetPos(4, 16)

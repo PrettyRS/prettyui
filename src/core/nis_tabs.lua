@@ -94,6 +94,11 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
     tab.background = sprite(view, visual,
         selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected)
     tab.background:SetSize(NisTabs.WIDTH, NisTabs.HEIGHT)
+    tab.seam = sprite(view, visual, Sprites.NIS_PANEL.tabBarTile)
+    tab.seam:SetPos(0, NisTabs.HEIGHT - CORNER)
+    tab.seam:SetSize(NisTabs.WIDTH, CORNER)
+    tab.seam.isTiling = true
+    Components.setHidden(tab.seam, selected)
     tab.iconSprite = sprite(view, visual, panel.tabIcon, true)
     tab.iconSprite:SetPos((NisTabs.WIDTH - ICON) / 2, 2)
     tab.iconSprite:SetSize(ICON, ICON)
@@ -331,6 +336,7 @@ function NisTabs:Refresh(members, active, previewPanel)
                 local selected = tab.member == active
                 local spriteID = selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected
                 if tab.background.spriteID ~= spriteID then tab.background.spriteID = spriteID end
+                Components.setHidden(tab.seam, selected)
             end
             self.active = active
             self:Sync(root.hidden == true)
