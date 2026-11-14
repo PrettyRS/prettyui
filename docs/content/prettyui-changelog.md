@@ -31,27 +31,13 @@ hero:
 - Restored the [panel ribbon](index.html#ribbon-bar-api) with automatic `NisPanel` buttons using their tab icons. The cog opens ribbon placement and auto-hide settings.
 - Added `NisPanel:SetActive()`, `IsActive()`, and an `active` constructor default. Disabled panels leave no body or tab; reactivation restores their placement, including native hosts. Stable IDs persist enabled state across reloads.
 - Added a Classic Interface sidebar for `NisPanel`: a full-height 44-unit rail with one selectable 360-unit content page, scrollable icons, native UI reservation, and optional gameview resizing. Modern bounds, groups, native membership, and ribbon preferences restore on mode exit.
-- Added mount-scoped `NisPanel:Subscribe(event, callback)` and `OnCleanup(callback)`. Subscriptions are automatically removed before controls are destroyed; returned `buildContent` cleanup runs first, then registered cleanups in reverse order.
-- Added a `placement` option to tooltips, allowing control over their position relative to the target element.
 
 ### Changed
-- Classic sidebar reservation now moves the Slayer counter's containing HUD window left by the reserved width and restores its native placement on exit.
-- Classic sidebar content now uses the lighter NisPanel background while the ribbon rail retains its dark background.
-- [NisPanel](index.html#nis-panel-api) now uses `buildContent(panel)` and optional cleanup for inactive or hidden content; selection, `Show()`, and undocking rebuild it with saved scroll.
-- `NisPanel.new(options?)` now defaults its parent to `TOPLEVEL_V2__GAME_AREA` and automatically allocates a category when `categoryID` is omitted. `NisPanel.new(parent, options?)`, including a nil parent, remains supported; other components' allocation defaults are unchanged.
-- `NisPanel:Hide()` and `Close()` now remember tab membership for reopening instead of forgetting it; use `Undock()` to discard membership.
 - PrettyUI components are now hidden while the player is viewing the world map.
 - Added `Refresh()` to [sliders](index.html#slider-api), which can update the marker's position again after the slider's width changes.
 
 
 ### Fixed
-- Fixed Classic sidebar Slayer-counter reservation by resolving the counter through its `GAMEPLAY_HUDS` parent.
-- Reduced NIS drag-time allocation pressure by deduplicating placement slots before allocation and reusing unchanged native-tab layout baselines during reconciliation.
-- Returning to Modern Interface now waits 10 client logic ticks (about 200 ms) before native redocking, preserving saved tab selection and committing content visibility after the restoration batch.
-- Native docking now retains host membership, tab order, and selection when sidebar reflow temporarily shrinks a native host below docking capacity, restoring the group when space returns.
-- Pending native docking targets now survive automatic parent reflow when returning from Classic Interface, allowing late native hosts to reclaim their panels. Explicit standalone placement still clears the target.
-- Fixed a native client abort during Modern-to-Classic transitions when layout diagnostics passed `log` directly to C `pcall`; logging now retains the Lua caller environment required by the client.
-- Fixed blank Classic sidebar pages by explicitly top-aligning the shared content host and keeping the background behind category-zero content.
 - Improved hover feedback on keybind fields and restored the missing clear sprite for resetting keybinds.
 - [Windows](index.html#window-api) can now be positioned visually flush against the edges of their parents.
 - [Slider](index.html#slider-api) markers now move with the track when the window or panel holding them is resized.
