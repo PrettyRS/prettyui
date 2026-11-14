@@ -417,7 +417,7 @@ function NisDrag.install(NisPanel)
             native = true, component = component, tab = tab,
             snapshot = Native.snapshot(self),
             pressX = px, pressY = py,
-            gripX = px - component.x,
+            gripX = px - component.x + (tab and tab.clipOffset or 0),
             viewportWidth = self.parent.width, viewportHeight = self.parent.height,
             parentX = origin.x, parentY = origin.y, scale = scaleSetting(),
         }

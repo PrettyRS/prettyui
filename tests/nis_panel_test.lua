@@ -1984,6 +1984,8 @@ do
         node.clickthrough = true -- structural layers; native inputs are their children
         node.strictNativeHooks = true
         node.dragConfig.renderBehaviour = ui.DragRenderBehaviour.OPAQUE
+        node.scrollable = true
+        node.scrollX, node.scrollY, node.scrollWidth, node.scrollHeight = 0, 0, 0, 0
         node.interfaceID, node.staticID = interfaceID, staticID
         node.parentStatic = nil
         Interfaces.component(node)
@@ -2082,7 +2084,7 @@ do
         nativeNode(1477, first + 7, frame, 0, 16, 379, 28)
         local tabs = nativeNode(1477, first + 8, frame, 4, 16, 371, 28)
         tabs.visible = true
-        nativeNode(1477, first + 9, frame, 4, 16, 371, 28)
+        local tabControls = nativeNode(1477, first + 9, frame, 4, 16, 371, 28)
         local prefix, suffix = name:match("^(.+_WINDOW)(.*)$")
         if not prefix then
             prefix, suffix = name == "NOTES" and "NOTES_WINDOW" or "ABILITY_WINDOW",
@@ -2093,8 +2095,9 @@ do
         id.Component["TOPLEVEL_V2__" .. prefix .. "_EDIT_BLOCK" .. suffix] = (1477 << 16) | (first + 3)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_SCROLL" .. suffix] = (1477 << 16) | (first + 4)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_TABS" .. suffix] = (1477 << 16) | (first + 8)
+        id.Component["TOPLEVEL_V2__" .. prefix .. "_TABS_SCROLL" .. suffix] = (1477 << 16) | (first + 9)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_TAB_BACKGROUND" .. suffix] = (1477 << 16) | (first + 7)
-        local result = { frame = frame, body = body, scroll = scroll, tabs = tabs }
+        local result = { frame = frame, body = body, scroll = scroll, tabs = tabs, tabControls = tabControls }
         function result:rebuild(order, selected)
             for _, child in ipairs({ table.unpack(tabs.children) }) do child:Destroy() end
             self.backgrounds = {}
@@ -3177,7 +3180,8 @@ do
                 if x < origin.x or x >= origin.x + node.width
                     or y < origin.y or y >= origin.y + node.height then return nil end
                 for index = #node.renderChildren, 1, -1 do
-                    local painted = paintedAt(node.renderChildren[index], x, y)
+                    local painted = paintedAt(node.renderChildren[index],
+                        x + (node.scrollX or 0), y + (node.scrollY or 0))
                     if painted then return painted end
                 end
                 return node.spriteID and node or nil
@@ -3210,6 +3214,85 @@ do
                     expect(callback(source, ...), true, "native sort observer preserves client handlers")
                 end
                 assert(delivered, "native tab exposes its sort lifecycle hook")
+            end
+            do
+                local binding, group = peer._nisNative, peer._nisNative.group
+                local oldWidth = notes.body.width
+                local function resizeRow(width)
+                    for _, copy in ipairs({ notes, ranged }) do
+                        copy.frame:SetSize(width + 8, copy.frame.height)
+                        copy.body:SetSize(width, copy.body.height)
+                        copy.scroll:SetSize(width, copy.scroll.height)
+                        copy.tabs:SetPos(4, copy.tabs.y)
+                        copy.tabs:SetSize(width, 28)
+                        copy.tabControls:SetSize(width, 28)
+                    end
+                end
+                resizeRow(121)
+                emit("Logic")
+                expect(peer._nisNative, binding, "overflow retains the existing native binding")
+                expect(nativePanel._nisNative.group, group, "overflow retains every mixed member")
+                local host = group.hosts[group.current]
+                local view = host.overflow
+                expect(host.tabs.x, 15, "mixed overflow reserves the captured native left gutter")
+                expect(host.tabs.width, 99, "mixed overflow uses the captured 99-unit viewport")
+                expect(host.tabs.scrollWidth, 168, "scroll extent includes both native and PrettyUI tabs")
+                local extra = NisPanel.new(area, { categoryID = "auto", width = 200, height = 160 })
+                expect(extra:DockTo(peer), true, "another PrettyUI tab can join an already-overflowing group")
+                expect(host.tabs.scrollWidth, 208, "docking extends the full mixed scroll extent")
+                extra:Destroy()
+                peer:SelectTab()
+                expect(view.leftHit.hidden, false, "overflow exposes navigation without detaching")
+                local active = group.active
+                for _ = 1, 6 do fire(view.leftHit, ui.Hook.ONCLICK) end
+                expect(group.tabScroll, 0, "left arrow clamps at the first tab")
+                expect(group.active, active, "scrolling does not change the active page")
+                expect(view.leftHit.enabled, false, "left arrow disables at the beginning")
+                local hiddenTab = nativePanel._nisNative.tabs[group.current]
+                expect(hiddenTab.hit.hidden, true, "offscreen PrettyUI tab cannot intercept native input")
+                for _ = 1, 6 do fire(view.rightHit, ui.Hook.ONCLICK) end
+                expect(group.tabScroll, 69, "right arrow reaches the end of the complete mixed row")
+                expect(host.tabs.scrollX, 69, "native artwork scrolls with PrettyUI artwork")
+                expect(view.rightHit.enabled, false, "right arrow disables at the end")
+                for _, member in ipairs({ peer, nativePanel }) do
+                    local tab = member._nisNative.tabs[group.current]
+                    local left = math.max(tab.visual.xyGlobal.x, view.viewport.xyGlobal.x)
+                    expect(tab.hit.xyGlobal.x, left, "partly visible tab input is clipped to its artwork")
+                    expect(tab.hit.width <= 40, true, "clipped tab cannot cover an arrow gutter")
+                    local painted = paintedAt(area, tab.hit.xyGlobal.x + 1, tab.hit.xyGlobal.y + 26)
+                    expect(painted and painted.spriteID, member == group.active
+                        and id.Sprite.RS3_CHILD_TAB_SELECTED or id.Sprite.RS3_CHILD_TAB_BAR_TILE,
+                        "visible clipped tab paints at its matching input position")
+                end
+                locked = true; transmit(12)
+                fire(view.leftHit, ui.Hook.ONCLICK)
+                expect(group.tabScroll, 29, "locked native groups still scroll their tab strip")
+                locked = false; transmit(12)
+                fire(view.rightHit, ui.Hook.ONCLICK)
+                local clipped = peer._nisNative.tabs[group.current]
+                local expectedGrip = clipped.clipOffset + 3
+                local raw = { x = clipped.hit.xyGlobal.x + 3, y = clipped.hit.xyGlobal.y + 10 }
+                Mouse.GetPosition = function() return raw end
+                fire(clipped.hit, ui.Hook.ONCLICK, 3, 10)
+                expect(peer._nisTabPress.gripX, expectedGrip,
+                    "dragging a clipped tab retains the grip on its full artwork")
+                raw.x = raw.x + 9
+                fire(clipped.hit, ui.Hook.ONHOLD, 12, 10)
+                expect(peer._nisNative, binding, "dragging inside the scrolled viewport stays docked")
+                expect(clipped.x + host.chrome.x, raw.x - area.xyGlobal.x - expectedGrip,
+                    "scrolled tab drag follows the pointer without an inset or clipping jump")
+                peer:_CancelDrag()
+                Mouse.GetPosition = function() return nil end
+                peer:SelectTab()
+                expect(peer._nisNative.tabs[group.current].hit.hidden, false,
+                    "programmatic selection reveals an overflowing PrettyUI tab")
+                resizeRow(oldWidth)
+                emit("Logic")
+                expect(peer._nisNative, binding, "growing the native row preserves membership")
+                expect(group.tabScroll, 0, "growing the row removes the scroll displacement")
+                expect(host.tabs.x, 4, "growing restores the full native tab viewport")
+                expect(view.leftHit.hidden, true, "navigation disappears once all mixed tabs fit")
+                expect(view.rightHit.hidden, true, "both overflow arrows disappear when fitting")
             end
             local originalRoot = peer.root
             local originalScroll = nativePanel.scrollY
@@ -3737,6 +3820,47 @@ do
         "undocking restores the native strip's original drag rendering")
     expect(ranged.backgrounds[1].dragConfig.renderBehaviour, ui.DragRenderBehaviour.OPAQUE,
         "undocking restores native tab drag rendering")
+    do
+        -- Capture-backed native overflow: the tab layer itself is inset and
+        -- scrolled before PrettyUI joins, while the arrow band stays full width.
+        for _, copy in ipairs({ notes, ranged }) do
+            copy.frame:SetSize(88, copy.frame.height)
+            copy.body:SetSize(80, copy.body.height)
+            copy.scroll:SetSize(80, copy.scroll.height)
+            copy.tabs:SetPos(15, copy.tabs.y)
+            copy.tabs:SetSize(58, 28)
+            copy.tabs:SetScrollSize(88, 28)
+            copy.tabs:SetScrollPos(30, 0)
+            copy.tabControls:SetSize(80, 28)
+        end
+        local Native = require("src/core/nis_native")
+        local candidate = Native.candidate(nativePanel, ranged.frame.x + 30, ranged.frame.y + ranged.tabs.y + 10)
+        expect(candidate ~= nil, true, "an already-scrolled native viewport remains a docking target")
+        expect(nativePanel:DockTo(ranged.frame), true, "docking accepts a native row that already overflows")
+        local group = nativePanel._nisNative.group
+        local host = group.hosts[group.current]
+        expect(host.tabs.scrollWidth, 128, "native overflow extent grows to include the incoming tab")
+        expect(nativePanel._nisNative.tabs[group.current].hit.hidden, false,
+            "newly selected incoming tab is revealed inside the overflowing viewport")
+        expect(Native.contains(nativePanel, ranged.frame.x + 120, ranged.frame.y + ranged.tabs.y + 10), false,
+            "offscreen tab extent is not a drag-retention target outside the panel")
+        nativePanel:Undock()
+        for _, copy in ipairs({ notes, ranged }) do
+            expect(copy.tabs.x, 15, "undock restores the native overflow viewport origin")
+            expect(copy.tabs.width, 58, "undock restores the native overflow viewport width")
+            expect(copy.tabs.scrollWidth, 88, "undock restores the native-only scroll extent")
+            expect(copy.tabs.scrollX, 30, "undock restores the native scroll position")
+            expect(copy.tabControls.hidden, false, "undock restores native overflow controls")
+            copy.frame:SetSize(379, copy.frame.height)
+            copy.body:SetSize(371, copy.body.height)
+            copy.scroll:SetSize(371, copy.scroll.height)
+            copy.tabs:SetPos(4, copy.tabs.y)
+            copy.tabs:SetSize(371, 28)
+            copy.tabs:SetScrollSize(0, 0)
+            copy.tabs:SetScrollPos(0, 0)
+            copy.tabControls:SetSize(371, 28)
+        end
+    end
     notes.frame.nativeShown, ranged.frame.nativeShown = true, false
     notes.tabs.visible = false
     notes.body:SetPos(4, 16)
@@ -5042,6 +5166,11 @@ do
                     expect(native._nisNative ~= nil, true, "right-edge host initially accepts mode-return docking")
                     -- Model a later native reflow still using the reduced width.
                     notes.frame:SetSize(100, 357); ranged.frame:SetSize(100, 357)
+                    emit("Logic")
+                    expect(native._nisNative ~= nil, true, "tab overflow alone preserves native docking")
+                    expect(peer._nisNative.group, native._nisNative.group, "narrow tab rows retain every member")
+                    -- Actual content below the panel's minimum remains unsafe.
+                    notes.frame:SetSize(60, 357); ranged.frame:SetSize(60, 357)
                     emit("Logic")
                     expect(native._nisNative, nil, "undersized native host releases unsafe binding")
                     expect(peer._nisNative, nil, "undersized native host releases every unsafe member")
