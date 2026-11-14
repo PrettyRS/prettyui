@@ -300,9 +300,39 @@ function NisTabs:Refresh(members, active, previewPanel)
             if self.members[index] ~= member then unchanged = false; break end
         end
         for _, tab in ipairs(self.tabs) do
-            if not tab.preview and tab.hit == nil then unchanged = false; break end
+            if not tab.preview and (tab.hit == nil or tab.iconSprite.spriteID ~= tab.member.tabIcon) then
+                unchanged = false
+                break
+            end
         end
         if unchanged and self.active == active then
+            self:Sync(root.hidden == true)
+            return
+        end
+    end
+    -- When the visible members still fit, selection only changes the artwork.
+    -- Rebuilding the strip here churns native component IDs and press targets.
+    if visible and previewPanel == nil and self.parts and not self.pageDirty
+        and self.bandWidth == bandWidth and self.bandY == bandY
+        and self.previewPanel == nil and self.members and #self.members == #members
+        and #members <= math.floor(bandWidth / NisTabs.WIDTH)
+        and #self.tabs == #members then
+        local sameMembers = true
+        for index, member in ipairs(members) do
+            if self.members[index] ~= member or self.tabs[index].member ~= member
+                or self.tabs[index].hit == nil
+                or self.tabs[index].iconSprite.spriteID ~= member.tabIcon then
+                sameMembers = false
+                break
+            end
+        end
+        if sameMembers then
+            for _, tab in ipairs(self.tabs) do
+                local selected = tab.member == active
+                local spriteID = selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected
+                if tab.background.spriteID ~= spriteID then tab.background.spriteID = spriteID end
+            end
+            self.active = active
             self:Sync(root.hidden == true)
             return
         end

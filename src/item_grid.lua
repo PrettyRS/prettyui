@@ -4,6 +4,7 @@ local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local ItemGrid = {}
 ItemGrid.__index = ItemGrid
@@ -152,6 +153,7 @@ function ItemGrid:_FinishDrag(commit)
         self.dragSprite.alpha = 1
     end
     if self.dragCapture then
+        WorldMap.untrack(self.dragCapture)
         if overlayLoaded then self.dragCapture:Destroy() end
         self.dragCapture = nil
     end
@@ -401,11 +403,13 @@ function ItemGrid:Destroy()
     self.entries = {}
     self.parentTooltipContext = nil
     if self.dragSprite then
+        WorldMap.untrack(self.dragSprite)
         if ui.Interfaces:GetInterface(self.overlayInterfaceID) ~= nil then self.dragSprite:Destroy() end
         self.dragSprite = nil
     end
     self.overlayParent = nil
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

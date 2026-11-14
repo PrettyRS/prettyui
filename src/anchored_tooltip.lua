@@ -1,6 +1,7 @@
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local AnchoredTooltip = {}
 AnchoredTooltip.__index = AnchoredTooltip
@@ -347,6 +348,7 @@ end
 function AnchoredTooltip:Destroy()
     Event.Logic.Unsubscribe(self.eventID)
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

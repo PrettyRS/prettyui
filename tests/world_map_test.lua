@@ -71,12 +71,32 @@ do
         __newindex = function(_, key, value) replacement[key] = value end })
     WorldMap.track(alias)
 end
+WorldMap.untrack(replacement)
 collectgarbage("collect")
 map(0)
 expect(replacement.hidden, true, "collecting a temporary Lua handle cannot exempt its native root")
 map(-1)
 emit("Logic")
 expect(replacement.hidden, false, "native roots restore after temporary Lua handles are collected")
+local transient = Components.new(ui.Layer, area, { categoryID = "auto" })
+local categoryID, dynamicID = transient.categoryID, transient.dynamicID
+WorldMap.untrack(transient)
+WorldMap.untrack(transient)
+transient:Destroy()
+local getComponent = ui.Interfaces.GetComponent
+local staleLookups = 0
+ui.Interfaces.GetComponent = function(interfaces, interfaceID, staticID, category, dynamic)
+    if interfaceID == area.interfaceID and staticID == area.staticID
+        and category == categoryID and dynamic == dynamicID then
+        staleLookups = staleLookups + 1
+    end
+    return getComponent(interfaces, interfaceID, staticID, category, dynamic)
+end
+map(0)
+map(-1)
+emit("Logic")
+ui.Interfaces.GetComponent = getComponent
+expect(staleLookups, 0, "untracked short-lived roots are not revisited on map transitions")
 replacement:Destroy()
 WorldMap.shutdown()
 print("world_map_test: ok")

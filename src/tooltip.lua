@@ -1,6 +1,7 @@
 local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
+local WorldMap = require("src/core/world_map")
 
 local Tooltip = {}
 
@@ -53,12 +54,26 @@ local function measure(text, options)
     return width, math.max(BORDER_SIZE * 2 + 1, height)
 end
 
+local RIGHT_ORDER = { "right", "left", "below", "above" }
+local LEFT_ORDER = { "left", "right", "below", "above" }
+local BELOW_ORDER = { "below", "above", "right", "left" }
+local ABOVE_ORDER = { "above", "below", "right", "left" }
+local RIGHT_ONLY = { "right" }
+local LEFT_ONLY = { "left" }
+local BELOW_ONLY = { "below" }
+local ABOVE_ONLY = { "above" }
+
 local function placementOrder(preferred, fallback)
-    if fallback == false then return { preferred or "right" } end
-    if preferred == "left" then return { "left", "right", "below", "above" } end
-    if preferred == "below" then return { "below", "above", "right", "left" } end
-    if preferred == "above" then return { "above", "below", "right", "left" } end
-    return { "right", "left", "below", "above" }
+    if fallback == false then
+        if preferred == "left" then return LEFT_ONLY end
+        if preferred == "below" then return BELOW_ONLY end
+        if preferred == "above" then return ABOVE_ONLY end
+        return RIGHT_ONLY
+    end
+    if preferred == "left" then return LEFT_ORDER end
+    if preferred == "below" then return BELOW_ORDER end
+    if preferred == "above" then return ABOVE_ORDER end
+    return RIGHT_ORDER
 end
 
 local function placedPosition(placement, targetX, targetY, targetWidth, targetHeight, width, height, offset)
@@ -264,6 +279,7 @@ end
 
 local function release(self)
     if self._parts == nil then return end
+    WorldMap.untrack(self._parts.root)
     if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self._parts.root:Destroy() end
     self._parts = nil
 end

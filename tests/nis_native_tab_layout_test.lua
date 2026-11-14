@@ -260,4 +260,60 @@ expect(backgrounds[1].writes, writes, "unparented native collection receives no 
 expect(Layout.capture(tabs, tabs.children)[1].offset, 0,
     "unparented native collection releases ownership")
 
+-- Rows with no PrettyUI displacement have nothing to restore: teardown must
+-- not enumerate native children or look up an interface that may have remounted.
+tabs, backgrounds, icons = row()
+records = assert(Layout.capture(tabs, tabs.children))
+Layout.track(tabs, records)
+local oldInterface, oldComponent = ui.Interfaces.GetInterface, ui.Interfaces.GetComponent
+local oldIterate = tabs.IterateDynamicComponents
+local interfaceReads, componentReads, enumerations = 0, 0, 0
+function ui.Interfaces:GetInterface(...)
+    interfaceReads = interfaceReads + 1
+    return oldInterface(self, ...)
+end
+function ui.Interfaces:GetComponent(...)
+    componentReads = componentReads + 1
+    return oldComponent(self, ...)
+end
+function tabs:IterateDynamicComponents(...)
+    enumerations = enumerations + 1
+    return oldIterate(self, ...)
+end
+Layout.restore(tabs)
+expect(interfaceReads, 0, "zero-offset cleanup never probes an interface")
+expect(componentReads, 0, "zero-offset cleanup never looks up a native row")
+expect(enumerations, 0, "zero-offset cleanup never enumerates native children")
+expect(Layout.capture(tabs, tabs.children)[1].offset, 0,
+    "zero-offset cleanup discards ownership for a later capture")
+records = assert(Layout.capture(tabs, tabs.children))
+Layout.track(tabs, records)
+Layout.move(records[1], 11)
+Layout.restore(tabs)
+expect(interfaceReads > 0 and componentReads > 0 and enumerations > 0, true,
+    "displaced cleanup still enumerates live native children")
+expect(backgrounds[1].x, 0, "displaced cleanup restores native position")
+tabs.IterateDynamicComponents = oldIterate
+ui.Interfaces.GetInterface, ui.Interfaces.GetComponent = oldInterface, oldComponent
+
+-- Parent geometry can change without a child anchor change. Discovery must
+-- always sample computed x even when it reuses an immutable owned baseline.
+tabs, backgrounds, icons = row()
+records = assert(Layout.capture(tabs, tabs.children))
+Layout.track(tabs, records)
+Layout.move(records[2], 8)
+local originalIconX = icons[1].x
+tabs.width = tabs.width + 20
+icons[1]:SetPos(table.unpack({ icons[1].position.x, icons[1].position.y,
+    icons[1].position.xParentPc, icons[1].position.yParentPc,
+    icons[1].position.xSelfPc, icons[1].position.ySelfPc }))
+captured = assert(Layout.capture(tabs, tabs.children))
+expect(captured[2].x, originalIconX + 2 - 8,
+    "computed tab position follows native parent resize without stale geometry")
+expect(captured[2].offset, 8, "parent resize keeps the owned horizontal offset")
+Layout.track(tabs, captured)
+Layout.restore(tabs)
+expect(icons[1].x, originalIconX + 2 - 8,
+    "native geometry remains authoritative after restoring horizontal displacement")
+
 print("nis native tab layout tests passed")

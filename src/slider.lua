@@ -6,6 +6,7 @@ local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local InterfaceMouse = require("src/core/mouse")
 local Scroll = require("src/core/scroll")
+local WorldMap = require("src/core/world_map")
 
 local Slider = {}
 Slider.__index = Slider
@@ -342,10 +343,12 @@ function Slider:Destroy()
     Tooltip.unbind(self)
     local loaded = ui.Interfaces:GetInterface(self.interfaceID) ~= nil
     if self.thumbDrag then
+        WorldMap.untrack(self.thumbDrag)
         if loaded then self.thumbDrag:Destroy() end
         self.thumbDrag = nil
     end
     if self.root then
+        WorldMap.untrack(self.root)
         if loaded then self.root:Destroy() end
         self.root = nil
     end

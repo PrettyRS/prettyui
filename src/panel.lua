@@ -1154,18 +1154,22 @@ function Panel:Destroy()
     local dockLoaded = self.dock and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil
     local overlayLoaded = self.overlay and ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil
     if self.dockDragLayer then
+        WorldMap.untrack(self.dockDragLayer)
         if dockLoaded then self.dockDragLayer:Destroy() end
         self.dockDragLayer = nil
     end
     if self.overlayDragLayer then
+        WorldMap.untrack(self.overlayDragLayer)
         if overlayLoaded then self.overlayDragLayer:Destroy() end
         self.overlayDragLayer = nil
     end
     if self.dock and self.dock.root then
+        WorldMap.untrack(self.dock.root)
         if dockLoaded then self.dock.root:Destroy() end
         self.dock.root = nil
     end
     if self.overlay and self.overlay.root then
+        WorldMap.untrack(self.overlay.root)
         if overlayLoaded then self.overlay.root:Destroy() end
         self.overlay.root = nil
     end

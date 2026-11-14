@@ -19,11 +19,13 @@ local function component(parent, kind)
         cursorConfig = {}, opConfig = { SetOpCursor = function() end },
     }
     function self:SetPos(x, y, xAnchor, yAnchor, xSelf, ySelf)
+        self.posWrites = (self.posWrites or 0) + 1
         self.x, self.y = x, y
         self.xAnchor, self.yAnchor = xAnchor, yAnchor
         self.xSelf, self.ySelf = xSelf, ySelf
     end
     function self:SetSize(width, height, widthParentPc, heightParentPc)
+        self.sizeWrites = (self.sizeWrites or 0) + 1
         self.width, self.height = width, height
         self.widthParentPc, self.heightParentPc = widthParentPc, heightParentPc
     end
@@ -333,6 +335,10 @@ expect(roots[2].children[1].spriteID, id.Sprite.RS3_BTN_MENU_7_3,
     "unselected but enabled tab is active")
 expect(roots[3].children[1].spriteID, id.Sprite.RS3_BTN_MENU_7_3,
     "another unselected enabled tab is active")
+local idleSizeWrites, idleButtonMoves = surface.sizeWrites, roots[2].posWrites
+for _ = 1, 20 do events.prettyui_ribbon_bar() end
+expect(surface.sizeWrites, idleSizeWrites, "idle ribbon does not retrigger root resize/layout")
+expect(roots[2].posWrites, idleButtonMoves, "idle ribbon leaves button layout untouched")
 local buttonOne, buttonTwo = roots[2], roots[3]
 click({ root = buttonTwo })
 RibbonBar.sync(second)
@@ -366,6 +372,17 @@ expect(db.ribbonBarPosition, "top", "position uses original storage key")
 expect(db.ribbonBarAutoHide, true, "auto-hide uses original storage key")
 expect(RibbonBar.GetAutoHide(), true, "auto-hide accessor returns current setting")
 expect(buttonTwo.x, 6 + 2 * (32 + 2), "top position lays buttons horizontally")
+local animationSizeWrites, animationButtonMoves = surface.sizeWrites, buttonTwo.posWrites
+events.prettyui_ribbon_bar()
+expect(surface.y, -8, "auto-hide advances one slide step")
+for _ = 1, 10 do events.prettyui_ribbon_bar() end
+expect(surface.y, -44, "auto-hide reaches the hidden top edge")
+expect(surface.sizeWrites, animationSizeWrites, "slide animation does not resize the ribbon")
+expect(buttonTwo.posWrites, animationButtonMoves, "slide animation retains child layout")
+RibbonBar.SetAutoHide(false)
+for _ = 1, 10 do events.prettyui_ribbon_bar() end
+expect(surface.y, 0, "disabling auto-hide slides the ribbon fully into view")
+RibbonBar.SetAutoHide(true)
 map.suspended = true
 map.watches[surface](true)
 expect(tooltips.hidden, 1, "map hides ribbon tooltips")
@@ -546,6 +563,13 @@ expect(RibbonBar.isClassicSelected(a), true, "first button selects A")
 expect(a.builds, 1, "A built exactly once")
 expect(b.builds, 0, "B remains unbuilt")
 expect(aButton.children[1].spriteID, id.Sprite.RS3_BTN_MENU_7_3, "A selected highlight")
+local expandedSizeWrites, bodySizeWrites = classicSurface.sizeWrites, a.classicHost.sizeWrites
+local expandedButtonMoves = aButton.posWrites
+for _ = 1, 20 do tick() end
+expect(classicSurface.sizeWrites, expandedSizeWrites, "idle expanded sidebar does not resize its shell")
+expect(a.classicHost.sizeWrites, bodySizeWrites, "idle expanded sidebar does not resize consumer content")
+expect(aButton.posWrites, expandedButtonMoves, "idle expanded sidebar does not relayout icons")
+expect(a.builds, 1, "idle sidebar retains the current content mount")
 clickRoot(bButton)
 rail(404, "B replaces A")
 expect(RibbonBar.isClassicSelected(b), true, "second button selects B")

@@ -1,5 +1,6 @@
 local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
+local WorldMap = require("src/core/world_map")
 
 local OverheadBar = {}
 OverheadBar.__index = OverheadBar
@@ -161,6 +162,7 @@ function OverheadBar:Destroy()
     Event.Logic.Unsubscribe(self.eventID)
     active[self] = nil
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

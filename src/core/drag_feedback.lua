@@ -1,5 +1,6 @@
 local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
+local WorldMap = require("src/core/world_map")
 
 local DragFeedback = {}
 DragFeedback.__index = DragFeedback
@@ -85,6 +86,8 @@ function DragFeedback:Update()
 end
 
 function DragFeedback:Destroy()
+    if self.origin then WorldMap.untrack(self.origin) end
+    if self.active then WorldMap.untrack(self.active) end
     if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
         if self.origin then self.origin:Destroy() end
         if self.active then self.active:Destroy() end

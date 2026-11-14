@@ -97,6 +97,16 @@ function WorldMap.track(root)
     if suspended then root.hidden = true end
 end
 
+-- Destroyed roots must leave the registry immediately: tooltips and drag
+-- feedback can create thousands of short-lived surfaces between map opens.
+-- An older handle must not remove a new native root that reused its ID.
+function WorldMap.untrack(root)
+    local saved = roots[root]
+    if not saved then return end
+    roots[root] = nil
+    if records[saved.key] == saved then records[saved.key] = nil end
+end
+
 function WorldMap.setHidden(component, hidden)
     local saved = roots[component]
     if saved then saved = records[saved.key] or saved end

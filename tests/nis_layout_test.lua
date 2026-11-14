@@ -136,6 +136,15 @@ expect(#NisLayout.spaces({ { x = 0, y = 0, width = 1000, height = 700 } }, 1000,
     0, "viewport-sized obstacle must not be treated as a wrapper")
 expect(NisLayout.fit({}, 460, 450, 300, 200, 0.5, 6), nil,
     "no valid free space returns nil")
+local reusedTarget = {}
+expect(NisLayout.fit(spaces, 460, 450, 300, 200, 0.5, 6, nil, nil, reusedTarget),
+    reusedTarget, "free placement reuses the caller's destination rectangle")
+expectRect(reusedTarget, 400, 300, 120, 400, "reused destination includes bounded slot dimensions")
+expect(NisLayout.fit(spaces, 200, 100, 300, 200, 0.5, 6, nil, nil, reusedTarget),
+    reusedTarget, "a subsequent placement keeps reusing the same rectangle")
+expectRect(reusedTarget, 50, 94, 300, 200, "reused destination overwrites stale slot bounds")
+expect(NisLayout.fit({}, 460, 450, 300, 200, 0.5, 6, nil, nil, reusedTarget),
+    nil, "no free placement does not return the previous destination")
 
 local narrowBlockers = {
     { x = 0, y = 80, width = 120, height = 120 },

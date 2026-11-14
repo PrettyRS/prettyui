@@ -583,10 +583,12 @@ function Window:Destroy()
         self.content = nil
     end
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end
     if self.titleDrag then
+        WorldMap.untrack(self.titleDrag)
         InterfaceMouse.EndCapture(self.titleDrag)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.titleDrag:Destroy() end
         self.titleDrag = nil

@@ -156,14 +156,15 @@ local function preview(panel, drag)
         target = Native.rect(panel, nativeTarget)
     elseif candidate then
         local root = candidate.root
-        target = { x = root.x, y = root.y, width = root.width, height = root.height }
+        target = drag.targetRect
+        target.x, target.y, target.width, target.height = root.x, root.y, root.width, root.height
     else
         local minWidth, minHeight, maxWidth, maxHeight = NisGroup.limits(panel)
         local width = math.max(minWidth, math.min(maxWidth or math.huge, drag.width))
         local height = math.max(minHeight, math.min(maxHeight or math.huge, drag.height))
         target = drag.spaces and NisLayout.fit(drag.spaces, drag.pointerX, drag.pointerY,
             width, height, drag.gripFractionX, drag.gripY,
-            maxWidth, maxHeight)
+            maxWidth, maxHeight, drag.targetRect)
     end
     drag.target = target
     local feedback = panel.dragFeedback
@@ -266,7 +267,7 @@ function NisDrag.install(NisPanel)
             viewportWidth = self.parent.width, viewportHeight = self.parent.height,
             parentX = origin.x, parentY = origin.y, scale = scaleSetting(),
             captureExpanded = retainExpanded == true,
-            rects = {}, snapshot = {}, nativeCache = {},
+            rects = {}, snapshot = {}, nativeCache = {}, targetRect = {},
         }
         root:MoveToFront()
         component:MoveToFront()

@@ -40,12 +40,13 @@ local classicSelectedPanel, classicBody, classicIconList
 local classicIconScrollY = 0
 local classicSelecting = false
 local mountKey, mountGeneration
+local layoutWidth, layoutHeight, layoutPosition, layoutSlideOffset, layoutScrollY, layoutCount
 local ensureMounted, destroySurface, collapseClassic
 
 local function identity(component)
     if component == nil then return nil end
-    return table.concat({ component.interfaceID, component.staticID,
-        component.categoryID, component.dynamicID }, ":")
+    return component.interfaceID .. ":" .. component.staticID .. ":"
+        .. component.categoryID .. ":" .. component.dynamicID
 end
 
 local function classicWidths(expanded)
@@ -163,13 +164,18 @@ end
 
 local function layoutRoot()
     if root == nil or ui.Interfaces:GetInterface(interfaceID) == nil then return end
+    local width, height = barSize()
+    local rearrange = width ~= layoutWidth or height ~= layoutHeight
+        or position ~= layoutPosition or #entries ~= layoutCount
+    if not rearrange and slideOffset == layoutSlideOffset
+        and classicIconScrollY == layoutScrollY then return end
     if classic then
         local rail, body = classicWidths(classicSelectedPanel ~= nil)
-        local width, height = rail + body, gameArea.height
-        root:SetPos(-width, 0, 1, 0)
-        if root.width ~= width or root.height ~= height then root:SetSize(width, height) end
-        layoutFrame()
-        settingsButton.root:SetPos(body + PADDING, PADDING)
+        if rearrange then
+            root:SetPos(-width, 0, 1, 0)
+            if root.width ~= width or root.height ~= height then root:SetSize(width, height) end
+            settingsButton.root:SetPos(body + PADDING, PADDING)
+        end
         local resized = classicBody.width ~= body or classicBody.height ~= height
         if resized then
             classicBody:SetSize(body, height)
@@ -178,15 +184,17 @@ local function layoutRoot()
         Components.setHidden(classicBody, classicSelectedPanel == nil)
         local listHeight = math.max(0, height - PADDING * 2 - PITCH)
         local scrollHeight = math.max(0, #entries * PITCH - BUTTON_GAP)
-        classicIconList:SetPos(body, PADDING + PITCH)
-        classicIconList:SetSize(rail, listHeight)
-        classicIconList:SetScrollSize(rail, math.max(listHeight, scrollHeight))
+        if rearrange then
+            classicIconList:SetPos(body, PADDING + PITCH)
+            classicIconList:SetSize(rail, listHeight)
+            classicIconList:SetScrollSize(rail, math.max(listHeight, scrollHeight))
+        end
         classicIconScrollY = math.max(0, math.min(classicIconScrollY, scrollHeight - listHeight))
         classicIconList:SetScrollPos(0, classicIconScrollY)
         for index, entry in ipairs(entries) do
             if entry.button then
                 local y = (index - 1) * PITCH
-                entry.button.root:SetPos(PADDING, y)
+                if rearrange then entry.button.root:SetPos(PADDING, y) end
                 entry.classicVisible = y + BUTTON_SIZE > classicIconScrollY
                     and y < classicIconScrollY + listHeight
                 entry.button.root.enabled = entry.classicVisible
@@ -197,26 +205,28 @@ local function layoutRoot()
             classicSelectedPanel._scroll:Refresh()
             classicSelectedPanel:RefreshRowBackgrounds()
         end
-        return
-    end
-    local width, height = barSize()
-    if position == "top" then
-        root:SetPos(-math.floor(width / 2), -slideOffset, 0.5, 0)
-    elseif position == "right" then
-        root:SetPos(-width + slideOffset, -math.floor(height / 2), 1, 0.5)
     else
-        root:SetPos(-slideOffset, -math.floor(height / 2), 0, 0.5)
-    end
-    root:SetSize(width, height)
-    layoutFrame()
-    if settingsButton then settingsButton.root:SetPos(PADDING, PADDING) end
-    for index, entry in ipairs(entries) do
-        if entry.button then
-            local offset = PADDING + index * (BUTTON_SIZE + BUTTON_GAP)
-            if position == "top" then entry.button.root:SetPos(offset, PADDING)
-            else entry.button.root:SetPos(PADDING, offset) end
+        if position == "top" then
+            root:SetPos(-math.floor(width / 2), -slideOffset, 0.5, 0)
+        elseif position == "right" then
+            root:SetPos(-width + slideOffset, -math.floor(height / 2), 1, 0.5)
+        else
+            root:SetPos(-slideOffset, -math.floor(height / 2), 0, 0.5)
+        end
+        if rearrange then
+            root:SetSize(width, height)
+            if settingsButton then settingsButton.root:SetPos(PADDING, PADDING) end
+            for index, entry in ipairs(entries) do
+                if entry.button then
+                    local offset = PADDING + index * (BUTTON_SIZE + BUTTON_GAP)
+                    if position == "top" then entry.button.root:SetPos(offset, PADDING)
+                    else entry.button.root:SetPos(PADDING, offset) end
+                end
+            end
         end
     end
+    layoutWidth, layoutHeight, layoutPosition = width, height, position
+    layoutSlideOffset, layoutScrollY, layoutCount = slideOffset, classicIconScrollY, #entries
 end
 
 local function scrollClassicIcons(_, delta)
@@ -308,6 +318,7 @@ destroySurface = function(keepLayout)
     frame, gameArea, interfaceID = nil, nil, nil
     classicBody, classicIconList, classicIconScrollY = nil, nil, 0
     mountKey, mountGeneration = nil, nil
+    layoutWidth = nil
     if not ok then error(problem, 0) end
 end
 
@@ -322,7 +333,9 @@ local function panelLoaded(panel)
     local entry = byPanel[panel]
     if entry then
         local shell = entry.shell
-        return identity(ui.Interfaces:GetComponent(table.unpack(shell))) == entry.shellKey
+        local fresh = ui.Interfaces:GetComponent(table.unpack(shell))
+        return fresh ~= nil and fresh.interfaceID == shell[1] and fresh.staticID == shell[2]
+            and fresh.categoryID == shell[3] and fresh.dynamicID == shell[4]
     end
     return true
 end
@@ -341,6 +354,7 @@ end
 
 local function createEntryButton(entry)
     local panel = entry.panel
+    layoutWidth = nil
     entry.button = RibbonButton.new(classic and classicIconList or root, panel.tabIcon, function()
         if byPanel[panel] ~= entry or not panelLoaded(panel) then return end
         if classic then
@@ -513,6 +527,7 @@ ensureMounted = function()
             return x + (target.x or 0), y + (target.y or 0)
         end)
         frame = createFrame(root)
+        layoutFrame()
         if classic then
             classicBody = Components.newContent(root)
             classicBody:SetPos(0, 0, 0, 0, 0, 0)
@@ -606,8 +621,7 @@ function RibbonBar.register(panel)
     if not panelLoaded(panel) then return end
     local shell = panel.root
     local entry = { panel = panel,
-        shell = { panel.interfaceID, shell.staticID, shell.categoryID, shell.dynamicID },
-        shellKey = identity(shell) }
+        shell = { panel.interfaceID, shell.staticID, shell.categoryID, shell.dynamicID } }
     entries[#entries + 1] = entry
     byPanel[panel] = entry
     ensureMounted()

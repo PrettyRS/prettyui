@@ -236,8 +236,11 @@ function Resize:Destroy()
     if self.root == nil then return end
     WorldMap.unwatch(self)
     self:_Clear()
-    if loaded(self) then
-        for _, key in ipairs(order) do self.handles[key]:Destroy() end
+    local interfaceLoaded = loaded(self)
+    for _, key in ipairs(order) do
+        local handle = self.handles[key]
+        WorldMap.untrack(handle)
+        if interfaceLoaded then handle:Destroy() end
     end
     controllers[self] = nil
     if next(controllers) == nil then Event.Logic.Unsubscribe(EVENT_ID) end

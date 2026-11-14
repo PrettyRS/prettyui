@@ -25,6 +25,16 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
     end
 
     table.sort(boundaries)
+    -- Adjacent panels share edges; enumerate each distinct horizontal span once.
+    local uniqueCount = 0
+    for index = 1, #boundaries do
+        local edge = boundaries[index]
+        if edge ~= boundaries[uniqueCount] then
+            uniqueCount = uniqueCount + 1
+            boundaries[uniqueCount] = edge
+        end
+    end
+    for index = #boundaries, uniqueCount + 1, -1 do boundaries[index] = nil end
     table.sort(obstacles, function(a, b)
         if a.top ~= b.top then return a.top < b.top end
         return a.bottom < b.bottom
@@ -34,24 +44,22 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
     -- A slot additionally needs two facing panel edges, never just a viewport edge.
     local count = 0
     for index, left in ipairs(boundaries) do
-        if index == 1 or left ~= boundaries[index - 1] then
-            for nextIndex = index + 1, #boundaries do
-                local right = boundaries[nextIndex]
-                if right - left >= minWidth and right ~= boundaries[nextIndex - 1] then
-                    local freeTop = 0
-                    for _, obstacle in ipairs(obstacles) do
-                        if obstacle.left < right and obstacle.right > left then
-                            if obstacle.top > freeTop and obstacle.top - freeTop >= minHeight then
-                                count = count + 1
-                                result[count] = { x = left, y = freeTop, width = right - left, height = obstacle.top - freeTop }
-                            end
-                            if obstacle.bottom > freeTop then freeTop = obstacle.bottom end
+        for nextIndex = index + 1, #boundaries do
+            local right = boundaries[nextIndex]
+            if right - left >= minWidth then
+                local freeTop = 0
+                for _, obstacle in ipairs(obstacles) do
+                    if obstacle.left < right and obstacle.right > left then
+                        if obstacle.top > freeTop and obstacle.top - freeTop >= minHeight then
+                            count = count + 1
+                            result[count] = { x = left, y = freeTop, width = right - left, height = obstacle.top - freeTop }
                         end
+                        if obstacle.bottom > freeTop then freeTop = obstacle.bottom end
                     end
-                    if height - freeTop >= minHeight then
-                        count = count + 1
-                        result[count] = { x = left, y = freeTop, width = right - left, height = height - freeTop }
-                    end
+                end
+                if height - freeTop >= minHeight then
+                    count = count + 1
+                    result[count] = { x = left, y = freeTop, width = right - left, height = height - freeTop }
                 end
             end
         end
@@ -62,7 +70,10 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
     local seenSlots = { x = {}, y = {} }
     local function addSlot(left, top, right, bottom, axis)
         if right - left < minWidth or bottom - top < minHeight then return end
+        local span = axis == "x" and right - left or bottom - top
+        -- Free rectangles were emitted in ascending left-edge order.
         for _, space in ipairs(result) do
+            if space.x >= right then break end
             local x = math.max(left, space.x)
             local y = math.max(top, space.y)
             local xEnd = math.min(right, space.x + space.width)
@@ -73,7 +84,6 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
                 local yKey = y * (height + 1) + yEnd - y
                 local column = across[xKey]
                 if not column then column = {}; across[xKey] = column end
-                local span = axis == "x" and right - left or bottom - top
                 local slot = column[yKey]
                 if slot then
                     -- The old sort/dedup retained the smallest facing-edge span.
@@ -125,7 +135,7 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
 end
 
 function NisLayout.fit(spaces, pointerX, pointerY, currentWidth, currentHeight, gripFractionX, gripY,
-    maxWidth, maxHeight)
+    maxWidth, maxHeight, result)
     local bestX, bestY, bestWidth, bestHeight, bestDistance, bestArea
     local fittingWidth = math.min(currentWidth, maxWidth or currentWidth)
     local fittingHeight = math.min(currentHeight, maxHeight or currentHeight)
@@ -211,7 +221,9 @@ function NisLayout.fit(spaces, pointerX, pointerY, currentWidth, currentHeight, 
         bestY = math.max(selected.y, math.min(bestY, selected.y + selected.height - height))
         bestWidth, bestHeight = width, height
     end
-    return { x = bestX, y = bestY, width = bestWidth, height = bestHeight }
+    result = result or {}
+    result.x, result.y, result.width, result.height = bestX, bestY, bestWidth, bestHeight
+    return result
 end
 
 return NisLayout

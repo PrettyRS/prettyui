@@ -7,6 +7,7 @@ local Scroll = require("src/core/scroll")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
+local WorldMap = require("src/core/world_map")
 
 local Tabs = {}
 Tabs.__index = Tabs
@@ -521,6 +522,7 @@ function Tabs:Destroy()
     self.tabs = {}
     Tooltip.unbind(self)
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

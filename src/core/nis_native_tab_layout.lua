@@ -148,6 +148,13 @@ function NativeTabLayout.restore(tabs)
     local key = remembered and remembered.key or identity(tabs)
     local saved = key and tracked[key]
     if not saved or remembered and remembered ~= saved then return end
+    -- An undisplaced row has no native state to restore. In particular, do
+    -- not enumerate a newly rebuilt strip merely to clear zero-offset records.
+    local displaced = false
+    for _, entry in pairs(saved.records) do
+        if entry.offset ~= 0 then displaced = true; break end
+    end
+    if not displaced then tracked[key] = nil; return end
     local interfaceID, staticID = saved.interfaceID, saved.staticID
     local ok, loaded = pcall(function() return ui.Interfaces:GetInterface(interfaceID) end)
     if not ok then error(loaded) end

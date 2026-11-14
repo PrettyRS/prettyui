@@ -3,6 +3,7 @@ local Data = require("src/core/chart_data")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local clamp = require("src/core/math").clamp
+local WorldMap = require("src/core/world_map")
 
 local Renderer = {}
 local DEFAULT_WIDTH, DEFAULT_HEIGHT = 480, 260
@@ -381,6 +382,7 @@ function Renderer:Destroy()
         self.plot:Unsubscribe(ui.Hook.ONMOUSELEAVE, HOVER_HOOK)
     end
     instances[self] = nil
+    WorldMap.untrack(self.root)
     if loaded then self.root:Destroy() end
     self.root, self.body, self.plot = nil, nil, nil
     self.background, self.border, self.title, self.plotBackground = nil, nil, nil, nil

@@ -1,5 +1,6 @@
 local Tooltip = require("src/tooltip")
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local BuffBar = {}
 
@@ -328,6 +329,7 @@ local function destroyEntry(bar, entry)
     cancelPendingTooltip(entry)
     forEachVisual(entry, function(component)
         bar.ownComponents[component] = nil
+        WorldMap.untrack(component)
         component:Destroy()
     end)
     if entry.tooltip ~= nil then
@@ -336,6 +338,7 @@ local function destroyEntry(bar, entry)
     end
     if entry.tooltipTarget ~= nil then
         bar.ownComponents[entry.tooltipTarget] = nil
+        WorldMap.untrack(entry.tooltipTarget)
         entry.tooltipTarget:Destroy()
     end
     bar.entriesByID[entry.id] = nil
@@ -422,6 +425,7 @@ local function setTooltip(bar, entry, value, deferLayout)
     if value == nil then
         if entry.tooltipTarget ~= nil then
             bar.ownComponents[entry.tooltipTarget] = nil
+            WorldMap.untrack(entry.tooltipTarget)
             entry.tooltipTarget:Destroy()
             entry.tooltipTarget = nil
         end

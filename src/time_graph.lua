@@ -3,6 +3,7 @@ local Stream = require("src/core/time_graph_stream")
 local Wheel = require("src/core/wheel")
 local Tooltip = require("src/tooltip")
 local clamp = require("src/core/math").clamp
+local WorldMap = require("src/core/world_map")
 
 local TimeGraph = {}
 TimeGraph.__index = TimeGraph
@@ -453,6 +454,7 @@ function TimeGraph:Destroy()
     Tooltip.unbind(self)
     Tooltip.unregisterContext(self.root)
     instances[self] = nil
+    WorldMap.untrack(self.root)
     if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
     self.root = nil
     self.listener = nil

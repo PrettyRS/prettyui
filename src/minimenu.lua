@@ -2,6 +2,7 @@ local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local PrettyMiniMenu = {}
 
@@ -210,6 +211,7 @@ local function releaseOverlay(menuOverlay)
     if root ~= nil and ui.Interfaces:GetInterface(menuOverlay.interfaceID) ~= nil then
         destroyed, failure = pcall(root.Destroy, root)
     end
+    if destroyed and root ~= nil then WorldMap.untrack(root) end
     -- Restore native bounds even if destroying a plugin component fails.
     restoreNativeMouseLeaveLayer(menuOverlay)
     if not destroyed then error(failure, 0) end

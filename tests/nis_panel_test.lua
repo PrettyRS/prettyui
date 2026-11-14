@@ -311,8 +311,19 @@ expect(panel.rowBackgrounds[1].y, 0, "edge-to-edge rows cover viewport top")
 local firstBackground = panel.rowBackgrounds[1]
 panel:RefreshRowBackgrounds()
 expect(firstBackground.destroyed, true, "refresh destroys replaced backdrops")
+local movedBackground, movedContent = panel.rowBackgrounds[1], panel.content
+panel:_ApplyRect(112, 79, 300, 200)
+expect(panel.rowBackgrounds[1], movedBackground, "position-only apply keeps row artwork")
+expect(panel.content, movedContent, "position-only apply retains consumer content")
+expect(panel._scroll.thumbDrag.x > 112, true, "position-only apply moves sibling scrollbar input")
+panel:_ApplyRect(100, 70, 300, 200)
+expect(panel.rowBackgrounds[1], movedBackground, "return move also keeps row artwork")
+expect(panel.content, movedContent, "return move keeps consumer content")
+
 
 panel:SetSize(32, 8)
+expect(movedBackground.destroyed, true, "actual resize refreshes prior row artwork")
+expect(panel.rowBackgrounds[1] == movedBackground, false, "actual resize uses resized row artwork")
 expect(panel.root.width, 64, "body obeys chrome floor")
 expect(panel.root.height, 21, "height floor reserves header, both borders, and content")
 expect(panel.headerFill.hidden, true, "zero-width centre fill hidden")
@@ -1624,6 +1635,58 @@ do
     target:SetSize(400, 200)
     expect(source.root.width, 200, "detaching restores source's individual minimum")
     expect(target.root.width, 400, "last survivor restores its individual maximum")
+    endPair(source, target)
+
+    -- A fitted two-tab group changes selection without replacing its native
+    -- hit components, even while a tab click is still being dispatched.
+    source, target = pair()
+    expect(source:DockTo(target), true, "stable-hit group docks")
+    local selectedArt = require("src/core/sprites").NIS_PANEL
+    local view = source._nisTabs
+    local firstHit, secondHit = view.tabs[1].hit, view.tabs[2].hit
+    expect(view.tabs[2].background.spriteID, selectedArt.tabSelected,
+        "newly docked tab starts selected")
+    fire(firstHit, ui.Hook.ONCLICK, 10, 10)
+    expect(target._nisTabs, view, "tab selection keeps the visible strip")
+    expect(view.tabs[1].hit, firstHit, "first press keeps its native input")
+    expect(view.tabs[2].hit, secondHit, "other tab keeps its native input")
+    expect(firstHit.destroyed, nil, "in-flight selection never retires pressed input")
+    expect(view.tabs[1].background.spriteID, selectedArt.tabSelected,
+        "target tab becomes selected")
+    expect(view.tabs[2].background.spriteID, selectedArt.tabUnselected,
+        "source tab becomes unselected")
+    fire(firstHit, ui.Hook.ONRELEASE, 10, 10)
+    source:SelectTab()
+    expect(source._nisTabs, view, "selecting back retains the same visible strip")
+    expect(view.tabs[1].hit, firstHit, "selecting back retains target hit")
+    expect(view.tabs[2].hit, secondHit, "selecting back retains source hit")
+    expect(view.tabs[1].background.spriteID, selectedArt.tabUnselected,
+        "target artwork updates when deselected")
+    expect(view.tabs[2].background.spriteID, selectedArt.tabSelected,
+        "source artwork updates when reselected")
+    endPair(source, target)
+
+    -- Same-size transitions still change the content insets: no geometry
+    -- shortcut may reuse an ungrouped or unlocked body layout.
+    source, target = pair()
+    source:SetSize(300, 260)
+    local soloContent = source.content
+    expect(source.surface.container.y, 16, "same-size standalone starts with ordinary inset")
+    expect(source:DockTo(target), true, "same-size group transition docks")
+    expect(source.root.height, 260, "same-size group retains outer height")
+    expect(source.surface.container.y, 44, "same-size group reserves tab band")
+    expect(source.viewport.height, 212, "same-size group reduces content viewport")
+    expect(source.content, soloContent, "same-size grouping retains selected controls")
+    locked = true; transmit(12)
+    expect(source.surface.container.y, 32, "locking same-size group removes header inset")
+    expect(source.viewport.height, 224, "locking same-size group expands viewport")
+    locked = false; transmit(12)
+    expect(source.surface.container.y, 44, "unlocking same-size group restores tab inset")
+    expect(source.viewport.height, 212, "unlocking same-size group restores viewport")
+    source:Undock()
+    expect(source.root.height, 260, "same-size undock retains outer height")
+    expect(source.surface.container.y, 16, "same-size undock restores standalone inset")
+    expect(source.viewport.height, 240, "same-size undock expands standalone viewport")
     endPair(source, target)
 
     source, target = pair({
@@ -4657,6 +4720,53 @@ do
     expect(groupPanel.root.hidden, false, "Clan native selection does not hide the independent Group page")
     clanPanel:Destroy(); groupPanel:Destroy()
     clanHost.frame.nativeShown, groupHost.frame.nativeShown = false, false
+    -- Discovery resolves each native icon once per row, even when a wider
+    -- grouped strip has many backgrounds. Fresh icon values still invalidate
+    -- the signature and retain mixed-row placement on the next Logic tick.
+    local priorNotesVisible, priorNotesShown, priorTabsVisible =
+        notes.frame.visible, notes.frame.nativeShown, notes.tabs.visible
+    notes.frame.visible, notes.frame.nativeShown, notes.tabs.visible = true, true, true
+    notes:rebuild({ 9001, 9002, 9003, 9004, 9005, 9006 }, 1)
+    local perfPanel = NisPanel.new(area, { categoryID = "auto" })
+    expect(perfPanel:DockTo(notes.frame), true, "six-tab native row accepts a retained panel")
+    local Native = require("src/core/nis_native")
+    perfPanel._nisNative.beforeNative = 0
+    Native.sync(perfPanel)
+    expect(notes.backgrounds[1].x, 40, "leading own tab displaces the native row")
+    local iconReads, watchedIcons = 0, {}
+    for _, child in ipairs(notes.tabs.children) do
+        if child.width == 24 then
+            local resource, previous = child.spriteID, getmetatable(child)
+            child.spriteID = nil
+            setmetatable(child, { __index = function(node, field)
+                if field == "spriteID" then iconReads = iconReads + 1; return resource end
+                return previous.__index(node, field)
+            end })
+            watchedIcons[#watchedIcons + 1] = { child = child, previous = previous, resource = resource }
+        end
+    end
+    expect(#watchedIcons, 6, "call-count scenario tracks all six native icons")
+    emit("Logic")
+    expect(iconReads, 6, "steady-state grouped discovery reads each native icon once")
+    expect(notes.backgrounds[1].x, 40, "steady-state discovery keeps the own mixed slot")
+    local revisedIcon = 9013
+    watchedIcons[3].child.spriteID = revisedIcon
+    iconReads = 0
+    emit("Logic")
+    expect(perfPanel._nisNative ~= nil, true, "new native icon preserves group membership")
+    expect(perfPanel._nisNative.group.hosts[1].backgrounds[3].icon, revisedIcon,
+        "fresh native icon invalidates the captured signature")
+    expect(notes.backgrounds[1].x, 40, "rebuild keeps native artwork after the own tab")
+    for _, item in ipairs(watchedIcons) do
+        item.child.spriteID = item.child.spriteID or item.resource
+        setmetatable(item.child, item.previous)
+    end
+    perfPanel:Destroy()
+    expect(notes.backgrounds[1].x, 0, "cleanup restores the first native tab")
+    notes:rebuild({ 9001, 9002 }, 1)
+    notes.frame.visible, notes.frame.nativeShown, notes.tabs.visible =
+        priorNotesVisible, priorNotesShown, priorTabsVisible
+
     for _, captured in ipairs(expandedHosts) do
         id.Component[captured.rootName] = nil
         local base, suffix = captured.name:match("^(.+_WINDOW)(.*)$")

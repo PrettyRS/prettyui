@@ -11,6 +11,7 @@ local Text = require("src/text")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local CollapseButton = {}
 CollapseButton.__index = CollapseButton
@@ -409,6 +410,7 @@ function CollapseButton:Destroy()
     self.equalizedButtons = {}
     Tooltip.unbind(self)
     if self.root then
+        WorldMap.untrack(self.root)
         if loaded then self.root:Destroy() end
         self.root = nil
         self.content = nil

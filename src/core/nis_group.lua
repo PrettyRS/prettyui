@@ -103,7 +103,8 @@ end
 local function apply(group, x, y, width, height, notifyCallbacks)
     if group.applying then return end
     group.applying = true
-    local updating = {}
+    local updating = group.updating or {}
+    group.updating = updating
     for index, panel in ipairs(group.members) do
         updating[index] = panel._updatingBounds
         panel._updatingBounds = true
@@ -155,7 +156,7 @@ function NisGroup.clearPanel(panel)
     end
 end
 
-local function eligible(source, target)
+local function eligible(source, target, includeMembers)
     if source._nisNative or target._nisNative
         or not visible(source) or not visible(target) or source == target
         or not sameComponent(source.parent, target.parent)
@@ -165,17 +166,25 @@ local function eligible(source, target)
     local sourceGroup, targetGroup = source._nisGroup, target._nisGroup
     if sourceGroup and sourceGroup.active ~= source then return false end
     if targetGroup and targetGroup.active ~= target then return false end
-    local combined = {}
-    for _, panel in ipairs(members(target)) do combined[#combined + 1] = panel end
-    for _, panel in ipairs(members(source)) do combined[#combined + 1] = panel end
-    local minWidth, minHeight, maxWidth, maxHeight = limits(combined)
-    if not minWidth then return false end
+    local combined = includeMembers and {} or nil
+    local minWidth, minHeight, maxWidth, maxHeight = 64, 49, math.huge, math.huge
+    for side = 1, 2 do
+        local owner = side == 1 and target or source
+        local list = owner._nisGroup and owner._nisGroup.members
+        for index = 1, list and #list or 1 do
+            local panel = list and list[index] or owner
+            if not loaded(panel) or panel.locked or panel._nisHidden then return false end
+            minWidth = math.max(minWidth, panel.minWidth)
+            minHeight = math.max(minHeight, panel.minHeight)
+            maxWidth = math.min(maxWidth, panel.maxWidth or math.huge)
+            maxHeight = math.min(maxHeight, panel.maxHeight or math.huge)
+            if combined then combined[#combined + 1] = panel end
+        end
+    end
+    if minWidth > maxWidth or minHeight > maxHeight then return false end
     local root = target.root
     if root.width < minWidth or root.width > maxWidth
         or root.height < minHeight or root.height > maxHeight then return false end
-    for _, panel in ipairs(combined) do
-        if not loaded(panel) or panel.locked or panel._nisHidden then return false end
-    end
     return true, combined
 end
 
@@ -247,7 +256,7 @@ function NisGroup.reorder(panel, pointerX)
 end
 
 function NisGroup.dock(source, target, notifyCallbacks)
-    local ok, combined = eligible(source, target)
+    local ok, combined = eligible(source, target, true)
     if not ok then return false end
     NisGroup.clearPreview()
     local sourceGroup, targetGroup = source._nisGroup, target._nisGroup

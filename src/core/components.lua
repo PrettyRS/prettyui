@@ -295,6 +295,7 @@ function Components.withBatch(parent, callback)
         state.occupied = nil
         for index = #created, 1, -1 do
             local component = created[index]
+            WorldMap.untrack(component)
             if component.Destroy then pcall(component.Destroy, component) end
         end
         error(result, 0)

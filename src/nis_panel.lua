@@ -364,6 +364,12 @@ function NisPanel:_SetLocked(value)
     self:_NotifyBoundsChange()
 end
 
+local function rememberBodyLayout(self)
+    self._bodyWidth, self._bodyHeight = self.root.width, self.root.height
+    self._bodyGrouped, self._bodyNative = self._nisGroup ~= nil, self._nisNative ~= nil
+    self._bodyLocked = self.locked
+end
+
 function NisPanel:_LayoutBody()
     if self._nisClassic or not loaded(self) then return end
     if self._nisNative then
@@ -379,6 +385,7 @@ function NisPanel:_LayoutBody()
         self.surface.container:SetSize(0, 0, 1, 1)
         if self._scroll then self._scroll:SetSize(0, 0, 1, 1) end
         self._nisTabs:Refresh(nil)
+        rememberBodyLayout(self)
         return
     end
     for _, key in ipairs(FRAME_PARTS) do Components.setHidden(self.surface[key], false) end
@@ -439,6 +446,7 @@ function NisPanel:_LayoutBody()
     if self._scroll then self._scroll:SetSize(0, 0, 1.0, 1.0) end
     self.surface.bottomLeft:MoveToFront()
     self.surface.bottomRight:MoveToFront()
+    rememberBodyLayout(self)
 end
 
 function NisPanel:_SetBackgroundTransparency(transparency)
@@ -458,10 +466,16 @@ end
 function NisPanel:_ApplyRectSingle(x, y, width, height)
     if not loaded(self) then return end
     self.root:SetPos(x, y)
-    self.root:SetSize(width, height)
+    if self.root.width ~= width or self.root.height ~= height then
+        self.root:SetSize(width, height)
+    end
     self.width, self.height = self.root.width, self.root.height
-    self:_LayoutBody()
-    self:RefreshRowBackgrounds()
+    if self._bodyWidth ~= self.width or self._bodyHeight ~= self.height
+        or self._bodyGrouped ~= (self._nisGroup ~= nil)
+        or self._bodyNative ~= (self._nisNative ~= nil) or self._bodyLocked ~= self.locked then
+        self:_LayoutBody()
+        self:RefreshRowBackgrounds()
+    end
     self:_SyncChrome()
     self:_SyncOverlays(self.root.hidden == true)
     if self.dragBounds then self.dragBounds:RememberPosition() end

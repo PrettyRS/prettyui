@@ -27,6 +27,9 @@ local HEIGHT, WIDTH, SEAM, MAX_TABS = 28, 40, 4, 128
 local art = Sprites.NIS_PANEL
 local positions = { "x", "y", "xParentPc", "yParentPc", "xSelfPc", "ySelfPc" }
 local sizes = { "width", "height", "widthParentPc", "heightParentPc" }
+local specKinds = { "CONTENT", "EDIT_BLOCK", "SCROLL", "TAB_BACKGROUND", "TABS" }
+local hostFields = { "frame", "content", "scroll", "tabs", "backdrop",
+    "backgrounds", "children", "nativeLayout", "nativeByKey" }
 
 local function identity(component)
     if not component then return nil end
@@ -49,7 +52,7 @@ local function indexSpecs()
     indexed = true
     for packed, name in pairs(id.Component) do
         if type(name) == "string" and type(packed) == "number" then
-            for _, kind in ipairs({ "CONTENT", "EDIT_BLOCK", "SCROLL", "TAB_BACKGROUND", "TABS" }) do
+            for _, kind in ipairs(specKinds) do
                 local base, suffix = name:match("^(.+_WINDOW)_" .. kind .. "(.*)$")
                 if base and (suffix == "" or suffix:sub(1, 1) == "_") then
                     local frameName = base .. suffix
@@ -139,9 +142,9 @@ local function strip(tabs)
         local key = identity(child)
         if not key then overflow = true; return true end
         if not seen[key] and same(child.parent, tabs) then
-            seen[key] = true
             children[#children + 1] = child
             local value, field = spriteID(child)
+            seen[key] = value or true
             if child.visible and child.hidden ~= true
                 and (value == art.tabSelected or value == art.tabUnselected) then
                 backgrounds[#backgrounds + 1] = { component = child, key = key, field = field }
@@ -152,8 +155,16 @@ local function strip(tabs)
     if overflow or #backgrounds == 0 then return nil end
     local nativeLayout = TabLayout.capture(tabs, children)
     if not nativeLayout then return nil end
-    local byKey = {}
-    for _, saved in ipairs(nativeLayout) do byKey[saved.key] = saved end
+    local byKey, icons = {}, {}
+    for _, saved in ipairs(nativeLayout) do
+        byKey[saved.key] = saved
+        local child = saved.component
+        if saved.width == 24 and saved.height == 24 and child.visible
+            and child.hidden ~= true and child.y == 2 and not icons[saved.x] then
+            local value = seen[saved.key]
+            if type(value) == "number" then icons[saved.x] = value end
+        end
+    end
     for _, entry in ipairs(backgrounds) do entry.layout = byKey[entry.key] end
     table.sort(backgrounds, function(a, b) return a.layout.x < b.layout.x end)
     local signature, right = {}, 0
@@ -161,20 +172,13 @@ local function strip(tabs)
         local bg = entry.component
         local x = entry.layout.x
         if bg.width < WIDTH or bg.height ~= HEIGHT or x < 0 then return nil end
-        local icon
-        for _, child in ipairs(children) do
-            if child.visible and child.hidden ~= true and child.width == 24 and child.height == 24
-                and child.y == 2 and byKey[identity(child)].x == x + math.floor((bg.width - 24) / 2) then
-                local value = spriteID(child)
-                if value then icon = value; break end
-            end
-        end
+        local icon = icons[x + math.floor((bg.width - 24) / 2)]
         if not icon then return nil end
         signature[#signature + 1] = tostring(x) .. ":" .. tostring(bg.width) .. ":" .. tostring(icon)
         entry.icon = icon
         right = math.max(right, x + bg.width)
     end
-    return backgrounds, children, table.concat(signature, "/"), right, nativeLayout
+    return backgrounds, children, table.concat(signature, "/"), right, nativeLayout, byKey
 end
 
 -- Client-hidden native strips need not reflow when the standalone content does.
@@ -194,11 +198,11 @@ local function capture(spec, area, allowHidden)
         or not allowHidden and (content.hidden or scroll and scroll.hidden) then return nil end
     local grouped = tabs.visible == true
     local frameKey = identity(frame)
-    local backgrounds, children, signature, used, nativeIcon, nativeLayout
+    local backgrounds, children, signature, used, nativeIcon, nativeLayout, nativeByKey
     if grouped then
         if tabs.height ~= HEIGHT or tabs.width < WIDTH * 2
             or content.x ~= tabs.x or backdrop.y ~= tabs.y then return nil end
-        backgrounds, children, signature, used, nativeLayout = strip(tabs)
+        backgrounds, children, signature, used, nativeLayout, nativeByKey = strip(tabs)
         if not backgrounds or used + WIDTH > tabs.width or content.y < tabs.y + HEIGHT then return nil end
     else
         if not frame.visibleGlobal or content.width < WIDTH * 2 then return nil end
@@ -225,7 +229,7 @@ local function capture(spec, area, allowHidden)
         backdrop = backdrop, key = frameKey, owner = frame.interfaceID,
         backgrounds = backgrounds, children = children, signature = signature,
         used = used, grouped = grouped, spec = spec,
-        nativeIcon = nativeIcon, nativeLayout = nativeLayout }
+        nativeIcon = nativeIcon, nativeLayout = nativeLayout, nativeByKey = nativeByKey }
 end
 
 -- Whole rendered roots captured from standalone hosts. Prayer's separate
@@ -1572,10 +1576,7 @@ local function refreshHost(group, host, current)
         local reset, complete, stable = false, true, true
         for _, previous in ipairs(host.nativeLayout) do
             if previous.offset ~= 0 then
-                local fresh
-                for _, saved in ipairs(current.nativeLayout) do
-                    if saved.key == previous.key then fresh = saved; break end
-                end
+                local fresh = current.nativeByKey[previous.key]
                 if not fresh or fresh.offset ~= previous.offset or fresh._conflicted then stable = false end
                 local baseline = fresh and fresh.offset == 0
                 if baseline then
@@ -1594,8 +1595,7 @@ local function refreshHost(group, host, current)
             allowReset, host.tabReset, host.tabResetTick = true, false, logicSequence
         end
     end
-    for _, field in ipairs({ "frame", "content", "scroll", "tabs", "backdrop",
-        "backgrounds", "children", "nativeLayout" }) do host[field] = current[field] end
+    for _, field in ipairs(hostFields) do host[field] = current[field] end
     if host.grouped then TabLayout.track(host.tabs, host.nativeLayout, allowReset) end
     local roots = group.nativeRoots
     if roots and host.spec.name == "TOPLEVEL_V2__LORE_WINDOW" then
@@ -1909,12 +1909,20 @@ local function reconcileLock(group, current)
     return true
 end
 
-local function sameLayout(first, second)
-    if not first then return false end
-    for index = 1, 10 do
-        if first[index] ~= second[index] then return false end
+local function sameLayout(component, saved)
+    local pos, size = component.position, component.size
+    local matches = true
+    for index, field in ipairs(positions) do
+        local value = pos[field]
+        if type(value) ~= "number" then return nil end
+        if value ~= saved[index] then matches = false end
     end
-    return true
+    for index, field in ipairs(sizes) do
+        local value = size[field]
+        if type(value) ~= "number" then return nil end
+        if value ~= saved[index + 6] then matches = false end
+    end
+    return matches
 end
 
 local function reconcileRoots(group)
@@ -1922,10 +1930,10 @@ local function reconcileRoots(group)
     if not group.nativeRoots then return changed end
     for _, saved in ipairs(group.nativeRoots) do
         if saved.changed then
-            local actual = layout(saved.component)
-            if not actual then error("native content layout retired") end
-            if not sameLayout(actual, saved.inset) then
-                if not saved.baselineReset or not sameLayout(actual, saved.original) then
+            local matches = sameLayout(saved.component, saved.inset)
+            if matches == nil then error("native content layout retired") end
+            if not matches then
+                if not saved.baselineReset or not sameLayout(saved.component, saved.original) then
                     error("native script overwrote tab inset")
                 end
                 local parent, expected = saved.component.parent, saved.inset
@@ -1937,7 +1945,7 @@ local function reconcileRoots(group)
                 -- Keep the allowance across idle ticks for deferred reflow.
                 saved.baselineReset = nil
                 applyLayout(saved.component, expected)
-                if not sameLayout(layout(saved.component), expected) then
+                if not sameLayout(saved.component, expected) then
                     error("native reflow did not retain tab inset")
                 end
                 changed = true

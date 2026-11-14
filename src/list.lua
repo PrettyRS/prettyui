@@ -5,6 +5,7 @@ local Palette = require("src/core/control_palette")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local clamp = require("src/core/math").clamp
+local WorldMap = require("src/core/world_map")
 
 local List = {}
 List.__index = List
@@ -581,6 +582,7 @@ end
 function List:Destroy()
     Tooltip.unbind(self)
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

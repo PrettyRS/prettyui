@@ -506,11 +506,13 @@ function Scroll:Destroy()
     for child in pairs(self.childScrolls) do child.parentScroll = nil end
     self.childScrolls = {}
     if self.thumbDrag then
+        WorldMap.untrack(self.thumbDrag)
         if self.ownerWindow then self.ownerWindow:_UnregisterOverlay(self.thumbDrag) end
         if ui.Interfaces:GetInterface(self.overlayInterfaceID) ~= nil then self.thumbDrag:Destroy() end
         self.thumbDrag = nil
     end
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

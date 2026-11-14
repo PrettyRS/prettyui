@@ -3,6 +3,7 @@ local Palette = require("src/core/control_palette")
 local Wheel = require("src/core/wheel")
 local Components = require("src/core/components")
 local Tooltip = require("src/tooltip")
+local WorldMap = require("src/core/world_map")
 
 local KeybindField = {}
 KeybindField.__index = KeybindField
@@ -208,20 +209,26 @@ function KeybindField.new(parent, options)
             and y >= top and y < top + CLEAR_SIZE
     end
 
-    local function hover(_, x, y)
+    local function hover(_, x, y, repeated)
         if self.disabled then return false end
         hovered = self
-        self.hovered = true
-        self.clearHovered = overClear(x, y)
-        self:_UpdateState()
+        local clearHovered = overClear(x, y)
+        if not self.hovered or self.clearHovered ~= clearHovered then
+            self.hovered, self.clearHovered = true, clearHovered
+            self:_UpdateState()
+        end
         self.tooltip.cursorX, self.tooltip.cursorY = x, y
-        local text = self.clearHovered and "Reset Keybind" or "change keybind"
+        local text = clearHovered and "Reset Keybind" or "change keybind"
         if self.tooltip.options.text ~= text then self.tooltip:SetText(text) end
-        self.tooltip:Show()
+        -- The attachment's follow-cursor hook already positions a visible
+        -- tooltip on mouse repeat; do not raise and reposition it twice.
+        if not repeated then self.tooltip:Show() end
         return true
     end
     self.input.root:Subscribe(ui.Hook.ONMOUSEOVER, hover)
-    self.input.root:Subscribe(ui.Hook.ONMOUSEREPEAT, hover)
+    self.input.root:Subscribe(ui.Hook.ONMOUSEREPEAT, function(component, x, y)
+        return hover(component, x, y, true)
+    end)
     self.input.root:Subscribe(ui.Hook.ONMOUSELEAVE, function()
         if hovered == self then hovered = nil end
         self.hovered, self.clearHovered = false, false
@@ -310,6 +317,7 @@ function KeybindField:Destroy()
     Tooltip.unregisterContext(self.root)
     self.input:Destroy()
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

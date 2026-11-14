@@ -206,15 +206,8 @@ local function compatible(top, viewport, area, areaLayout, x, y, w, h, tx, ty, t
 end
 
 local function updateGameview(current, width, environmentKey, viewportKey)
-    local view = component("gameview")
     local saved = current.gameview
     if current.gameviewBlocked then return end
-    local key = identity(view)
-    local baseline = layout(view)
-    local vx, vy, vw, vh = origin(view)
-    local signature = environmentKey .. "/" .. tostring(key) .. "/"
-        .. (baseline and table.concat(baseline, ":") or "?") .. "/"
-        .. tostring(vx) .. ":" .. tostring(vy) .. ":" .. tostring(vw) .. ":" .. tostring(vh)
     if saved then
         local fresh = resolve(saved, current.interfaceObject)
         if not fresh or not same(layout(fresh) or {}, saved.written, 1, 10) then
@@ -223,6 +216,7 @@ local function updateGameview(current, width, environmentKey, viewportKey)
             optionalWarning(environmentKey)
             return
         end
+        if saved.written[7] == saved.original[7] - width then return end
         local desired = { table.unpack(saved.original) }
         desired[7] = desired[7] - width
         local ok, applied = pcall(set, saved, fresh, desired, "size")
@@ -232,7 +226,13 @@ local function updateGameview(current, width, environmentKey, viewportKey)
         optionalWarning(environmentKey)
         return
     end
-    if current.gameviewBlocked then return end
+    local view = component("gameview")
+    local key = identity(view)
+    local baseline = layout(view)
+    local vx, vy, vw, vh = origin(view)
+    local signature = environmentKey .. "/" .. tostring(key) .. "/"
+        .. (baseline and table.concat(baseline, ":") or "?") .. "/"
+        .. tostring(vx) .. ":" .. tostring(vy) .. ":" .. tostring(vw) .. ":" .. tostring(vh)
     if current.optionalFailed == signature then return end
     local parentOK, parent = pcall(function() return view and view.parent end)
     if not view or view.isRestricted or not baseline or not fullSize(baseline) or not parentOK
@@ -279,6 +279,9 @@ local function updateSlayer(current, width)
         current.slayer = saved
     end
     local fresh = resolve(saved, current.interfaceObject)
+    -- Even an unchanged reservation must still yield to a foreign descriptor.
+    if fresh and saved.written[1] == saved.original[1] - width
+        and same(layout(fresh) or {}, saved.written, 1, 10) then return end
     local desired = { table.unpack(saved.original) }
     desired[1] = desired[1] - width
     local ok, applied = pcall(set, saved, fresh, desired, "position")
@@ -342,18 +345,22 @@ function ClassicLayout.update(reservedWidth)
         restoreState()
         return suspend(signature)
     end
-    local desired = { 0, 0, 0, 0, 0, 0, -reservedWidth, 0, 1, 1 }
-    local ok, applied = pcall(function()
-        return set(previous.area, fresh, desired, "position")
-            and set(previous.area, fresh, desired, "size")
-    end)
-    if not ok or not applied then
-        restoreState()
-        previous.blocked, previous.blockedEnvironment = true, signature
-        state = previous
-        suspend(signature)
-        if not ok then error(applied, 0) end
-        return false
+    -- Ownership and topology were checked above; unchanged widths need no
+    -- desired descriptor or repeated setter-side layout reads.
+    if previous.reservedWidth ~= reservedWidth then
+        local desired = { 0, 0, 0, 0, 0, 0, -reservedWidth, 0, 1, 1 }
+        local ok, applied = pcall(function()
+            return set(previous.area, fresh, desired, "position")
+                and set(previous.area, fresh, desired, "size")
+        end)
+        if not ok or not applied then
+            restoreState()
+            previous.blocked, previous.blockedEnvironment = true, signature
+            state = previous
+            suspend(signature)
+            if not ok then error(applied, 0) end
+            return false
+        end
     end
     previous.reservedWidth = reservedWidth
     suspendedEnvironment = nil
