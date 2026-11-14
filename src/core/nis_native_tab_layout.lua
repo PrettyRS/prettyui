@@ -46,6 +46,12 @@ end
 local function copy(values)
     return { values[1], values[2], values[3], values[4], values[5], values[6] }
 end
+local function samePosition(first, second)
+    for index = 1, 6 do
+        if first[index] ~= second[index] then return false end
+    end
+    return true
+end
 
 function NativeTabLayout.capture(tabs, children)
     local tabKey = identity(tabs)
@@ -61,15 +67,16 @@ function NativeTabLayout.capture(tabs, children)
         end)
         if not ok or identity(parent) ~= tabKey or type(x) ~= "number"
             or type(width) ~= "number" or type(height) ~= "number" then return nil end
-        local current = position(child)
-        if not current then return nil end
         local saved = previous and previous.records[key]
-        local offset, conflicted = 0, false
-        if saved then
-            if matches(child, saved.original, saved.offset) then
-                current = copy(saved.original)
-                offset = saved.offset
-            elseif saved.offset ~= 0 then
+        local offset, conflicted, current = 0, false
+        if saved and matches(child, saved.original, saved.offset) then
+            -- The tracked baseline is immutable; the native position already
+            -- agrees with it, so there is no layout array to capture again.
+            current, offset = saved.original, saved.offset
+        else
+            current = position(child)
+            if not current then return nil end
+            if saved and saved.offset ~= 0 then
                 -- Native code took over this layout. Accept its new baseline,
                 -- but do not repeatedly displace a row it keeps resetting.
                 conflicted = true
@@ -95,9 +102,12 @@ function NativeTabLayout.track(tabs, records, allowReset)
         assert(record._tabsKey == key and record.key and not saved.records[record.key]
             and record.original and type(record.offset) == "number", "invalid native tab record")
         local old = previous and previous.records[record.key]
+        local blocked = not allowReset and (record._conflicted or old and old.blocked) or false
         local entry = {
-            original = copy(record.original), offset = record.offset,
-            blocked = not allowReset and (record._conflicted or old and old.blocked) or false,
+            original = old and (old.original == record.original
+                or samePosition(old.original, record.original))
+                and old.original or copy(record.original),
+            offset = record.offset, blocked = blocked,
         }
         saved.records[record.key] = entry
         record._entry = entry

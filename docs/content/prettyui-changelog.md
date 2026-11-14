@@ -45,6 +45,7 @@ hero:
 
 
 ### Fixed
+- Reduced NIS drag-time allocation pressure by deduplicating placement slots before allocation and reusing unchanged native-tab layout baselines during reconciliation.
 - Returning to Modern Interface now waits 10 client logic ticks (about 200 ms) before native redocking, preserving saved tab selection and committing content visibility after the restoration batch.
 - Native docking now retains host membership, tab order, and selection when sidebar reflow temporarily shrinks a native host below docking capacity, restoring the group when space returns.
 - Pending native docking targets now survive automatic parent reflow when returning from Classic Interface, allowing late native hosts to reclaim their panels. Explicit standalone placement still clears the target.

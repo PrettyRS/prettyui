@@ -57,6 +57,9 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
         end
     end
     local slots = result.slots
+    -- Many exhaustive spaces clip to the same bounded slot. Intern those
+    -- rectangles before allocating/sorting them, not after generating duplicates.
+    local seenSlots = { x = {}, y = {} }
     local function addSlot(left, top, right, bottom, axis)
         if right - left < minWidth or bottom - top < minHeight then return end
         for _, space in ipairs(result) do
@@ -65,10 +68,24 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
             local xEnd = math.min(right, space.x + space.width)
             local yEnd = math.min(bottom, space.y + space.height)
             if xEnd - x >= minWidth and yEnd - y >= minHeight then
-                slots[#slots + 1] = {
-                    x = x, y = y, width = xEnd - x, height = yEnd - y, axis = axis,
-                    span = axis == "x" and right - left or bottom - top,
-                }
+                local across = seenSlots[axis]
+                local xKey = x * (width + 1) + xEnd - x
+                local yKey = y * (height + 1) + yEnd - y
+                local column = across[xKey]
+                if not column then column = {}; across[xKey] = column end
+                local span = axis == "x" and right - left or bottom - top
+                local slot = column[yKey]
+                if slot then
+                    -- The old sort/dedup retained the smallest facing-edge span.
+                    if span < slot.span then slot.span = span end
+                else
+                    slot = {
+                        x = x, y = y, width = xEnd - x, height = yEnd - y,
+                        axis = axis, span = span,
+                    }
+                    column[yKey] = slot
+                    slots[#slots + 1] = slot
+                end
             end
         end
     end
@@ -104,16 +121,6 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
         if a.height ~= b.height then return a.height < b.height end
         return a.span < b.span
     end)
-    local unique = 0
-    for _, slot in ipairs(slots) do
-        local previous = slots[unique]
-        if not previous or previous.axis ~= slot.axis or previous.x ~= slot.x
-            or previous.y ~= slot.y or previous.width ~= slot.width or previous.height ~= slot.height then
-            unique = unique + 1
-            slots[unique] = slot
-        end
-    end
-    for index = #slots, unique + 1, -1 do slots[index] = nil end
     return result
 end
 
