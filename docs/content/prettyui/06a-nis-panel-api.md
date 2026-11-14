@@ -200,6 +200,28 @@ the docked viewport. Lock/unlock handling does not rebuild active content.
 Own tab selection remains enabled; dragging, undocking by gesture, and resizing
 remain disabled while locked.
 
+Native-tab dragging reorders across PrettyUI tabs using the complete mixed row.
+PrettyUI retains the native press across capture handoffs: native scripts can
+send `RELEASE`, expose two bound frame copies at the same bounds, and deliver no
+`ONDRAG` to the original component. That overlap keeps the mixed strip visible
+and tracks the pointer; returning to one visible copy finishes the gesture once
+the native row signatures agree. Native input capture remains untouched.
+Before each draw, clickthrough artwork follows native band geometry and is
+raised above the native frame. Escape or focus loss restores the own-tab order.
+All bound native frame copies share one mixed-row animation, including native
+backgrounds and their icons. During confirmed native dragging, peer repaints
+are reconciled before Draw without moving the client-controlled dragged tab.
+On release, the entire row snaps to its final mixed slots, including the former
+drag source. In-place native icon changes remap tab identities even when all
+component handles survive. Normal layout and input resume once the single visible
+native row has compact positions and all original native tabs. Its committed
+native order is authoritative, even when different from the drag preview.
+Incomplete hidden copies retain group membership but are excluded from rendering
+until their rows rejoin. Late native repaints refresh artwork and input before Draw.
+Regression coverage includes stale hidden copies, differing committed orders,
+immediate/delayed in-place repaint, click-target alignment, both directions and
+cancellation. The settlement correction has been confirmed in the live client.
+
 PrettyUI-only groups and synthetic native-host rows use the native dark tab-strip
 backdrop behind their tabs. Icons retain their original colours and input;
 existing native tab rows keep their own backdrop without a second overlay.

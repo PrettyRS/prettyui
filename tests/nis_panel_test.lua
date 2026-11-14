@@ -3166,6 +3166,19 @@ do
             "PrettyUI tab occupies the gap between native tabs")
         rapidNativeSwitch(0, 84, 48)
         do
+            -- Sample actual painter order, not just hidden flags: an enabled
+            -- native backdrop can cover otherwise-visible GAME_AREA artwork.
+            local function paintedAt(node, x, y)
+                if node.hidden or node.visibleGlobal == false then return nil end
+                local origin = node.xyGlobal
+                if x < origin.x or x >= origin.x + node.width
+                    or y < origin.y or y >= origin.y + node.height then return nil end
+                for index = #node.renderChildren, 1, -1 do
+                    local painted = paintedAt(node.renderChildren[index], x, y)
+                    if painted then return painted end
+                end
+                return node.spriteID and node or nil
+            end
             local function nativeHook(source, hook, ...)
                 local delivered = false
                 for _, callback in pairs(source.namedSubscriptions[hook] or {}) do
@@ -3290,6 +3303,326 @@ do
                     end
                 end
             end
+            for _, input in ipairs({ "background", "icon", "strip" }) do
+                for _, finish in ipairs({ "release", "escape" }) do
+                    notes:rebuild({ 9001, 9002, 9003 }, 1)
+                    ranged:rebuild({ 9001, 9002, 9003 }, 2)
+                    magic:rebuild({ 9001, 9002, 9003 }, 3)
+                    notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+                    emit("Logic")
+                    placeOwn(nativePanel, 172)
+                    placeOwn(peer, 88)
+                    placeOwn(nativePanel, 128)
+                    local group = peer._nisNative.group
+                    expect(peer._nisNative.tabs[group.current].visual.x, 92,
+                        "five-tab fixture puts the first PrettyUI tab after two natives")
+                    expect(nativePanel._nisNative.tabs[group.current].visual.x, 132,
+                        "five-tab fixture keeps both PrettyUI tabs before the last native")
+                    local source = ranged.backgrounds[2]
+                    local x = 10
+                    if input == "icon" then
+                        for _, child in ipairs(ranged.tabs.children) do
+                            if child.dynamicID == 5 then source = child; break end
+                        end
+                    elseif input == "strip" then
+                        source, x = ranged.tabs, 54
+                    end
+                    local raw = { x = source.xyGlobal.x + x, y = source.xyGlobal.y + 10 }
+                    Mouse.GetPosition = function() return raw end
+                    nativeHook(source, ui.Hook.ONCLICK, x, 10)
+                    -- Native selection changes frame copies before drag starts;
+                    -- the callback still belongs to the original pressed child.
+                    notes.frame.nativeShown, ranged.frame.nativeShown = true, false
+                    nativeHook(source, ui.Hook.ONDRAG, x, 10)
+                    emit("Logic")
+                    local backdrop = nativeNodes[(1477 << 16) | (notes.frame.staticID + 7)]
+                    local oldSprite, tabY, backdropY = backdrop.spriteID, notes.tabs.y, backdrop.y
+                    backdrop.spriteID = id.Sprite.RS3_CHILD_TAB_UNSELECTED
+                    local function expectPaintedTabs(message)
+                        for _, member in ipairs({ peer, nativePanel }) do
+                            local tab = member._nisNative.tabs[group.current]
+                            local frame = tab.host.frame.xyGlobal
+                            expect(paintedAt(area, frame.x + tab.visual.x + 2,
+                                frame.y + notes.tabs.y + 2), tab.background, message)
+                        end
+                    end
+                    -- Client input scripts run after Logic. Each paint must
+                    -- follow their live band geometry and raised opaque frame.
+                    for pass = 1, 3 do
+                        notes.tabs:SetPos(notes.tabs.x, tabY + pass * 4)
+                        backdrop:SetPos(backdrop.x, backdropY + pass * 4)
+                        notes.frame:MoveToFront()
+                        emit("Draw")
+                        expectPaintedTabs("native drag-start repaint cannot cover PrettyUI tabs")
+                        expect(peer._nisNative.tabs[group.current].hit.enabled, false,
+                            "raising drag artwork does not enable its input")
+                    end
+                    notes.tabs:SetPos(notes.tabs.x, tabY)
+                    backdrop:SetPos(backdrop.x, backdropY)
+                    notes.frame.nativeShown = false
+                    for _, host in ipairs({ notes, ranged, magic }) do host.frame.visible = false end
+                    raw.x = raw.x + 124
+                    emit("Logic")
+                    local tab = peer._nisNative.tabs[group.current]
+                    expect(rendered(tab.background), true,
+                        "native ghost visibility does not hide the mixed tab strip")
+                    expect(tab.visual.x > 48 and tab.visual.x < 92, true,
+                        "first PrettyUI tab slides aside as the second native crosses")
+                    expect(tab.hit.enabled, false, "mixed artwork cannot steal native drag capture")
+                    for _ = 1, 12 do emit("Logic") end
+                    expect(tab.visual.x, 48, "native crossing moves the first PrettyUI slot left")
+                    expect(nativePanel._nisNative.tabs[group.current].visual.x, 88,
+                        "native crossing moves both PrettyUI slots without swapping them")
+                    local shown = group.hosts[group.current]
+                    expect(shown.backgrounds[3].component.x, 124,
+                        "last native slides into its complete mixed-row slot")
+                    for _, child in ipairs(shown.tabs.children) do
+                        if child.dynamicID == 9 then
+                            expect(child.x, 134, "native peer icon slides with its background")
+                        end
+                    end
+                    notes.frame.nativeShown = true
+                    for _, host in ipairs({ notes, ranged, magic }) do host.frame.visible = true end
+                    if finish == "escape" then
+                        emit("KeyDown", { gameKey = GameKey.ESCAPE })
+                    else
+                        -- Native scripts snap/rebuild at native-only positions.
+                        -- The final mixed insertion must use the captured pointer.
+                        notes:rebuild({ 9001, 9003, 9002 }, 1)
+                        ranged:rebuild({ 9001, 9003, 9002 }, 3)
+                        magic:rebuild({ 9001, 9003, 9002 }, 2)
+                        nativeHook(source, ui.Hook.ONRELEASE, x, 10)
+                    end
+                    for _ = 1, 3 do emit("Logic") end
+                    local before = finish == "escape" and 2 or 1
+                    expect(peer._nisNative.beforeNative, before,
+                        "native release commits the full mixed order; escape restores it")
+                    expect(nativePanel._nisNative.beforeNative, before,
+                        "both PrettyUI panels participate in native reordering")
+                    expect(peer._nisNative.tabs[group.current].visual.x, 4 + before * 44,
+                        "settled first PrettyUI slot matches the committed mixed order")
+                    expect(nativePanel._nisNative.tabs[group.current].visual.x, 44 + before * 44,
+                        "settled second PrettyUI slot preserves relative own-tab order")
+                    notes.frame:MoveToFront()
+                    emit("Draw")
+                    expectPaintedTabs("native release repaint keeps both mixed tabs above its backdrop")
+                    backdrop.spriteID = oldSprite
+                    Mouse.GetPosition = function() return nil end
+                end
+            end
+            -- Live capture sequence: selection hands off to another native
+            -- frame, RELEASE arrives at drag start, and no ONDRAG follows.
+            for _, sourceIndex in ipairs({ 2, 3 }) do
+                for _, finish in ipairs({
+                    "release", "in-place", "late-in-place", "stale-hidden", "native-order", "escape", "focus",
+                }) do
+                    notes:rebuild({ 9001, 9002, 9003 }, 1)
+                    ranged:rebuild({ 9001, 9002, 9003 }, 2)
+                    magic:rebuild({ 9001, 9002, 9003 }, 3)
+                    notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+                    emit("Logic")
+                    placeOwn(nativePanel, 172)
+                    placeOwn(peer, 88)
+                    placeOwn(nativePanel, 128)
+                    local group = peer._nisNative.group
+                    local source = ranged.backgrounds[sourceIndex]
+                    local raw = { x = source.xyGlobal.x + 23, y = source.xyGlobal.y + 10 }
+                    Mouse.GetPosition = function() return raw end
+                    nativeHook(ranged.tabs, ui.Hook.ONCLICK, source.x + 23, 10)
+                    nativeHook(ranged.tabs, ui.Hook.ONHOLD, source.x + 23, 10)
+                    nativeHook(source, ui.Hook.ONCLICK, 23, 10)
+                    notes.frame.nativeShown, ranged.frame.nativeShown = true, false
+                    nativeHook(source, ui.Hook.ONHOLD, 23, 10)
+                    for _, child in ipairs(ranged.tabs.children) do
+                        if child.dynamicID == source.dynamicID + 1 then
+                            nativeHook(child, ui.Hook.ONCLICK, 13, 8)
+                            nativeHook(child, ui.Hook.ONHOLD, 13, 8)
+                        end
+                    end
+                    emit("Logic")
+                    nativeHook(notes.tabs, ui.Hook.ONRELEASE, source.x + 30, 10)
+                    emit("Logic")
+                    expect(peer._nisNative.beforeNative, 2,
+                        "selection and capture handoff alone do not reorder PrettyUI tabs")
+                    -- Both bound native copies become visible after RELEASE.
+                    -- Draw must protect the row before the next Logic callback.
+                    ranged.frame.nativeShown = true
+                    ranged.frame:MoveToFront()
+                    nativeHook(ranged.tabs, ui.Hook.ONRELEASE, source.x + 30, 10)
+                    emit("Draw")
+                    local tab = peer._nisNative.tabs[group.current]
+                    expect(rendered(tab.background), true,
+                        "native capture handoff preserves PrettyUI artwork on its first draw")
+                    expect(tab.hit.enabled, false, "capture handoff leaves native input ownership intact")
+                    local function expectSeparated(includeSource)
+                        for _, copy in ipairs({ notes, ranged, magic }) do
+                            if finish ~= "stale-hidden" or copy.frame.nativeShown then
+                                local boxes = {}
+                                for index, bg in ipairs(copy.backgrounds) do
+                                    if includeSource or index ~= sourceIndex then
+                                        boxes[#boxes + 1] = { x = bg.x, width = bg.width }
+                                        expect(bg.x, notes.backgrounds[index].x,
+                                            "native frame copies share the same animated peer positions")
+                                        for _, child in ipairs(copy.tabs.children) do
+                                            if child.dynamicID == bg.dynamicID + 1 then
+                                                expect(child.x, bg.x + 10,
+                                                    "native peer icon stays attached after partial native repaint")
+                                            end
+                                        end
+                                    end
+                                end
+                                for _, member in ipairs({ peer, nativePanel }) do
+                                    local visual = member._nisNative.tabs[group.current].visual
+                                    boxes[#boxes + 1] = { x = visual.x - notes.tabs.x, width = visual.width }
+                                end
+                                table.sort(boxes, function(a, b) return a.x < b.x end)
+                                for index = 2, #boxes do
+                                    expect(boxes[index - 1].x + boxes[index - 1].width <= boxes[index].x, true,
+                                        "non-dragged native and PrettyUI tabs never overlap during interpolation")
+                                    if includeSource then
+                                        expect(boxes[index].x, boxes[index - 1].x + boxes[index - 1].width,
+                                            "native drop leaves no stale gap in the complete mixed row")
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    local sourceX = source.x
+                    raw.x = raw.x + (sourceIndex == 2 and 124 or -168)
+                    emit("Logic")
+                    local target = sourceIndex == 2 and 48 or 136
+                    expect(tab.visual.x > math.min(92, target)
+                        and tab.visual.x < math.max(92, target), true,
+                        "native frame-copy dragging slides PrettyUI tabs in either direction")
+                    expectSeparated()
+                    for pass = 1, 12 do
+                        -- Client scripts can repaint one frame or child between
+                        -- Logic and Draw without replacing any component handle.
+                        local copy = pass % 2 == 1 and ranged or notes
+                        for index, bg in ipairs(copy.backgrounds) do
+                            if index ~= sourceIndex then
+                                if pass % 3 == 0 then
+                                    bg:SetPos((index - 1) * 44, 0)
+                                else
+                                    for _, child in ipairs(copy.tabs.children) do
+                                        if child.dynamicID == bg.dynamicID + 1 then
+                                            child:SetPos((index - 1) * 44 + 10, 2)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        copy.frame:MoveToFront()
+                        emit("Draw")
+                        expectSeparated()
+                        emit("Logic")
+                        expectSeparated()
+                    end
+                    expect(source.x, sourceX, "synchronized peer animation never moves the native drag source")
+                    expect(tab.visual.x, target, "PrettyUI tabs occupy the crossed mixed-row slot")
+                    expect(nativePanel._nisNative.tabs[group.current].visual.x, target + 40,
+                        "both PrettyUI tabs stay ordered during client-owned dragging")
+                    expect(rendered(tab.background), true,
+                        "native frame-copy dragging never suspends the PrettyUI row")
+                    if finish == "escape" then
+                        emit("KeyDown", { gameKey = GameKey.ESCAPE })
+                    elseif finish == "focus" then
+                        emit("WindowFocusChanged", { hasFocus = false })
+                    else
+                        local order = sourceIndex == 2 and { 9001, 9003, 9002 } or { 9003, 9001, 9002 }
+                        if finish == "native-order" then order = { 9001, 9002, 9003 } end
+                        if finish == "late-in-place" then
+                            -- Copy retirement can precede the native order repaint.
+                            -- The first released Draw must already be a complete row.
+                            ranged.frame.nativeShown = false
+                            emit("Draw")
+                            expectSeparated(true)
+                            emit("Logic")
+                            expectSeparated(true)
+                        end
+                        for _, copy in ipairs({ notes, ranged, magic }) do
+                            if finish == "stale-hidden" and copy ~= notes then
+                                -- Hidden copies keep an incomplete drag row until selected.
+                                copy:rebuild({ 9001, sourceIndex == 2 and 9003 or 9002 }, 1)
+                            elseif finish == "release" or finish == "stale-hidden" then
+                                copy:rebuild(order, 1)
+                            else
+                                -- Real native scripts can reuse every component,
+                                -- changing tab identity through the icon sprites.
+                                for index, bg in ipairs(copy.backgrounds) do
+                                    bg:SetPos((index - 1) * 44, 0)
+                                    for _, child in ipairs(copy.tabs.children) do
+                                        if child.dynamicID == bg.dynamicID + 1 then
+                                            child.spriteID = order[index]
+                                            child:SetPos((index - 1) * 44 + 10, 2)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    -- The client retires its extra frame copy without sending
+                    -- another release to any PrettyUI-observed native component.
+                    ranged.frame.nativeShown = false
+                    emit("Draw")
+                    expectSeparated(true)
+                    emit("Logic")
+                    expect(group.nativeSort, nil,
+                        "complete visible native row settles on the first logic tick despite stale copies or preview order")
+                    expect(peer._nisNative.tabs[group.current].hit.enabled, true,
+                        "first settled tick restores the visible PrettyUI click target")
+                    for _ = 1, 3 do emit("Logic"); emit("Draw"); expectSeparated(true) end
+                    local cancelled = finish == "escape" or finish == "focus"
+                    local before = cancelled and 2 or (sourceIndex == 2 and 1 or 3)
+                    expect(peer._nisNative.beforeNative, before,
+                        "native copy retirement commits the mixed order or preserves cancellation")
+                    expect(nativePanel._nisNative.beforeNative, before,
+                        "native copy retirement retains both PrettyUI insertion positions")
+                    expect(peer._nisNative.tabs[group.current].visual.x, 4 + before * 44,
+                        "settled artwork matches the mixed order after native capture handoff")
+                    expect(savedLayouts["prettyui.nis-layout.v1"].panels["native:retained"].native.beforeNative,
+                        before, "client-owned native reordering persists PrettyUI insertion positions")
+                    expect(peer._nisNative.tabs[group.current].hit.enabled, true,
+                        "native copy retirement restores PrettyUI tab interaction")
+                    expectSeparated(true)
+                    for _, member in ipairs({ peer, nativePanel }) do
+                        local own = member._nisNative.tabs[group.current]
+                        expect(own.hit.xyGlobal.x, own.visual.xyGlobal.x,
+                            "shuffled PrettyUI click target matches its visible horizontal bounds")
+                        expect(own.hit.xyGlobal.y, own.visual.xyGlobal.y,
+                            "shuffled PrettyUI click target matches its visible vertical bounds")
+                        expect(own.hit.width, own.visual.width, "shuffled click target retains the tab width")
+                        expect(own.hit.height, own.visual.height, "shuffled click target retains the tab height")
+                        raw.x, raw.y = own.hit.xyGlobal.x + 20, own.hit.xyGlobal.y + 14
+                        fire(own.hit, ui.Hook.ONCLICK, 20, 14)
+                        fire(own.hit, ui.Hook.ONRELEASE, 20, 14)
+                        expect(group.active, member, "shuffled PrettyUI hit layer selects its own page")
+                    end
+                    if finish == "stale-hidden" then
+                        expect(#group.hosts, 1, "incomplete hidden rows are excluded from rendering")
+                        local count = 0
+                        for _ in pairs(group.frames) do count = count + 1 end
+                        expect(count, 3, "stale hidden copies retain proven native group membership")
+                        local order = sourceIndex == 2 and { 9001, 9003, 9002 } or { 9003, 9001, 9002 }
+                        ranged:rebuild(order, 2)
+                        magic:rebuild(order, 3)
+                        notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+                        emit("Draw")
+                        expect(#group.hosts, 3, "repainted hidden copies rejoin before their first visible draw")
+                        expect(group.hosts[group.current].frame, ranged.frame, "rejoined native copy becomes current")
+                        local own = peer._nisNative.tabs[group.current]
+                        expect(own.hit.enabled, true, "rejoined copy restores its own tab input")
+                        expect(own.hit.xyGlobal.x, own.visual.xyGlobal.x, "rejoined horizontal input matches artwork")
+                        expect(own.hit.xyGlobal.y, own.visual.xyGlobal.y, "rejoined vertical input matches artwork")
+                    end
+                    Mouse.GetPosition = function() return nil end
+                end
+            end
+            notes:rebuild({ 9001, 9002 }, 1)
+            ranged:rebuild({ 9001, 9002 }, 2)
+            magic:rebuild({ 9003 }, 1)
+            notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+            emit("Logic")
             placeOwn(nativePanel, 128)
             placeOwn(peer, 44)
             for _ = 1, 2 do emit("Logic") end
