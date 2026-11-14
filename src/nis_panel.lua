@@ -34,6 +34,8 @@ local CLOSE_SIZE = 12
 local MIN_WIDTH = HEADER_CORNER_WIDTH * 2
 local MIN_HEIGHT = HEADER_HEIGHT + BORDER * 2 + 1
 local nextResizeID = 0
+local nextSubscriptionID = 0
+local DEFAULT_CATEGORY_OPTIONS = { categoryID = "auto" }
 local FRAME_PARTS = { "top", "bottom", "left", "right", "topLeft", "topRight", "bottomLeft", "bottomRight" }
 local HEADER_PARTS = { "headerLeft", "headerRight", "headerTop", "headerFill" }
 
@@ -52,6 +54,24 @@ local function loaded(self)
     return self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
 end
 
+function NisPanel:OnCleanup(callback)
+    assert(self._contentCleanups and not self._releasingContent,
+        "PrettyUI: NisPanel OnCleanup requires mounted content")
+    assert(type(callback) == "function", "PrettyUI: NisPanel OnCleanup requires a function")
+    local cleanups = self._contentCleanups
+    cleanups[#cleanups + 1] = callback
+end
+
+function NisPanel:Subscribe(event, callback)
+    assert(self._contentCleanups and not self._releasingContent,
+        "PrettyUI: NisPanel Subscribe requires mounted content")
+    assert(type(callback) == "function", "PrettyUI: NisPanel Subscribe requires a function")
+    nextSubscriptionID = nextSubscriptionID + 1
+    local key = "prettyui_nis_panel_content_" .. nextSubscriptionID
+    event.Subscribe(key, callback)
+    self:OnCleanup(function() event.Unsubscribe(key) end)
+end
+
 -- Only the shell and tab inputs survive deactivation. Consumer controls belong
 -- to one buildContent invocation; its cleanup runs before their handles expire.
 function NisPanel:_ReleaseContent()
@@ -61,13 +81,18 @@ function NisPanel:_ReleaseContent()
     local contentHost, contentHostInterfaceID = self._contentHost, self._contentHostInterfaceID
     local contentInterfaceID = self._contentInterfaceID
     local cleanup = self._contentCleanup
+    local cleanups = self._contentCleanups
     self._contentCleanup = nil
+    self._contentCleanups = nil
     local problem
     local function release(callback, ...)
         local ok, failure = pcall(callback, ...)
         if not ok and problem == nil then problem = failure end
     end
     if cleanup then release(cleanup) end
+    if cleanups then
+        for index = #cleanups, 1, -1 do release(cleanups[index]) end
+    end
     self.scrollY = scroll.scrollY
     self.scrollable = scroll.scrollable
     self.scrollStep = scroll.scrollStep
@@ -208,6 +233,7 @@ function NisPanel:_SyncContent(visible)
         self.tooltipContext.ownerWindow = self
         Layout.configure(self, self._contentLayout)
         self.interfaceID = self._shellInterfaceID
+        self._contentCleanups = {}
         if self.buildContent then
             local cleanup = self.buildContent(self)
             assert(cleanup == nil or type(cleanup) == "function",
@@ -982,8 +1008,14 @@ local function buildPanel(parent, options, policy)
 end
 
 function NisPanel.new(parent, options)
+    if options == nil and (parent == nil or type(parent) == "table" and parent.interfaceID == nil) then
+        options, parent = parent, nil
+    end
+    parent = parent or assert(ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA),
+        "PrettyUI: NisPanel requires a loaded GAME_AREA; create it after the game UI is available")
     options = NisPersistence.prepare(options or {})
-    local policy = Components.checkContentParent(parent, options)
+    local policy = Components.checkContentParent(parent,
+        options.categoryID == nil and DEFAULT_CATEGORY_OPTIONS or options)
     return Components.withBatch(parent, function()
         return buildPanel(parent, options, policy)
     end)

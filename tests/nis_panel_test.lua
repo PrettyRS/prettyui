@@ -481,6 +481,112 @@ do
     expect(#parent.children, children, "constructor rollback leaves no sibling controls")
 end
 
+-- Default roots span categories without boilerplate, and mount-owned resources
+-- cannot leak callbacks to expired controls or interfere with another panel.
+do
+    local gameAreaID = id.Component.TOPLEVEL_V2__GAME_AREA
+    id.Component.TOPLEVEL_V2__GAME_AREA = (parent.interfaceID << 16) | parent.staticID
+    local first, last
+    local options = {
+        buildContent = function(owner)
+            first = owner:AddText("First")
+            for index = 1, 260 do last = owner:AddText("Row " .. index) end
+        end,
+    }
+    local default = NisPanel.new(options)
+    expect(default.parent, parent, "options-only constructor resolves GAME_AREA")
+    expect(first.categoryID ~= last.categoryID, true, "default allocation supports multiple categories")
+    expect(options.categoryID, nil, "constructor does not mutate caller options")
+    default:Destroy()
+    default = NisPanel.new()
+    expect(default.parent, parent, "empty constructor resolves GAME_AREA")
+    default:Destroy()
+    default = NisPanel.new(nil, { width = 280 })
+    expect(default.root.width, 280, "explicit nil parent retains supplied options")
+    default:Destroy()
+    id.Component.TOPLEVEL_V2__GAME_AREA = -1
+    local ok, problem = pcall(NisPanel.new, {})
+    expect(ok, false, "missing default parent fails at construction")
+    expect(problem:find("loaded GAME_AREA", 1, true) ~= nil, true, "missing parent has actionable error")
+    id.Component.TOPLEVEL_V2__GAME_AREA = gameAreaID
+
+    local signal = event("PanelContent")
+    local order, rowA, rowB, builds = {}, nil, nil, 0
+    local function emit(value)
+        for _, callback in pairs(events.PanelContent) do callback(value) end
+    end
+    local a = NisPanel.new(parent, {
+        buildContent = function(owner)
+            builds = builds + 1
+            local row = owner:AddText("A")
+            rowA = row
+            owner:OnCleanup(function()
+                expect(row.destroyed, nil, "registered cleanup sees live controls")
+                order[#order + 1] = "first"
+            end)
+            owner:Subscribe(signal, function(value) row.content = value end)
+            owner:OnCleanup(function() order[#order + 1] = "last" end)
+            return function() order[#order + 1] = "returned" end
+        end,
+    })
+    local b = NisPanel.new(parent, {
+        buildContent = function(owner)
+            local row = owner:AddText("B")
+            rowB = row
+            owner:Subscribe(signal, function(value) row.content = value end)
+        end,
+    })
+    emit("both")
+    expect(rowA.content, "both", "first panel receives event payload")
+    expect(rowB.content, "both", "second panel has a distinct subscription")
+    a:OnCleanup(function() order[#order + 1] = "late" end)
+    local oldRow = rowA
+    a:Hide()
+    expect(table.concat(order, ","), "returned,late,last,first",
+        "returned cleanup precedes reverse registered cleanup")
+    emit("only B")
+    expect(oldRow.content, "both", "unmounted controls never receive events")
+    expect(rowB.content, "only B", "unmounting one panel preserves another subscription")
+    expect(pcall(a.OnCleanup, a, function() end), false, "unmounted page rejects cleanup registration")
+    expect(pcall(a.Subscribe, a, signal, function() end), false, "unmounted page rejects subscriptions")
+    a:Show()
+    expect(builds, 2, "remount builds new controls and subscriptions")
+    emit("remounted")
+    expect(rowA.content, "remounted", "remounted controls receive events")
+    expect(oldRow.content, "both", "remount does not revive expired callbacks")
+    a:OnCleanup(function() error("injected registered cleanup failure") end)
+    ok, problem = pcall(function() a:Hide() end)
+    expect(ok, false, "registered cleanup errors propagate")
+    expect(problem:find("injected registered cleanup failure", 1, true) ~= nil, true,
+        "registered cleanup preserves original error")
+    expect(rowA.destroyed, true, "failing cleanup still destroys controls")
+    expect(table.concat(order, ","), "returned,late,last,first,returned,last,first",
+        "other registered cleanup runs despite failure")
+    a:Destroy()
+    b:Destroy()
+    expect(next(events.PanelContent), nil, "all subscriptions release even when cleanup fails")
+
+    local partial
+    ok, problem = pcall(function()
+        NisPanel.new(parent, {
+            buildContent = function(owner)
+                partial = owner:AddText("Partial")
+                owner:Subscribe(signal, function() error("leaked failed-builder subscription") end)
+                owner:OnCleanup(function()
+                    expect(partial.destroyed, nil, "failed build cleanup precedes control destruction")
+                    error("secondary cleanup failure")
+                end)
+                error("injected scoped build failure")
+            end,
+        })
+    end)
+    expect(ok, false, "builder failure propagates with scoped resources")
+    expect(problem:find("injected scoped build failure", 1, true) ~= nil, true,
+        "rollback cleanup cannot replace builder error")
+    expect(partial.destroyed, true, "failed build destroys partial controls")
+    expect(next(events.PanelContent), nil, "failed builder releases subscription without returned cleanup")
+end
+
 local capped = NisPanel.new(parent, {
     width = 400.9, height = 200.5, minWidth = 100.9, minHeight = 32.9,
     maxWidth = 20.9, maxHeight = 4.9, destroyOnClose = true,
@@ -4652,6 +4758,8 @@ do
     local shellInterfaceID = parent.interfaceID
     local buildsA, buildsB, cleanupsA, cleanupsB = 0, 0, 0, 0
     local sequence, rowA, rowB, tooltipA, nestedA
+    local scopedSignal = event("ClassicScopedContent")
+    local scopedUpdates, scopedCleanups = 0, 0
     classicMode.value = 1
     local a = NisPanel.new(parent, {
         categoryID = "auto", x = 120, y = 90, width = 300, height = 200,
@@ -4661,6 +4769,16 @@ do
             buildsA = buildsA + 1
             sequence[#sequence + 1] = "build A"
             rowA = owner:AddText("Classic A " .. buildsA)
+            local mountedRow = rowA
+            owner:Subscribe(scopedSignal, function(value)
+                expect(mountedRow.destroyed, nil, "classic subscription never touches expired controls")
+                mountedRow.content = value
+                scopedUpdates = scopedUpdates + 1
+            end)
+            owner:OnCleanup(function()
+                expect(mountedRow.destroyed, nil, "classic registered cleanup sees live controls")
+                scopedCleanups = scopedCleanups + 1
+            end)
             for index = 1, 28 do owner:AddText("Scrollable row " .. index) end
             local nested = owner:AddPanel({ height = 80 })
             nestedA = nested:AddText("Nested input")
@@ -4770,8 +4888,14 @@ do
     expect(a.viewport.height, body.height, "host resize updates content viewport height")
     expect(a._scroll.thumbDrag.hidden, false, "host resize retains scrollbar input")
 
+    for _, callback in pairs(events.ClassicScopedContent) do callback("Classic update") end
+    expect(scopedUpdates, 1, "selected classic content receives its scoped event")
+    expect(rowA.content, "Classic update", "scoped event updates the classic host's control")
+
     a:_SetClassicHost(nil)
     expect(cleanupsA, 1, "outgoing A cleanup runs once")
+    expect(scopedCleanups, 1, "classic switching releases registered resources")
+    expect(next(events.ClassicScopedContent), nil, "classic switching removes scoped subscriptions")
     expect(a.content, nil, "clearing host releases selected A content")
     expect(a._scroll, nil, "clearing host releases A scroll tree")
     expect(firstRow.destroyed, true, "clearing host destroys A controls")

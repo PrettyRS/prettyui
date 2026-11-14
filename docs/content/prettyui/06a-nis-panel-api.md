@@ -18,36 +18,35 @@ enabled. Modern placement, tab groups, native membership, and ribbon preferences
 are retained for returning to Modern Interface.
 
 {{< signature compact="true" >}}
-NisPanel.new(parent, options)
+NisPanel.new(options?)
+NisPanel.new(parent, options?)
 {{< /signature >}}
 
 ```lua
-local state = { lastTick = 0 } -- Plugin state survives content rebuilds.
-local gameArea = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
-local panel = prettyui.NisPanel.new(gameArea, {
-    id = "my-plugin:encounter",
-    categoryID = "auto",
+local panel = prettyui.NisPanel.new({
+    id = "my-plugin:encounter", -- We recommend sticking to the convention of "plugin-name:panel-name" to ensure uniqueness across plugins.
     x = 80,
     y = 80,
     width = 300,
     height = 180,
     tabText = "Encounter",
-    buildContent = function(owner)
-        owner:AddTitle("Encounter")
-        local tickText = owner:AddText("Client tick: " .. state.lastTick)
-        Event.Logic.Subscribe("my-plugin:encounter-tick", function(event)
-            state.lastTick = event.logicTick
-            tickText.content = "Client tick: " .. state.lastTick
-        end)
-        return function()
-            Event.Logic.Unsubscribe("my-plugin:encounter-tick")
-        end
+    buildContent = function(view) -- Wrapped in a function so that PrettyUI can manage content lifecycle properly.
+        view:AddTitle("Encounter")
+        view:AddText("No active encounter.")
     end,
 })
 
 -- During plugin shutdown:
 panel:Destroy()
 ```
+
+By default, construction looks up `TOPLEVEL_V2__GAME_AREA` as its parent.
+That component must already be available when `NisPanel.new` runs; the default
+lookup does not wait for an interface-ready event or manage readiness. For an
+advanced custom mount, pass an explicit parent as
+`NisPanel.new(parent, options?)`. Passing `nil` as the parent also uses the
+default game area. Unlike other PrettyUI components, `NisPanel` uses automatic
+category allocation when `categoryID` is omitted.
 
 {{% api-grid compact="true" %}}
 
@@ -73,7 +72,9 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
   first opening to the ribbon. Saved enabled state overrides this default.
 
 `categoryID`
-: Optional **"auto"** allocation. See [Component IDs](#component-ids).
+: Defaults to **"auto"** allocation for `NisPanel` only. Other PrettyUI
+  components still require an explicit **categoryID = "auto"** to opt in.
+  See [Component IDs](#component-ids).
 
 `x`, `y`, `xAnchor`, `yAnchor`
 : Initial parent-relative position and optional proportional anchors. Position
@@ -93,8 +94,8 @@ Saved layouts override constructor position, size, anchors, and **dockTo**.
 `buildContent(panel)`
 : Optional for a panel with no content; required to create content. Called whenever
   the panel's page becomes active. Add controls using **panel:Add…** or build
-  directly under **panel.content**. Return an optional cleanup function for
-  plugin-owned subscriptions and other content-specific resources.
+  directly under **panel.content**. Optionally return a cleanup function; use
+  **panel:Subscribe** and **panel:OnCleanup** for mount-scoped resources.
 
 `onBoundsChange(panel, x, y, width, height)`
 : Receives changed, committed bounds after dragging, resizing, `SetSize`, or
@@ -127,13 +128,29 @@ disabling the page or calling **onClose**. Only the selected enabled page builds
 Its content and tooltip/input overlays can live on a different interface from
 the retained modern shell; use **panel.content** as the content parent.
 
-If **buildContent** returns a function, PrettyUI calls it before destroying
-controls on deactivation or **Destroy()**. Use it to unsubscribe content-owned
-events while controls are still accessible. Keep persistent values in plugin Lua
-state, not in control handles: handles from a previous build are invalid after
-cleanup. **panel.content** and **panel.viewport** are nil while unmounted.
-**Add…** helpers remain available on the panel, but create controls only during
-an active content build. A panel without **buildContent** may remain empty.
+If **buildContent** returns a cleanup function, PrettyUI calls it first on
+deactivation, **Destroy()**, or a failed mount. Then it runs registered
+**OnCleanup** callbacks and subscription unsubscriptions in reverse registration
+order, before destroying controls. Every cleanup is attempted even if one fails.
+These cleanups belong to the current mount, not to the retained panel.
+Keep persistent values in plugin Lua state, not in control handles: handles from
+a previous build are invalid after cleanup. For data that must continue updating
+while the panel is closed, subscribe in the plugin/model instead and unsubscribe
+when the plugin shuts down; **panel:Subscribe** only lives while content is mounted.
+**panel.content** and **panel.viewport** are nil while unmounted. **Add…** helpers
+remain available on the panel, but create controls only during an active content
+build. A panel without **buildContent** may remain empty.
+
+`Subscribe(event, callback)`
+: Subscribe the supplied native Event, such as **Event.Logic**, using a generated
+  unique key. Available inside **buildContent** and while content is mounted
+  (including event callbacks). PrettyUI unsubscribes automatically before
+  destroying controls on unmount or mount failure. No key or handle is returned.
+
+`OnCleanup(callback)`
+: Register a mount-scoped cleanup inside **buildContent** or while mounted,
+  including from callbacks. Cleanup runs before controls are destroyed. Calls
+  outside an active mount or during teardown are rejected; no handle is returned.
 
 `AddText`, `AddTitle`, `Add…`
 : Use the shared [layout and flow helpers](#layout-and-scale) inside
@@ -315,10 +332,11 @@ client rendering and native script behavior still require verification.
   by the close button, which is visible only while the interface is unlocked.
 
 `Destroy()`
-: Calls the content cleanup before destroying controls, then removes the panel,
-  ribbon button, shell, and retained handlers without forgetting enabled state or
-  saved membership. Call during plugin shutdown. **Hide()** and **Close()**
-  instead retain a ribbon button for reopening unless **destroyOnClose** is true.
+: Runs mount cleanup and unsubscribes before destroying controls, then removes
+  the panel, ribbon button, shell, and retained handlers without forgetting
+  enabled state or saved membership. Call during plugin shutdown. **Hide()**
+  and **Close()** instead retain a ribbon button for reopening unless
+  **destroyOnClose** is true.
   Destroying a native member also removes its tab and restores native state when
   the last PrettyUI member leaves. Library shutdown restores native overrides
   without forgetting saved native membership.

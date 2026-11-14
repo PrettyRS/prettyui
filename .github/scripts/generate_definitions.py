@@ -36,6 +36,7 @@ class Method:
     source: str = ""
     description: str = ""
     param_types: dict[str, str] = field(default_factory=dict)
+    overloads: list[tuple[dict[str, str], list[str]]] = field(default_factory=list)
 
 
 @dataclass
@@ -321,6 +322,11 @@ def enrich_with_metadata(definitions: dict[str, Definition], metadata_path: Path
                 method.param_types = dict(override["params"])
             if "returns" in override:
                 method.returns = list(override["returns"])
+            if "overloads" in override:
+                method.overloads = [
+                    (dict(overload["params"]), list(overload["returns"]))
+                    for overload in override["overloads"]
+                ]
             if "description" in override:
                 method.description = override["description"]
             if "static" in override:
@@ -538,6 +544,14 @@ def emit_method(name: str, method: Method, owner: str, exported: bool) -> list[s
         rows.extend("---" + line for line in method.description.splitlines())
     elif method.source:
         rows.append(f"---Source: {method.source}")
+    for params, returns in method.overloads:
+        arguments = []
+        for arg, raw_type in params.items():
+            typ = annotation_type(raw_type)
+            optional = typ.endswith("?")
+            arguments.append(f"{arg}{'?' if optional else ''}: {typ[:-1] if optional else typ}")
+        result = ", ".join(annotation_type(returned) for returned in returns)
+        rows.append(f"---@overload fun({', '.join(arguments)}): {result}")
     for arg in method.params:
         typ = annotation_type(method.param_types.get(arg, "any"))
         rows.append(f"---@param {arg} {typ}")

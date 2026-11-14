@@ -199,8 +199,22 @@
       },
       "methods": {
         "new": {
-          "params": { "parent": "any", "options": "PrettyUI.NisPanelOptions?" },
-          "returns": ["PrettyUI.NisPanel"]
+          "params": { "options": "PrettyUI.NisPanelOptions?" },
+          "returns": ["PrettyUI.NisPanel"],
+          "overloads": [
+            {
+              "params": { "parent": "any", "options": "PrettyUI.NisPanelOptions?" },
+              "returns": ["PrettyUI.NisPanel"]
+            }
+          ]
+        },
+        "Subscribe": {
+          "params": { "event": "any", "callback": "fun(...: any)" },
+          "returns": ["nil"]
+        },
+        "OnCleanup": {
+          "params": { "callback": "fun()" },
+          "returns": ["nil"]
         },
         "SetSize": { "params": { "width": "number", "height": "number" }, "returns": ["nil"] },
         "DockTo": { "params": { "target": "PrettyUI.NisPanel|number|userdata" }, "returns": ["boolean"] },
