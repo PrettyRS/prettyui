@@ -110,13 +110,13 @@ function NativePreview.new(Host, View, actions)
                 nativeTab.clickthrough = true
                 local background = ownSprite(nativeTab, art.tabUnselected)
                 background:SetSize(WIDTH, HEIGHT)
+                local icon = ownSprite(nativeTab, host.nativeIcon)
+                icon:SetPos(8, 2)
+                icon:SetSize(24, 24)
                 local seam = ownSprite(nativeTab, art.tabBarTile)
                 seam:SetPos(0, HEIGHT - SEAM)
                 seam:SetSize(WIDTH, SEAM)
                 seam.isTiling = true
-                local icon = ownSprite(nativeTab, host.nativeIcon)
-                icon:SetPos(8, 2)
-                icon:SetSize(24, 24)
                 state.nativeTab = nativeTab
             end
             for index = 1, state.count do
@@ -128,15 +128,15 @@ function NativePreview.new(Host, View, actions)
                     member == (panel._nisGroup and panel._nisGroup.active or panel)
                         and art.tabSelected or art.tabUnselected)
                 background:SetSize(WIDTH, HEIGHT)
+                local icon = ownSprite(visual, member.tabIcon or art.defaultIcon)
+                icon:SetPos(8, 2)
+                icon:SetSize(24, 24)
                 if background.spriteID == art.tabUnselected then
                     local seam = ownSprite(visual, art.tabBarTile)
                     seam:SetPos(0, HEIGHT - SEAM)
                     seam:SetSize(WIDTH, SEAM)
                     seam.isTiling = true
                 end
-                local icon = ownSprite(visual, member.tabIcon or art.defaultIcon)
-                icon:SetPos(8, 2)
-                icon:SetSize(24, 24)
                 state.tabs[index] = visual
             end
             if occupiedGroup then startSlides(occupiedGroup) end

@@ -3036,6 +3036,9 @@ do
         else py = top + 28 end
         local raw = { x = hit.xyGlobal.x + 12, y = hit.xyGlobal.y + 12 }
         Mouse.GetPosition = function() return raw end
+        local sourceX, sourceY = ranged.frame.x, ranged.frame.y
+        local sourceWidth, sourceHeight = ranged.frame.width, ranged.frame.height
+        local pressX, pressY = hit.x + 12, hit.y + 12
         fire(hit, ui.Hook.ONCLICK, 12, 12)
         raw = { x = area.xyGlobal.x + px, y = area.xyGlobal.y + py }
         fire(hit, ui.Hook.ONHOLD, 12, 12)
@@ -3043,8 +3046,20 @@ do
         expect(nativePanel.dragState ~= nil, true, "native edge tear-out enters placement")
         expect(nativePanel.dragState.nativeTarget, nil, "native empty source strip does not redock during tear-out")
         expect(nativePanel.root.hidden, false, "a torn-out native tab shows its body during free placement")
+        expectRect(nativePanel.dragFeedback.origin, sourceX, sourceY, sourceWidth, sourceHeight,
+            "native tear-out outlines the host rather than saved standalone bounds")
+        expectRect(nativePanel.root, sourceX + px - pressX, sourceY + py - pressY,
+            sourceWidth, sourceHeight, "native tear-out retains host dimensions and pointer grip")
+        local white, orange = nativePanel.dragFeedback.origin, nativePanel.dragFeedback.active
+        raw = { x = area.xyGlobal.x + pressX, y = area.xyGlobal.y + pressY }
+        fire(hit, ui.Hook.ONHOLD, pressX, pressY)
+        expect(nativePanel.dragState.nativeTarget ~= nil, true, "native tear-out can preview its source again")
+        expectRect(orange, sourceX, sourceY, sourceWidth, sourceHeight,
+            "native redock preview returns to the host rectangle without changing size")
         emit("KeyDown", { gameKey = GameKey.ESCAPE })
         expect(nativePanel._nisNative ~= nil, true, "native edge tear-out cancellation restores membership")
+        expect(white.destroyed, true, "native tear-out cancellation removes the origin")
+        expect(orange.destroyed, true, "native tear-out cancellation removes the preview")
         Mouse.GetPosition = function() return nil end
     end
     local capture = captureTab()
@@ -3093,7 +3108,7 @@ do
         peer:SelectTab()
     end
     expect(peer.root.hidden, false, "incoming native member is selected")
-    for _, finish in ipairs({ "escape", "release" }) do
+    for _, finish in ipairs({ "escape", "focus", "tearout", "release" }) do
         nativePanel:SelectTab()
         local group = peer._nisNative.group
         local dragged = peer._nisNative.tabs[group.current]
@@ -3103,11 +3118,20 @@ do
         local raw = { x = hit.xyGlobal.x + 12, y = hit.xyGlobal.y + 12 }
         Mouse.GetPosition = function() return raw end
         fire(hit, ui.Hook.ONCLICK, 12, 12)
+        expect(peer.dragFeedback, nil, "native tab click alone creates no outlines")
+        local sourceX, sourceY = ranged.frame.x, ranged.frame.y
+        local sourceWidth, sourceHeight = ranged.frame.width, ranged.frame.height
         raw.x = raw.x - 40
         fire(hit, ui.Hook.ONHOLD, 12, 12)
         expect(group.members[1], peer, "native own tab can reorder within its row")
         expect(peer.dragState, nil, "native in-row reorder keeps membership")
         expect(dragged.visual.x, startX, "native dragged artwork follows its pointer grip")
+        local white, orange = peer.dragFeedback.origin, peer.dragFeedback.active
+        expectRect(white, sourceX, sourceY, sourceWidth, sourceHeight, "native reorder outlines its host")
+        expectRect(orange, sourceX - 40, sourceY, sourceWidth, sourceHeight,
+            "native reorder translates the host-sized preview by the pointer delta")
+        expect(rendered(white), true, "native reorder draws the white outline")
+        expect(rendered(orange), true, "native reorder draws the orange outline")
         emit("Logic")
         expect(displaced.visual.x > startX and displaced.visual.x < startX + 40, true,
             "native own peer slides through an intermediate position")
@@ -3115,8 +3139,18 @@ do
             "native sliding peer input follows artwork")
         for _ = 1, 12 do emit("Logic") end
         expect(displaced.visual.x, startX + 40, "native own peer settles into the vacated slot")
-        if finish == "escape" then
-            emit("KeyDown", { gameKey = GameKey.ESCAPE })
+        if finish == "tearout" then
+            raw.y = area.xyGlobal.y + sourceY + sourceHeight + 50
+            fire(hit, ui.Hook.ONHOLD, 12, 12)
+            expect(peer.dragState ~= nil, true, "native reorder can transition into tear-out")
+            expect(peer.dragFeedback.origin, white, "native tear-out preserves the reorder origin")
+            expect(peer.dragFeedback.active, orange, "native tear-out preserves the reorder preview")
+            expectRect(white, sourceX, sourceY, sourceWidth, sourceHeight,
+                "native reorder origin stays fixed after tear-out")
+        end
+        if finish == "escape" or finish == "focus" or finish == "tearout" then
+            if finish == "focus" then emit("WindowFocusChanged", { hasFocus = false })
+            else emit("KeyDown", { gameKey = GameKey.ESCAPE }) end
             expect(group.members[1], nativePanel, "native reorder cancellation restores original order")
             expect(group.active, nativePanel, "native reorder cancellation restores original selection")
         else
@@ -3125,8 +3159,12 @@ do
             expect(group.active, peer, "native reorder release keeps the dragged page selected")
         end
         expectNoDrag(peer, "native reorder completion")
-        expect(hit.width, 40, "native reorder release restores normal input width")
-        expect(hit.height, 28, "native reorder release restores normal input height")
+        expect(white.destroyed, true, "native reorder completion removes white")
+        expect(orange.destroyed, true, "native reorder completion removes orange")
+        if finish ~= "tearout" then
+            expect(hit.width, 40, "native reorder release restores normal input width")
+            expect(hit.height, 28, "native reorder release restores normal input height")
+        end
         Mouse.GetPosition = function() return nil end
     end
 
@@ -3287,6 +3325,12 @@ do
                     expect(painted and painted.spriteID, member == selected
                         and id.Sprite.RS3_CHILD_TAB_SELECTED or id.Sprite.RS3_CHILD_TAB_BAR_TILE,
                         "only the selected PrettyUI tab interrupts the native baseline")
+                    for _, y in ipairs({ 24, 25 }) do
+                        local underIcon = paintedAt(area, origin.x + 20, origin.y + y)
+                        expect(underIcon and underIcon.spriteID, member == selected
+                            and member.tabIcon or id.Sprite.RS3_CHILD_TAB_BAR_TILE,
+                            "inactive icons cannot paint across the separator")
+                    end
                 end
             end
             local function nativeHook(source, hook, ...)

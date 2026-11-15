@@ -35,12 +35,13 @@ local function layout(frame, parts, width, height, size)
     parts.right:SetSize(border, height - border * 2)
 end
 
-local function createFrame(parent, root, sprites, size)
+local function createFrame(parent, root, sprites, size, rect)
+    rect = rect or root
     local frame = Components.new(ui.Layer, parent, {
         _categoryPolicy = Components.policyOf(root),
     })
     frame.clickthrough = true
-    frame:SetPos(root.x, root.y)
+    frame:SetPos(rect.x, rect.y)
     local parts = {
         topLeft = sprite(frame, sprites.topLeft),
         topRight = sprite(frame, sprites.topLeft, false, true),
@@ -51,16 +52,16 @@ local function createFrame(parent, root, sprites, size)
         left = sprite(frame, sprites.left, true),
         right = sprite(frame, sprites.left, true, true),
     }
-    layout(frame, parts, root.width, root.height, size)
+    layout(frame, parts, rect.width, rect.height, size)
     frame:MoveToFront()
     return frame, parts
 end
 
-function DragFeedback.new(parent, root)
+function DragFeedback.new(parent, root, rect)
     local self = setmetatable({ root = root, interfaceID = parent.interfaceID }, DragFeedback)
     -- Siblings share the dragged surface's coordinates but not its movement.
-    self.origin = createFrame(parent, root, Sprites.FEEDBACK_POSITION_FRAME, 10)
-    self.active, self.activeParts = createFrame(parent, root, Sprites.FEEDBACK_FINAL_FRAME, 8)
+    self.origin = createFrame(parent, root, Sprites.FEEDBACK_POSITION_FRAME, 10, rect)
+    self.active, self.activeParts = createFrame(parent, root, Sprites.FEEDBACK_FINAL_FRAME, 8, rect)
     return self
 end
 

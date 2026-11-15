@@ -128,14 +128,14 @@ function View.new(Host, actions)
         tab.visual.clickthrough = true
         tab.background = ownSprite(tab.visual, art.tabUnselected)
         tab.background:SetSize(WIDTH, HEIGHT)
-        -- Unselected tab sprites can paint over the native strip's divider.
+        local iconSprite = ownSprite(tab.visual, icon)
+        iconSprite:SetPos(8, 2)
+        iconSprite:SetSize(24, 24)
+        -- Paint above both background and icon; the icon overlaps the divider by two pixels.
         tab.seam = ownSprite(tab.visual, art.tabBarTile)
         tab.seam:SetPos(0, HEIGHT - SEAM)
         tab.seam:SetSize(WIDTH, SEAM)
         tab.seam.isTiling = true
-        local iconSprite = ownSprite(tab.visual, icon)
-        iconSprite:SetPos(8, 2)
-        iconSprite:SetSize(24, 24)
     end
 
     local function newTab(group, host, panel, icon, native)

@@ -410,10 +410,13 @@ function NisDrag.install(NisPanel)
         InterfaceMouse.CalibrateFromHook(component, x, y)
         local px, py = tabPointer(self, component, x, y)
         if not px then return false end
+        local snapshot = Native.snapshot(self)
+        local source = snapshot and Native.rect(self, snapshot.frame)
+        if not source then return false end
         local origin = self.parent.xyGlobal
         self._nisTabPress = {
             native = true, component = component, tab = tab,
-            snapshot = Native.snapshot(self),
+            snapshot = snapshot, source = source,
             pressX = px, pressY = py,
             gripX = px - component.x + (tab and tab.clipOffset or 0),
             viewportWidth = self.parent.width, viewportHeight = self.parent.height,
@@ -448,12 +451,18 @@ function NisDrag.install(NisPanel)
             if math.max(math.abs(px - press.pressX), math.abs(py - press.pressY)) < 4 then return false end
             press.dragging = true
             if press.tab then press.tab.retained = true end
+            self.dragFeedback = DragFeedback.new(self.parent, self.root, press.source)
             InterfaceMouse.BeginCapture(press.component)
             press.component:SetPos(0, 0)
             press.component:SetSize(0, 0, 1, 1)
         end
         if Native.contains(self, px, py) then
             Native.reorder(self, px, press.gripX)
+            local source, feedback = press.source, self.dragFeedback
+            feedback:SetTargetRect(math.floor(source.x + px - press.pressX + 0.5),
+                math.floor(source.y + py - press.pressY + 0.5), source.width, source.height)
+            feedback.origin:MoveToFront()
+            feedback.active:MoveToFront()
             press.component:MoveToFront()
             return false
         end
@@ -466,11 +475,13 @@ function NisDrag.install(NisPanel)
         Native.detach(self)
         if self._destroyed or not self.root then
             self._nisNativeTransaction = nil
+            if self.dragFeedback then self.dragFeedback:Destroy(); self.dragFeedback = nil end
             if press.tab then press.tab:Release() end
             return false
         end
         if self._nisNative then
             self._nisNativeTransaction = nil
+            if self.dragFeedback then self.dragFeedback:Destroy(); self.dragFeedback = nil end
             if press.tab then press.tab.retained, press.tab.dragOwner = nil, nil end
             return false
         end
@@ -479,7 +490,10 @@ function NisDrag.install(NisPanel)
         capture:SetPos(0, 0)
         capture:SetSize(0, 0, 1, 1)
         Cursor.apply(capture, config.Cursor.TOPLEVEL_V2_MOVE, true)
-        self:_BeginDrag(capture, press.pressX, press.pressY, self.root.width / 2, 6, true)
+        local source = press.source
+        self:_ApplyRect(source.x, source.y, source.width, source.height)
+        self:_BeginDrag(capture, press.pressX, press.pressY,
+            press.pressX - source.x, press.pressY - source.y, true)
         if self.dragState then
             self.dragState.tab = press.tab
             self.dragState.pressX, self.dragState.pressY = press.pressX, press.pressY
@@ -488,6 +502,7 @@ function NisDrag.install(NisPanel)
         else
             Native.restore(self, press.snapshot)
             self._nisNativeTransaction = nil
+            if self.dragFeedback then self.dragFeedback:Destroy(); self.dragFeedback = nil end
             if press.tab then press.tab:Release() end
         end
         return false
@@ -506,6 +521,10 @@ function NisDrag.install(NisPanel)
         self._nisTabPress = nil
         unsubscribe(self)
         InterfaceMouse.EndCapture(press.component)
+        if self.dragFeedback then
+            self.dragFeedback:Destroy()
+            self.dragFeedback = nil
+        end
         if self._nisNative then Native.finishTabDrag(self, commit == false and press.snapshot or nil) end
         if press.dragging and press.tab then
             press.tab.retained = nil

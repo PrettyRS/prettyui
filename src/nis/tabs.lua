@@ -93,14 +93,14 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
     tab.background = sprite(view, visual,
         selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected)
     tab.background:SetSize(NisTabs.WIDTH, NisTabs.HEIGHT)
+    tab.iconSprite = sprite(view, visual, panel.tabIcon, true)
+    tab.iconSprite:SetPos((NisTabs.WIDTH - ICON) / 2, 2)
+    tab.iconSprite:SetSize(ICON, ICON)
     tab.seam = sprite(view, visual, Sprites.NIS_PANEL.tabBarTile)
     tab.seam:SetPos(0, NisTabs.HEIGHT - CORNER)
     tab.seam:SetSize(NisTabs.WIDTH, CORNER)
     tab.seam.isTiling = true
     Components.setHidden(tab.seam, selected)
-    tab.iconSprite = sprite(view, visual, panel.tabIcon, true)
-    tab.iconSprite:SetPos((NisTabs.WIDTH - ICON) / 2, 2)
-    tab.iconSprite:SetSize(ICON, ICON)
     if not preview and not tab.hit then
         tab.hit = Components.new(ui.Layer, view.panel.parent, {
             _categoryPolicy = Components.policyOf(view.panel.root),
