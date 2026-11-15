@@ -103,8 +103,13 @@ function NativeSort.new(Host, View, warn)
         local mapped = sort.mapped[host.key]
         local replaced, changed = #mapped ~= #sort.natives, false
         for _, bg in ipairs(mapped) do
-            if not bg or bg.component ~= byKey[bg.key] then replaced = true; break end
-            if bg.iconKey and (not byKey[bg.iconKey] or spriteID(byKey[bg.iconKey]) ~= bg.icon) then
+            if not bg then
+                changed = true
+            elseif bg.component ~= byKey[bg.key] then
+                replaced = true
+                break
+            end
+            if bg and bg.iconKey and (not byKey[bg.iconKey] or spriteID(byKey[bg.iconKey]) ~= bg.icon) then
                 changed = true
             end
         end
@@ -327,7 +332,9 @@ function NativeSort.new(Host, View, warn)
 
     local function finishNativeSort(group, hook, cancelled)
         local sort = group.nativeSort
-        if not sort or hook and sort.source ~= hook then return end
+        if not sort or hook and sort.source ~= hook then
+            return
+        end
         if WorldMap.isSuspended() then sort.mapCancelled = true; return end
         local pointerSampled = sampleSortPointer(sort)
         if not pointerSampled and not cancelled and sort.source.entry and not sort.finishing then
@@ -401,7 +408,9 @@ function NativeSort.new(Host, View, warn)
         presentNativeSort(group)
         sort.keySubscribed = true
         Event.KeyDown.Subscribe(group.hookID, function(event)
-            if event.gameKey == GameKey.ESCAPE then finishNativeSort(group, nil, true) end
+            if event.gameKey == GameKey.ESCAPE then
+                finishNativeSort(group, nil, true)
+            end
         end)
         sort.focusSubscribed = true
         Event.WindowFocusChanged.Subscribe(group.hookID, function(event)
@@ -447,8 +456,6 @@ function NativeSort.new(Host, View, warn)
         end
     end
 
-    -- Validate the committed order against the visible row; hidden copies can
-    -- retain incomplete drag rows until selected.
     local function nativeSortReady(group)
         local selected = selectedFrame(group)
         if not selected then return false end
@@ -459,7 +466,7 @@ function NativeSort.new(Host, View, warn)
             return false
         end
         if group.grouped then
-            if #current.backgrounds ~= #sort.natives then return false end
+            if #current.backgrounds > #sort.natives then return false end
             local remaining, x = {}, sort.baseX
             for _, entry in ipairs(sort.natives) do remaining[entry.icon] = (remaining[entry.icon] or 0) + 1 end
             for _, bg in ipairs(current.backgrounds) do
@@ -469,6 +476,20 @@ function NativeSort.new(Host, View, warn)
                 end
                 remaining[bg.icon] = remaining[bg.icon] - 1
                 x = x + bg.component.width
+            end
+            if #current.backgrounds < #sort.natives then
+                local before = 0
+                for _, entry in ipairs(sort.row) do
+                    if entry.native then
+                        if remaining[entry.icon] > 0 then
+                            remaining[entry.icon] = remaining[entry.icon] - 1
+                        else
+                            before = before + 1
+                        end
+                    else
+                        group.bindings[entry.panel].beforeNative = before
+                    end
+                end
             end
         end
         for _, host in ipairs(group.hosts) do

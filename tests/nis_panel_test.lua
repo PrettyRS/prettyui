@@ -2762,7 +2762,7 @@ do
             expect(nativePanel._nisNative, binding, "lock/rebuild cycles retain the native binding")
         end
         log = previousLog
-        expect(table.concat(messages, "\n"), "", "locked tab replacement and unlock cycles keep the console quiet")
+        expect(table.concat(messages, "\n"), "", "locked tab replacement and unlock cycles emit no warnings")
     end
     nativePanel:SetScrollPosition(80)
     local lockedPeer = NisPanel.new(area, { categoryID = "auto", x = 20, y = 20 })
@@ -3928,6 +3928,59 @@ do
                     end
                     Mouse.GetPosition = function() return nil end
                 end
+            end
+            -- A native tab can disappear in-place while capture is handed off.
+            -- The remaining contiguous row must settle without waiting for the
+            -- press-time tab count to return (the live trace retained a hidden tail).
+            for _, repaint in ipairs({ false, true }) do
+                notes:rebuild({ 9001, 9002, 9003 }, 1)
+                ranged:rebuild({ 9001, 9002, 9003 }, 2)
+                magic:rebuild({ 9001, 9002, 9003 }, 3)
+                notes.frame.nativeShown, ranged.frame.nativeShown = false, true
+                emit("Logic")
+                placeOwn(nativePanel, 172)
+                placeOwn(peer, 88)
+                placeOwn(nativePanel, 128)
+                local group, binding = peer._nisNative.group, peer._nisNative
+                local source = ranged.backgrounds[2]
+                local raw = { x = source.xyGlobal.x + 23, y = source.xyGlobal.y + 10 }
+                Mouse.GetPosition = function() return raw end
+                nativeHook(source, ui.Hook.ONCLICK, 23, 10)
+                notes.frame.nativeShown = true
+                nativeHook(source, ui.Hook.ONRELEASE, 23, 10)
+                emit("Draw")
+                expect(group.nativeSort ~= nil, true, "handoff starts native sorting before membership changes")
+                for _, copy in ipairs({ notes, ranged, magic }) do
+                    for _, child in ipairs(copy.tabs.children) do
+                        local index = math.floor(child.dynamicID / 4) + 1
+                        child.visible = index < 3
+                        if child.dynamicID % 4 == 0 then
+                            child:SetPos((index - 1) * 44, 0)
+                        else
+                            child:SetPos((index - 1) * 44 + 10, 2)
+                            if repaint and index == 2 then child.spriteID = 9003 end
+                        end
+                    end
+                end
+                ranged.frame.nativeShown = false
+                emit("Draw"); emit("Logic")
+                expect(group.nativeSort, nil, "removed native tab cannot leave the mixed row stuck finishing")
+                expect(peer._nisNative, binding, "native tab removal preserves the PrettyUI binding")
+                local before = repaint and 1 or 2
+                expect(binding.beforeNative, before, "removed native slot is excluded from own insertion counts")
+                expect(nativePanel._nisNative.beforeNative, before, "both own tabs retain their surviving neighbors")
+                local own = binding.tabs[group.current]
+                expect(own.hit.enabled, true, "changed native membership restores tab interaction")
+                expect(own.visual.x, 4 + before * 44, "changed native row leaves no obsolete native gap")
+                local settledX = own.visual.x
+                raw.x = raw.x + 180
+                emit("Draw"); emit("Logic")
+                expect(own.visual.x, settledX, "released changed row does not follow later mouse movement")
+                fire(own.hit, ui.Hook.ONCLICK, 20, 14)
+                fire(own.hit, ui.Hook.ONRELEASE, 20, 14)
+                expect(group.active, peer, "own content is selectable after native membership changes")
+                expectSeparatorClipping(group, "native membership settlement")
+                Mouse.GetPosition = function() return nil end
             end
             notes:rebuild({ 9001, 9002 }, 1)
             ranged:rebuild({ 9001, 9002 }, 2)
