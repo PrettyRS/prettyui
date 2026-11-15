@@ -28,10 +28,7 @@ hero:
 - Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
-- Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default.
-- Restored the [panel ribbon](index.html#ribbon-bar-api) with automatic `NisPanel` buttons using their tab icons. The cog opens ribbon placement and auto-hide settings.
-- Added `NisPanel:SetActive()`, `IsActive()`, and an `active` constructor default. Disabled panels leave no body or tab; reactivation restores their placement, including native hosts. Stable IDs persist enabled state across reloads.
-- Added a Classic Interface sidebar for `NisPanel`: a full-height 44-unit rail with one selectable 360-unit content page, scrollable icons, native UI reservation, and optional gameview resizing. Modern bounds, groups, native membership, and ribbon preferences restore on mode exit.
+- Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default. On classic interface mode, NisPanels adapt to an osrs-like sidebar layout.
 
 ### Changed
 - PrettyUI components are now hidden while the player is viewing the world map.
