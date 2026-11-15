@@ -79,11 +79,15 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         subscribeHost(group, host.tabs)
         for _, child in ipairs(host.children) do subscribeHost(group, child) end
         if group.grouped then
-            host.seam = Components.new(ui.Sprite, host.overflow.viewport, { _categoryPolicy = "auto" })
-            host.seam.spriteID = art.tabBarTile
-            host.seam.isTiling = true
-            host.seam.enabled, host.seam.clickthrough = false, true
-            Components.setHidden(host.seam, true)
+            -- Two strips leave only the selected own tab open. Keep them outside
+            -- the tab viewport so gutters and trailing native buffer stay covered.
+            for _, key in ipairs({ "seam", "trailingSeam" }) do
+                local seam = Components.new(ui.Sprite, host.chrome, { _categoryPolicy = "auto" })
+                host[key] = seam
+                seam.spriteID, seam.isTiling = art.tabBarTile, true
+                seam.enabled, seam.clickthrough = false, true
+                Components.setHidden(seam, true)
+            end
         else
             host.tabBuffer = ownSprite(host.chrome, art.tabBufferTile)
             host.tabBuffer:SetSize(tabBand(host).width, HEIGHT - SEAM)
@@ -359,7 +363,7 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             if host.overflow then oldOverflows[#oldOverflows + 1] = host.overflow end
             if not group.frames[host.key] then byFrame[host.key] = nil end
             nativeTabs[host.key] = host.nativeTab
-            for _, key in ipairs({ "tabBuffer", "seam", "divider" }) do
+            for _, key in ipairs({ "tabBuffer", "seam", "trailingSeam", "divider" }) do
                 if host[key] and live(group) then host[key]:Destroy() end
             end
         end
@@ -581,13 +585,10 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         end
         for _, host in ipairs(group.hosts) do
             if host.nativeTab then attempt(function() destroyTab(host.nativeTab); host.nativeTab = nil end) end
-            if host.seam then
-                attempt(function() if live(group) then host.seam:Destroy() end; host.seam = nil end)
-            end
             if host.overflow then
                 attempt(function() host.overflow:Destroy(); host.overflow = nil end)
             end
-            for _, key in ipairs({ "tabBuffer", "seam", "divider", "chrome" }) do
+            for _, key in ipairs({ "tabBuffer", "seam", "trailingSeam", "divider", "chrome" }) do
                 local owned = host[key]
                 if owned then
                     attempt(function()

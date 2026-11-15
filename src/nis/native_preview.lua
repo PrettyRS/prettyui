@@ -121,12 +121,12 @@ function NativePreview.new(Host, View, actions)
             end
             for index = 1, state.count do
                 local member = members and members[index] or panel
+                local selected = member == (panel._nisGroup and panel._nisGroup.active or panel)
+                if selected then state.selectedIndex = index end
                 local visual = Components.new(ui.Layer, state.overflow.viewport, { _categoryPolicy = "auto" })
                 visual:SetSize(WIDTH, HEIGHT)
                 visual.clickthrough = true
-                local background = ownSprite(visual,
-                    member == (panel._nisGroup and panel._nisGroup.active or panel)
-                        and art.tabSelected or art.tabUnselected)
+                local background = ownSprite(visual, selected and art.tabSelected or art.tabUnselected)
                 background:SetSize(WIDTH, HEIGHT)
                 local icon = ownSprite(visual, member.tabIcon or art.defaultIcon)
                 icon:SetPos(8, 2)
@@ -148,9 +148,24 @@ function NativePreview.new(Host, View, actions)
         local before, index = insertionAt(occupiedGroup, host,
             (pointerX or x + band.x + occupied - tabScroll(host)) - x - band.x + tabScroll(host))
         state.insertion.beforeNative, state.insertion.index = before, index
+        local base = 0
+        if before > 0 then
+            local bg = host.grouped and host.backgrounds[before]
+            base = bg and bg.layout.x + bg.component.width or WIDTH
+        elseif host.grouped then
+            base = host.backgrounds[1].layout.x
+        end
+        local previewHost = state.previewHost
+        previewHost.frame, previewHost.content, previewHost.tabs, previewHost.tabControls =
+            host.frame, host.content, host.tabs, host.tabControls
+        local scroll = (occupiedGroup and occupiedGroup.tabScroll or tabScroll(host)) or 0
+        local available = Overflow.width(previewHost, occupied + state.count * WIDTH)
+        local selectedLeft = base + (index + state.selectedIndex - 2) * WIDTH
+        scroll = math.max(0, math.max(math.min(scroll, selectedLeft), selectedLeft + WIDTH - available))
         state.host = host
         if occupiedGroup then
             occupiedGroup.dockPreview = state
+            occupiedGroup.tabScroll, occupiedGroup.scrollRequested = scroll, true
             align(occupiedGroup)
             occupiedGroup.hosts[occupiedGroup.current].chrome:MoveToFront()
         elseif host.grouped then
@@ -170,11 +185,8 @@ function NativePreview.new(Host, View, actions)
         end
         if chrome.x ~= x or chrome.y ~= y then chrome:SetPos(x, y) end
         if chrome.width ~= width or chrome.height ~= height then chrome:SetSize(width, height) end
-        local previewHost = state.previewHost
-        previewHost.frame, previewHost.content, previewHost.tabs, previewHost.tabControls =
-            host.frame, host.content, host.tabs, host.tabControls
-        local scroll = state.overflow:Layout(occupied + state.count * WIDTH,
-            occupiedGroup and occupiedGroup.tabScroll or tabScroll(host), true, false)
+        scroll = state.overflow:Layout(occupied + state.count * WIDTH,
+            occupiedGroup and occupiedGroup.tabScroll or scroll, true, false)
         local viewport = state.overflow.viewport
         local bufferX = state.overflow.x + ((host.grouped or occupiedGroup) and occupied + state.count * WIDTH or 0) - scroll
         local bufferWidth = math.max(0, state.overflow.x + state.overflow.width - bufferX)
@@ -189,13 +201,6 @@ function NativePreview.new(Host, View, actions)
         if state.nativeTab then
             local target = state.overflow.x + (before == 0 and state.count * WIDTH or 0) - scroll - viewport.x
             state.nativeTab:SetPos(slide(state.nativeTab.x, target), bandY)
-        end
-        local base = 0
-        if before > 0 then
-            local bg = host.grouped and host.backgrounds[before]
-            base = bg and bg.layout.x + bg.component.width or WIDTH
-        elseif host.grouped then
-            base = host.backgrounds[1].layout.x
         end
         for memberIndex, visual in ipairs(state.tabs) do
             local tx = state.overflow.x + base + (index + memberIndex - 2) * WIDTH - scroll - viewport.x
@@ -226,6 +231,12 @@ function NativePreview.new(Host, View, actions)
                 Preview.clear(state.panel)
             end
         end
+    end
+
+    function Preview.draw()
+        Preview.validate()
+        local state = previewState
+        if state and state.host.frame.visibleGlobal then state.chrome:MoveToFront() end
     end
 
     function Preview.active()

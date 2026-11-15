@@ -2146,6 +2146,19 @@ do
         end
         return true
     end
+    -- Sample painter order and clipping, not just component visibility flags.
+    local function paintedAt(node, x, y, transparentSprite)
+        if node.hidden or node.visibleGlobal == false then return nil end
+        local origin = node.xyGlobal
+        if x < origin.x or x >= origin.x + node.width
+            or y < origin.y or y >= origin.y + node.height then return nil end
+        for index = #node.renderChildren, 1, -1 do
+            local painted = paintedAt(node.renderChildren[index],
+                x + (node.scrollX or 0), y + (node.scrollY or 0), transparentSprite)
+            if painted then return painted end
+        end
+        return node.spriteID and node.spriteID ~= transparentSprite and node or nil
+    end
     local function drawable(label, owner)
         if not rendered(label) then return false end
         local top = label.y - owner.scrollY
@@ -2308,6 +2321,24 @@ do
     end
     do
         local serial = 0
+        local backdrop = nativeNodes[id.Component.TOPLEVEL_V2__NOTES_WINDOW_TAB_BACKGROUND]
+        local oldSprite = backdrop.spriteID
+        backdrop.spriteID = id.Sprite.RS3_CHILD_TAB_UNSELECTED
+        local function expectIncoming(incoming)
+            local insertion = incoming.dragState.nativeInsertion
+            local left = notes.tabs.xyGlobal.x + insertion.beforeNative * 44
+                + (insertion.index - 1) * 40 - notes.tabs.scrollX
+            local top = notes.tabs.xyGlobal.y
+            expect(left >= notes.tabs.xyGlobal.x, true, "incoming tab starts inside the native viewport")
+            expect(left + 40 <= notes.tabs.xyGlobal.x + notes.tabs.width, true,
+                "incoming tab fits inside the native viewport")
+            local painted = paintedAt(area, left + 20, top + 12)
+            expect(painted and painted.spriteID, incoming.tabIcon,
+                "incoming tab icon paints above a late native frame repaint")
+            painted = paintedAt(area, left + 1, top + 1)
+            expect(painted and painted.spriteID, id.Sprite.RS3_CHILD_TAB_SELECTED,
+                "incoming tab background stays visible during dragging")
+        end
         for _, occupied in ipairs({ false, true }) do
             for before = 0, 1 do
                 for _, finish in ipairs({ "release", "escape", "leave" }) do
@@ -2319,7 +2350,7 @@ do
                     end
                     local panelID = "native:first-drop:" .. serial
                     local incoming = NisPanel.new(area, { categoryID = "auto", id = panelID,
-                        x = 50, y = 450, width = 280, height = 180 })
+                        x = 50, y = 450, width = 280, height = 180, tabIcon = 93001 })
                     local root, content = incoming.root, incoming.content
                     local overlay = component(area, "preview input overlay")
                     overlay:SetSize(20, 20)
@@ -2331,6 +2362,9 @@ do
                     expect(incoming.dragState.nativeInsertion.beforeNative, before,
                         "first native hover chooses the requested mixed insertion point")
                     for _ = 1, 13 do emit("Logic") end
+                    notes.frame:MoveToFront()
+                    emit("Draw")
+                    expectIncoming(incoming)
                     expect(incoming.root.hidden, true, "native drop preview hides the incoming body")
                     expect(incoming.dragFeedback.active.hidden, false, "native drop preview leaves the outline visible")
                     expect(incoming.dragLayer.enabled, true, "native drop preview retains drag input")
@@ -2381,6 +2415,65 @@ do
                 end
             end
         end
+        for _, width in ipairs({ 121, 80 }) do
+            for _, occupied in ipairs({ false, true }) do
+                for _, finish in ipairs({ "release", "escape" }) do
+                    for _, copy in ipairs({ notes, ranged }) do
+                        copy.frame:SetSize(width + 8, copy.frame.height)
+                        copy.body:SetSize(width, copy.body.height)
+                        copy.scroll:SetSize(width, copy.scroll.height)
+                        copy.tabs:SetPos(4, copy.tabs.y)
+                        copy.tabs:SetSize(width, 28)
+                        copy.tabs:SetScrollSize(88, 28)
+                        copy.tabControls:SetSize(width, 28)
+                    end
+                    local anchor
+                    if occupied then
+                        anchor = NisPanel.new(area, { categoryID = "auto" })
+                        expect(anchor:DockTo(notes.frame), true, "narrow destination accepts an existing own tab")
+                    end
+                    local incoming = NisPanel.new(area, { categoryID = "auto",
+                        x = 50, y = 450, width = 280, height = 180, tabIcon = 93002 })
+                    begin(incoming)
+                    move(incoming, notes.frame.x + notes.body.x + width - 2,
+                        notes.frame.y + notes.tabs.y + 12)
+                    for _ = 1, 5 do
+                        emit("Logic")
+                        expect(incoming.dragState.nativeTarget ~= nil, true,
+                            "overflow gutters retain the native drop target")
+                        notes.frame:MoveToFront()
+                        emit("Draw")
+                        expectIncoming(incoming)
+                    end
+                    if finish == "release" then
+                        release(incoming)
+                        expect(incoming._nisNative ~= nil, true, "narrow preview commits native docking")
+                        emit("Logic"); emit("Draw")
+                        local binding = incoming._nisNative
+                        local tab = binding.tabs[binding.group.current]
+                        expect(tab.hit.hidden, false, "dropped incoming tab remains visible and interactive")
+                        local painted = paintedAt(area, tab.hit.xyGlobal.x + 20, tab.hit.xyGlobal.y + 12)
+                        expect(painted and painted.spriteID, incoming.tabIcon, "dropped tab icon remains painted")
+                        incoming:Undock()
+                    else
+                        incoming:_CancelDrag()
+                    end
+                    incoming:Destroy()
+                    if anchor then anchor:Undock(); anchor:Destroy() end
+                end
+            end
+        end
+        for _, copy in ipairs({ notes, ranged }) do
+            copy.frame:SetSize(379, copy.frame.height)
+            copy.body:SetSize(371, copy.body.height)
+            copy.scroll:SetSize(371, copy.scroll.height)
+            copy.tabs:SetPos(4, copy.tabs.y)
+            copy.tabs:SetSize(371, 28)
+            copy.tabs:SetScrollSize(0, 0)
+            copy.tabs:SetScrollPos(0, 0)
+            copy.tabControls:SetSize(371, 28)
+        end
+        backdrop.spriteID = oldSprite
     end
     local title, rows, nativeBuilds, nativeCleanups = nil, {}, 0, 0
     local nativePanel = NisPanel.new(area, {
@@ -3292,20 +3385,6 @@ do
             "PrettyUI tab occupies the gap between native tabs")
         rapidNativeSwitch(0, 84, 48)
         do
-            -- Sample actual painter order, not just hidden flags: an enabled
-            -- native backdrop can cover otherwise-visible GAME_AREA artwork.
-            local function paintedAt(node, x, y, transparentSprite)
-                if node.hidden or node.visibleGlobal == false then return nil end
-                local origin = node.xyGlobal
-                if x < origin.x or x >= origin.x + node.width
-                    or y < origin.y or y >= origin.y + node.height then return nil end
-                for index = #node.renderChildren, 1, -1 do
-                    local painted = paintedAt(node.renderChildren[index],
-                        x + (node.scrollX or 0), y + (node.scrollY or 0), transparentSprite)
-                    if painted then return painted end
-                end
-                return node.spriteID and node.spriteID ~= transparentSprite and node or nil
-            end
             local function paintedWithDrag(source, x, y)
                 local mode = source.dragConfig.renderBehaviour
                 if mode == ui.DragRenderBehaviour.OPAQUE_OVERLAY
@@ -3334,10 +3413,26 @@ do
                     end
                 end
             end
+            local function expectContinuousSeparator(group, message)
+                local host = group.hosts[group.current]
+                local tab = group.bindings[group.active].tabs[group.current]
+                local viewport = host.overflow.viewport
+                local left = math.max(tab.visual.xyGlobal.x, viewport.xyGlobal.x)
+                local right = math.min(tab.visual.xyGlobal.x + 40, viewport.xyGlobal.x + viewport.width)
+                local y = host.chrome.xyGlobal.y + host.tabs.y + 26
+                for x = host.content.x, host.content.x + host.content.width - 1 do
+                    local globalX = host.chrome.xyGlobal.x + x
+                    local painted = paintedAt(area, globalX, y)
+                    local inSelected = globalX >= left and globalX < right
+                    expect(painted and painted.spriteID, inSelected and id.Sprite.RS3_CHILD_TAB_SELECTED
+                        or id.Sprite.RS3_CHILD_TAB_BAR_TILE, message .. " opens only beneath the selected tab")
+                end
+            end
             for _, selected in ipairs({ nativePanel, peer }) do
                 selected:SelectTab()
                 local group = selected._nisNative.group
                 expectSeparatorClipping(group, "native selection")
+                expectContinuousSeparator(group, "native selection separator")
                 for _, member in ipairs({ nativePanel, peer }) do
                     local tab = member._nisNative.tabs[group.current]
                     local origin = tab.visual.xyGlobal
@@ -3364,21 +3459,28 @@ do
             do
                 local binding, group = peer._nisNative, peer._nisNative.group
                 local oldWidth = notes.body.width
+                local host = group.hosts[group.current]
+                local function settle()
+                    for _ = 1, 9 do emit("Logic") end
+                    emit("Draw")
+                end
                 local function resizeRow(width)
+                    local nativeWidth = width < 88 and width - 22 or width
                     for _, copy in ipairs({ notes, ranged }) do
                         copy.frame:SetSize(width + 8, copy.frame.height)
                         copy.body:SetSize(width, copy.body.height)
                         copy.scroll:SetSize(width, copy.scroll.height)
-                        copy.tabs:SetPos(4, copy.tabs.y)
-                        copy.tabs:SetSize(width, 28)
+                        copy.tabs:SetPos(width < 88 and 15 or 4, copy.tabs.y)
+                        copy.tabs:SetSize(nativeWidth, 28)
+                        copy.tabs:SetScrollSize(88, 28)
+                        copy.tabs:SetScrollPos(math.min(copy.tabs.scrollX, math.max(0, 88 - nativeWidth)), 0)
                         copy.tabControls:SetSize(width, 28)
                     end
                 end
                 resizeRow(121)
-                emit("Logic")
+                settle()
                 expect(peer._nisNative, binding, "overflow retains the existing native binding")
                 expect(nativePanel._nisNative.group, group, "overflow retains every mixed member")
-                local host = group.hosts[group.current]
                 local view = host.overflow
                 expect(host.tabs.x, 15, "mixed overflow reserves the captured native left gutter")
                 expect(host.tabs.width, 99, "mixed overflow uses the captured 99-unit viewport")
@@ -3433,12 +3535,167 @@ do
                 expect(peer._nisNative.tabs[group.current].hit.hidden, false,
                     "programmatic selection reveals an overflowing PrettyUI tab")
                 resizeRow(oldWidth)
-                emit("Logic")
+                settle()
                 expect(peer._nisNative, binding, "growing the native row preserves membership")
                 expect(group.tabScroll, 0, "growing the row removes the scroll displacement")
                 expect(host.tabs.x, 4, "growing restores the full native tab viewport")
                 expect(view.leftHit.hidden, true, "navigation disappears once all mixed tabs fit")
                 expect(view.rightHit.hidden, true, "both overflow arrows disappear when fitting")
+
+                nativePanel:SelectTab()
+                nativePanel:SetScrollPosition(80)
+                local content, row = nativePanel.content, rows[4]
+                local builds, cleanups = nativeBuilds, nativeCleanups
+                local bodySizes, scans, writes = 0, 0, 0
+                local setSize = nativePanel.root.SetSize
+                nativePanel.root.SetSize = function(self, ...)
+                    bodySizes = bodySizes + 1
+                    return setSize(self, ...)
+                end
+                local originals = {}
+                for _, copy in ipairs({ notes, ranged }) do
+                    local tabs = copy.tabs
+                    originals[tabs] = {}
+                    for _, method in ipairs({ "IterateDynamicComponents", "SetSize", "SetPos",
+                        "SetScrollSize", "SetScrollPos" }) do
+                        local original = tabs[method]
+                        originals[tabs][method] = original
+                        tabs[method] = function(self, ...)
+                            if method == "IterateDynamicComponents" then scans = scans + 1
+                            else writes = writes + 1 end
+                            return original(self, ...)
+                        end
+                    end
+                end
+                local backdrop, oldSprite = host.backdrop, host.backdrop.spriteID
+                backdrop.spriteID = id.Sprite.RS3_CHILD_TAB_UNSELECTED
+                local oldFrameSprite = host.frame.spriteID
+                host.frame.spriteID = id.Sprite.RS3_CHILD_TAB_UNSELECTED
+                local marker = component(nativePanel.root, "retained resize content")
+                marker:SetSize(8, 8)
+                marker.spriteID = 93003
+                local function retainedResize()
+                    expect(nativePanel._nisNative.group, group, "resize retains native membership")
+                    expect(group.active, nativePanel, "resize retains selected page")
+                    expect(nativePanel.content, content, "resize retains mounted content")
+                    expect(rows[4], row, "resize retains consumer control handles")
+                    expect(nativeBuilds, builds, "resize does not rebuild content")
+                    expect(nativeCleanups, cleanups, "resize does not clean up content")
+                    expect(drawable(row, nativePanel), true, "resizing keeps the scrolled content drawable")
+                    expect(peer.root.hidden, true, "resizing does not reveal inactive content")
+                    expect(nativePanel.scrollY, 80, "resizing preserves content scroll position")
+                    expect(nativePanel.root.xyGlobal.x, host.content.xyGlobal.x, "content follows native horizontal bounds")
+                    expect(nativePanel.root.xyGlobal.y, host.content.xyGlobal.y, "content follows native vertical bounds")
+                    expect(paintedAt(area, marker.xyGlobal.x + 1, marker.xyGlobal.y + 1), marker,
+                        "content paints above late native resize repaints")
+                    expectContinuousSeparator(group, "resize separator")
+                end
+                local frozenTabs = {}
+                for _, member in ipairs(group.members) do
+                    local tab = member._nisNative.tabs[group.current]
+                    frozenTabs[tab] = { x = tab.visual.x, y = tab.visual.y }
+                end
+                for step, width in ipairs({ 169, 168, 167, 121, 100, 88, 87, 80, 64 }) do
+                    resizeRow(width)
+                    host.frame:MoveToFront()
+                    scans, writes = 0, 0
+                    emit("Draw") -- native resize may land after Logic
+                    emit("Logic"); emit("Draw")
+                    if step > 1 then
+                        expect(scans, 0, "continued resizing does not discover native rows")
+                        expect(writes, 0, "continued resizing does not fight native layout setters")
+                    end
+                    expect(bodySizes, step, "each changed width updates the visible page once")
+                    expect(nativePanel.root.width, width, "content follows live native width before settlement")
+                    expect(nativePanel.root.hidden, false, "resizing keeps the selected page visible")
+                    expect(nativePanel.root.enabled, true, "live content retains input")
+                    expect(nativePanel._nisNative.tabs[group.current].hit.hidden, true,
+                        "stale tab hit targets are hidden during resize")
+                    for tab, frozen in pairs(frozenTabs) do
+                        expect(tab.visual.x, frozen.x, "resize freezes tab layout horizontally")
+                        expect(tab.visual.y, frozen.y, "resize freezes tab layout vertically")
+                        expect(tab.visual.hidden, false, "resize retains tab artwork")
+                        local x, y = tab.visual.xyGlobal.x + 1, tab.visual.xyGlobal.y + 1
+                        local right = host.overflow.viewport.xyGlobal.x + host.overflow.viewport.width
+                        local painted = paintedAt(area, x, y)
+                        if x < right then
+                            expect(painted, tab.background, "frozen tab paints above the native resize")
+                        else
+                            expect(painted ~= tab.background, true, "frozen tabs clip at the shrinking frame")
+                        end
+                    end
+                    retainedResize()
+                end
+                local settledSizes = bodySizes
+                scans, writes = 0, 0
+                for _ = 1, 30 do emit("Draw") end
+                expect(bodySizes, settledSizes, "extra render frames do not repeat content layout")
+                for _ = 1, 6 do emit("Logic"); emit("Draw") end
+                expect(bodySizes, settledSizes, "unchanged bounds do not repeat content layout")
+                expect(scans, 0, "waiting for settlement does not discover rows")
+                expect(writes, 0, "waiting for settlement does not write native geometry")
+                emit("Logic")
+                host.frame:MoveToFront() -- final native repaint can follow the settling Logic
+                emit("Draw")
+                expect(bodySizes, settledSizes, "tab settlement does not reflow already-sized content")
+                expect(nativePanel.root.width, 64, "settlement retains the final content width")
+                expect(nativePanel.root.hidden, false, "settlement keeps the selected page visible")
+                expect(nativePanel.scrollY, 80, "settlement retains the selected page's scroll")
+                retainedResize()
+                local tab = nativePanel._nisNative.tabs[group.current]
+                expect(tab.hit.hidden, false, "settlement reveals the selected overflowing tab")
+                expect(tab.hit.width, 40, "settlement reveals the full selected tab")
+                expect(paintedAt(area, tab.hit.xyGlobal.x + 1, tab.hit.xyGlobal.y + 1),
+                    tab.background, "settled tab paints above the final native repaint")
+                expect(hitAt(area, tab.hit.x + 1, tab.hit.y + 1), tab.hit,
+                    "settled tab input matches its artwork")
+                for _ = 1, 12 do emit("Logic"); emit("Draw") end
+                expect(bodySizes, settledSizes, "idle updates do not repeat content layout")
+
+                resizeRow(oldWidth)
+                emit("Draw")
+                expect(nativePanel.root.width, oldWidth, "growing updates content before settlement")
+                retainedResize()
+                settle()
+                expect(bodySizes, settledSizes + 1, "growing lays out content once without a second settlement reflow")
+                expect(group.tabScroll, 0, "settled growth removes overflow displacement")
+                retainedResize()
+                settledSizes = bodySizes
+                local frameHeight, contentHeight, scrollHeight =
+                    host.frame.height, host.content.height, host.scroll.height
+                for step, delta in ipairs({ -1, -10, -20 }) do
+                    host.frame:SetSize(host.frame.width, frameHeight + delta)
+                    host.content:SetSize(host.content.width, contentHeight + delta)
+                    host.scroll:SetSize(host.scroll.width, scrollHeight + delta)
+                    emit("Draw"); emit("Logic")
+                    expect(bodySizes, settledSizes + step, "height-only resizing updates visible content once")
+                    expect(nativePanel.root.height, contentHeight + delta, "content follows live native height")
+                    retainedResize()
+                end
+                settledSizes = bodySizes
+                settle()
+                expect(bodySizes, settledSizes, "height settlement does not repeat content layout")
+                expect(nativePanel.root.height, contentHeight - 20, "height settlement retains live bounds")
+                host.frame:SetSize(host.frame.width, frameHeight)
+                host.content:SetSize(host.content.width, contentHeight)
+                host.scroll:SetSize(host.scroll.width, scrollHeight)
+                settle()
+                resizeRow(121)
+                emit("Draw")
+                nativePanel:SelectTab()
+                expect(nativePanel.root.hidden, false, "explicit selection keeps the resizing page visible")
+                expect(nativePanel.root.width, 121, "explicit selection uses current native bounds")
+                retainedResize()
+                resizeRow(oldWidth)
+                settle()
+                nativePanel.root.SetSize = setSize
+                for tabs, methods in pairs(originals) do
+                    for method, original in pairs(methods) do tabs[method] = original end
+                end
+                backdrop.spriteID = oldSprite
+                host.frame.spriteID = oldFrameSprite
+                marker:Destroy()
+                peer:SelectTab()
             end
             local originalRoot = peer.root
             local originalScroll = nativePanel.scrollY

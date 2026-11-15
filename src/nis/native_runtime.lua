@@ -2,6 +2,8 @@
 local WorldMap = require("src/core/world_map")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
 
+local RESIZE_SETTLE_TICKS = 8 -- 160 ms at the client's fixed 50 Hz logic rate.
+
 local NativeRuntime = {}
 
 function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending, actions)
@@ -50,6 +52,54 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
         end
     end
 
+    -- Keep native row discovery/reconciliation deferred while the visible page
+    -- follows the live bounds through its normal layout and overflow handling.
+    local function deferResize(group)
+        local state = group.resizeState
+        if group.failure or group.attaching or group.nativeSort
+            or group.tabDrag or group.dockPreview or group.pending or group.lockTransition
+            or group.transient and not state then
+            group.resizeState = nil
+            return false
+        end
+        local current = selectedFrame(group)
+        local host = current and group.hosts[current]
+        if not host or current ~= group.current or not live(group)
+            or not same(component(host.spec.frame), host.frame)
+            or not same(host.frame.parent, group.area) then
+            group.resizeState = nil
+            return false
+        end
+        local width, height = host.frame.width, host.frame.height
+        local contentWidth, contentHeight = host.content.width, host.content.height
+        if not state then
+            -- Content-only reflows (for example lock/unlock) are not resize gestures.
+            if width == host.chrome.width and height == host.chrome.height then return false end
+            checkCapacity(group)
+            reconcileRoots(group)
+            local view = host.overflow
+            state = { width = width, height = height,
+                contentWidth = contentWidth, contentHeight = contentHeight, tick = Runtime.logicSequence,
+                viewportWidth = view.viewport.width, viewportHeight = view.viewport.height,
+                rightGutter = math.max(0, view.bandWidth - (view.x - host.content.x) - view.width) }
+            group.resizeState = state
+            suspend(group, true)
+            return true
+        end
+        if width ~= state.width or height ~= state.height
+            or contentWidth ~= state.contentWidth or contentHeight ~= state.contentHeight then
+            checkCapacity(group)
+            reconcileRoots(group)
+            state.width, state.height = width, height
+            state.contentWidth, state.contentHeight = contentWidth, contentHeight
+            state.tick = Runtime.logicSequence
+        end
+        if Runtime.logicSequence - state.tick < RESIZE_SETTLE_TICKS then return true end
+        group.resizeState = nil
+        for _, copy in ipairs(group.hosts) do copy.tabReset = true end
+        return false, true
+    end
+
     local function tick()
         if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI() then return end
         Runtime.logicSequence = Runtime.logicSequence + 1
@@ -80,6 +130,8 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                 group.mapPaused = nil
                 group.capacityLost = nil
                 local ok, problem = pcall(function()
+                    local resizing, settledResize = deferResize(group)
+                    if resizing then return end
                     syncObservers(group)
                     syncClientSort(group)
                     if group.nativeSort and (editingLocked(group) or group.nativeSort.mapCancelled) then
@@ -158,6 +210,7 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                         end
                         if group.failure then error(group.failure) end
                         align(group)
+                        if settledResize then group.resizeRaisePending = true end
                         if lockReflow or repainted or rootReflow or settledSort then raiseGroup(group) end
                         if changed or selectionChanged or settledSort then actions.saveGroup(group) end
                         if group.mapSelection then
@@ -199,12 +252,24 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
         for index = #groups, 1, -1 do
             local group = groups[index]
             if not group.dead and #group.members > 0 then
+                local resizing, settledResize = false, false
                 if not group.mapPaused and not group.members[1]._nisTopLevelHidden
                     and live(group) and group.area.visibleGlobal ~= false then
-                    local ok, problem = pcall(syncClientSort, group)
-                    if not ok then group.failure = problem end
+                    local ok, result, settled = pcall(deferResize, group)
+                    if not ok then
+                        group.failure, resizing = result, true
+                    else
+                        resizing, settledResize = result, settled
+                        if not resizing then
+                            local sorted, problem = pcall(syncClientSort, group)
+                            if not sorted then group.failure = problem end
+                        end
+                    end
                 end
-                if group.nativeSort then
+                if resizing then
+                    local ok, problem = pcall(View.presentResize, group)
+                    if not ok then group.failure = problem end
+                elseif group.nativeSort then
                     if not group.mapPaused and not group.members[1]._nisTopLevelHidden
                         and live(group) and group.area.visibleGlobal ~= false then
                         syncObservers(group)
@@ -212,19 +277,24 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                         -- after Logic, including multiple paints between logic ticks.
                         presentNativeSort(group)
                     end
-                elseif not group.mapPaused and not group.members[1]._nisTopLevelHidden
+                elseif not resizing and not group.mapPaused and not group.members[1]._nisTopLevelHidden
                     and live(group) and group.area.visibleGlobal ~= false then
                     local ok, changed = pcall(nativeRowChanged, group)
                     if not ok then
                         group.failure = changed
-                    elseif group.paintPending or changed then
+                    elseif group.paintPending or changed or settledResize then
                         -- Reacquire the final native row and stacking before painting.
                         if actions.sync(group.members[1]) and selectedFrame(group) then raiseGroup(group) end
                         group.paintPending = nil
+                        group.resizeRaisePending = nil
+                    elseif group.resizeRaisePending then
+                        if selectedFrame(group) then raiseGroup(group) end
+                        group.resizeRaisePending = nil
                     end
                 end
             end
         end
+        Preview.draw()
     end
 
     function Runtime.start()

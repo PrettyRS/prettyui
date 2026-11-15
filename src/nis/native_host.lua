@@ -450,11 +450,13 @@ function Host.new(byFrame)
         if not frame or not frame.visibleGlobal or not same(frame.parent, area) then return nil end
         local tabs = component(spec.TABS)
         local grouped = tabs and tabs.visible == true
-        local band = grouped and tabs or component(spec.CONTENT)
-        if not band then return nil end
+        local content = component(spec.CONTENT)
+        local band = grouped and tabs or content
+        if not band or not content then return nil end
         local top = band.xyGlobal
         local targetY = grouped and top.y or frame.xyGlobal.y
-        if x >= top.x and x < top.x + band.width and y >= targetY and y < top.y + HEIGHT then
+        local left = content.xyGlobal.x
+        if x >= left and x < left + content.width and y >= targetY and y < top.y + HEIGHT then
             return capture(spec, area, true)
         end
     end
