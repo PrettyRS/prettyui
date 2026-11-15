@@ -140,7 +140,36 @@ ui = {
     },
 }
 ui.Layer.new = function(parent) return component(parent, "layer") end
-ui.Sprite.new = function(parent) return component(parent, "sprite") end
+Plugin = { resources = {
+    encounter = { runtimeSprite = {} },
+    alternate = { runtimeSprite = {} },
+} }
+ui.Sprite.new = function(parent)
+    local result = component(parent, "sprite")
+    return setmetatable(result, {
+        __index = function(self, key)
+            if key == "sprite" then return rawget(self, "_sprite") end
+            if key == "spriteID" then return rawget(self, "_spriteID") end
+        end,
+        __newindex = function(self, key, value)
+            if key == "spriteID" then
+                assert(type(value) == "number", "spriteID accepts built-in numeric IDs only")
+                rawset(self, "_spriteID", value)
+                rawset(self, "_sprite", value)
+            elseif key == "sprite" then
+                assert(type(value) == "number" or
+                    (type(value) == "table" and value.runtimeSprite),
+                    "sprite accepts numeric IDs or loaded image resources")
+                rawset(self, "_spriteID", type(value) == "number" and value or nil)
+                rawset(self, "_sprite", type(value) == "number" and value or value.runtimeSprite)
+                rawset(self, "spriteWrites", (self.spriteWrites or 0) + 1)
+            else
+                rawset(self, key, value)
+            end
+        end,
+    })
+end
+local nextSpriteID = 1000
 id = {
     Component = {
         TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP = (1010 << 16) | 71,
@@ -152,7 +181,12 @@ id = {
         TOPLEVEL_V2_GENERAL_VARP = 101, TOPLEVEL_V2_CUSTOMIZATION_LOCK = 102,
         TOPLEVEL_V2_SKINS_VARP = 103, TOPLEVEL_V2_TRANSPARENCY = 104,
     },
-    Sprite = setmetatable({}, { __index = function(_, key) return key end }),
+    Sprite = setmetatable({}, { __index = function(self, key)
+        local spriteID = nextSpriteID
+        nextSpriteID = nextSpriteID + 1
+        rawset(self, key, spriteID)
+        return spriteID
+    end }),
 }
 var = { VarPlayer = {
     TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, { __index = function(_, key)
@@ -317,16 +351,19 @@ expect(buttons(), nil, "zero panels do not allocate ribbon")
 expect(modeReads, 0, "zero registrations never consult live classic mode")
 assert(events.prettyui_ribbon_bar)()
 expect(modeReads, 0, "zero-registration logic avoids mode/native lookup")
-local first = panel("first tab icon", "First", true)
-local second = panel("second tab icon", nil, true)
+local first = panel(Plugin.resources.encounter, "First", true)
+local second = panel(9001, nil, true)
 RibbonBar.register(first)
 RibbonBar.register(second) -- No stable ID is required.
 local surface, roots = buttons()
 expect(surface ~= nil, true, "ribbon mounts after registration")
 expect(#roots, 3, "settings plus both panels have buttons")
-expect(roots[2].children[2].spriteID, first.tabIcon, "first tab icon matches")
-expect(roots[3].children[2].spriteID, second.tabIcon, "second tab icon matches")
-expect(roots[3].children[2].spriteID ~= roots[2].children[2].spriteID, true, "icons do not substitute")
+expect(roots[2].children[2].sprite, Plugin.resources.encounter.runtimeSprite,
+    "resource icon renders on the modern ribbon")
+expect(roots[2].children[2].spriteID, nil, "resource icon does not become a built-in ID")
+expect(roots[3].children[2].spriteID, second.tabIcon, "numeric tab icon renders as a built-in ID")
+expect(roots[3].children[2].sprite ~= roots[2].children[2].sprite, true,
+    "icons do not substitute")
 expect(roots[2].parent, surface, "first button belongs to ribbon")
 expect(roots[3].parent, surface, "second button belongs to ribbon")
 expect(tooltips.forTarget[roots[2]], "First", "tooltip matches tab text")
@@ -336,9 +373,12 @@ expect(roots[2].children[1].spriteID, id.Sprite.RS3_BTN_MENU_7_3,
 expect(roots[3].children[1].spriteID, id.Sprite.RS3_BTN_MENU_7_3,
     "another unselected enabled tab is active")
 local idleSizeWrites, idleButtonMoves = surface.sizeWrites, roots[2].posWrites
+local idleIconWrites = roots[2].children[2].spriteWrites
 for _ = 1, 20 do events.prettyui_ribbon_bar() end
 expect(surface.sizeWrites, idleSizeWrites, "idle ribbon does not retrigger root resize/layout")
 expect(roots[2].posWrites, idleButtonMoves, "idle ribbon leaves button layout untouched")
+expect(roots[2].children[2].spriteWrites, idleIconWrites,
+    "idle ribbon leaves an unchanged resource icon intact")
 local buttonOne, buttonTwo = roots[2], roots[3]
 click({ root = buttonTwo })
 RibbonBar.sync(second)
@@ -353,9 +393,21 @@ expect(second:IsActive(), true, "second click reactivates panel")
 expect(buttonTwo.children[1].spriteID, id.Sprite.RS3_BTN_MENU_7_3, "reactivated highlight restores")
 expect(buttonOne.x, 6, "vertical first panel x position")
 expect(buttonTwo.y, 6 + 2 * (32 + 2), "second panel retains order")
-second.tabIcon, second.tabText = "updated tab icon", "Updated"
+second.tabIcon, second.tabText = Plugin.resources.alternate, "Updated"
+local secondIcon = buttonTwo.children[2]
 RibbonBar.sync(second)
-expect(buttonTwo.children[2].spriteID, second.tabIcon, "sync refreshes tab icon")
+expect(buttonTwo.children[2], secondIcon, "sync retains the actual RibbonButton icon")
+expect(secondIcon.sprite, Plugin.resources.alternate.runtimeSprite,
+    "sync replaces the numeric icon with a loaded resource")
+expect(secondIcon.spriteID, nil, "resource replacement clears the numeric ID")
+local replacementWrites = secondIcon.spriteWrites
+RibbonBar.sync(second)
+expect(secondIcon.spriteWrites, replacementWrites, "unchanged resource does not rewrite the icon")
+second.tabIcon = 9002
+RibbonBar.sync(second)
+expect(secondIcon.spriteID, second.tabIcon, "sync restores a numeric built-in icon")
+expect(secondIcon.spriteWrites, replacementWrites + 1,
+    "numeric replacement writes only once to the retained sprite")
 expect(tooltips.forTarget[buttonTwo], "Updated", "sync refreshes tab tooltip")
 click({ root = roots[1] })
 expect(#windows, 1, "cog opens ribbon settings window")
@@ -402,7 +454,7 @@ expect(buttons(), nil, "last unregister removes ribbon from game area")
 expect(tooltips.forTarget[buttonOne], nil, "unregister releases button tooltip")
 expect(tooltips.forTarget[buttonTwo], nil, "last unregister releases button tooltip")
 
-local retired = panel("retired", "Old panel", true)
+local retired = panel(9003, "Old panel", true)
 RibbonBar.register(retired)
 local oldSurface, oldButtons = buttons()
 loaded[10] = nil
@@ -415,27 +467,29 @@ area = gameArea(20)
 loaded[20] = true
 assert(events.prettyui_ribbon_bar)()
 expect(buttons(), nil, "remount cannot resurrect stale panel buttons")
-local fresh = panel("fresh tab icon", "Fresh", false)
+local fresh = panel(Plugin.resources.encounter, "Fresh", false)
 RibbonBar.register(fresh)
 local freshSurface, freshButtons = buttons()
 expect(freshSurface ~= oldSurface, true, "remount uses a fresh surface")
 expect(#freshButtons, 2, "remount has only fresh panel")
-expect(freshButtons[2].children[2].spriteID, fresh.tabIcon, "fresh icon matches tab")
+expect(freshButtons[2].children[2].sprite, Plugin.resources.encounter.runtimeSprite,
+    "resource icon renders after modern remount")
 RibbonBar.unregister(fresh)
-local destroyedPanel = panel("destroyed", "Destroyed", true)
+local destroyedPanel = panel(9004, "Destroyed", true)
 RibbonBar.register(destroyedPanel)
 destroyedPanel._destroyed = true
 assert(events.prettyui_ribbon_bar)()
 expect(buttons(), nil, "logic retires panels destroyed without unregister")
-local replaced = panel("replaced", "Replaced", true)
+local replaced = panel(9005, "Replaced", true)
 RibbonBar.register(replaced)
 area = gameArea(30)
 loaded[30] = true
-local arriving = panel("arriving", "Arriving", true)
+local arriving = panel(Plugin.resources.alternate, "Arriving", true)
 RibbonBar.register(arriving)
 local _, arrivingButtons = buttons()
 expect(#arrivingButtons, 2, "registration during remount retains the new panel only")
-expect(arrivingButtons[2].children[2].spriteID, arriving.tabIcon, "new registration survives remount cleanup")
+expect(arrivingButtons[2].children[2].sprite, Plugin.resources.alternate.runtimeSprite,
+    "resource icon survives registration during remount")
 RibbonBar.unregister(arriving)
 RibbonBar.Shutdown()
 expect(events.prettyui_ribbon_bar, nil, "shutdown unsubscribes logic")
@@ -477,8 +531,10 @@ local function rail(width, description)
     return surface
 end
 local lifecycle = {}
+local nextPanelIcon = 10000
 local function classicPanel(name, enabled)
-    local result = panel("icon-" .. name, name, enabled)
+    nextPanelIcon = nextPanelIcon + 1
+    local result = panel(nextPanelIcon, name, enabled)
     result.builds, result.releases = 0, 0
     result._contentReady = true
     function result:_SetClassicMode(value)
@@ -518,6 +574,7 @@ end
 area = gameArea(40, 3440, 1440)
 RibbonBar.Start()
 local a, b, disabled = classicPanel("A", true), classicPanel("B", true), classicPanel("Disabled", false)
+a.tabIcon = Plugin.resources.encounter
 RibbonBar.register(a)
 RibbonBar.register(b)
 RibbonBar.register(disabled)
@@ -546,6 +603,10 @@ expect(buttonNamed("A").children[1].spriteID, id.Sprite.RS3_BTN_MENU_7_2,
 expect(buttonNamed("B").children[1].spriteID, id.Sprite.RS3_BTN_MENU_7_2,
     "enabled but unselected B has no highlight")
 local aButton, bButton = buttonNamed("A"), buttonNamed("B")
+expect(aButton.children[2].sprite, Plugin.resources.encounter.runtimeSprite,
+    "classic rail renders the same resource icon as the modern ribbon")
+expect(aButton.children[2].spriteID, nil, "classic resource icon is not a built-in ID")
+expect(bButton.children[2].spriteID, b.tabIcon, "classic numeric icon remains a built-in ID")
 clickRoot(aButton)
 rail(404, "A expanded")
 expect(gameview.width, 3036, "expanded gameview reserves the full content and rail")
@@ -569,6 +630,16 @@ expect(classicSurface.sizeWrites, expandedSizeWrites, "idle expanded sidebar doe
 expect(a.classicHost.sizeWrites, bodySizeWrites, "idle expanded sidebar does not resize consumer content")
 expect(aButton.posWrites, expandedButtonMoves, "idle expanded sidebar does not relayout icons")
 expect(a.builds, 1, "idle sidebar retains the current content mount")
+local classicIcon = aButton.children[2]
+local classicIconWrites = classicIcon.spriteWrites
+a.tabIcon = Plugin.resources.alternate
+RibbonBar.sync(a)
+expect(aButton.children[2], classicIcon, "classic sync retains the existing button icon")
+expect(classicIcon.sprite, Plugin.resources.alternate.runtimeSprite,
+    "classic sync replaces a resource icon")
+RibbonBar.sync(a)
+expect(classicIcon.spriteWrites, classicIconWrites + 1,
+    "unchanged classic resource icon is not reassigned")
 clickRoot(bButton)
 rail(404, "B replaces A")
 expect(RibbonBar.isClassicSelected(b), true, "second button selects B")
@@ -722,8 +793,12 @@ expect(gameview.width, 3440, "mode exit restores gameview width")
 expect(classicSurface.destroyed, true, "mode exit retires classic surface")
 expect(RibbonBar.GetPosition(), "top", "modern mode restores saved ribbon position")
 expect(a.root.hidden, false, "modern mode restores panel shell")
+expect(buttonNamed("A").children[2].sprite, Plugin.resources.alternate.runtimeSprite,
+    "returning to modern mode remounts the updated resource icon")
 mode(1)
 rail(44, "second mode entry starts collapsed")
+expect(buttonNamed("A").children[2].sprite, Plugin.resources.alternate.runtimeSprite,
+    "classic reentry remounts the updated resource icon")
 expect(RibbonBar.isClassicSelected(a), false, "mode reentry never restores old selection")
 RibbonBar.unregister(a)
 RibbonBar.unregister(b)
@@ -791,8 +866,11 @@ expect(map.watches[retiredExpanded], nil, "expanded retirement removes map obser
 expect(incompatible.releases, 1, "expanded retirement releases selected content")
 area = gameArea(71, 3440, 1440)
 local remounted = classicPanel("Remounted", true)
+remounted.tabIcon = Plugin.resources.encounter
 RibbonBar.register(remounted)
 rail(44, "new viewport remount starts collapsed")
+expect(buttonNamed("Remounted").children[2].sprite, Plugin.resources.encounter.runtimeSprite,
+    "classic viewport remount creates a button with the resource icon")
 clickRoot(buttonNamed("Remounted"))
 rail(404, "new viewport remount expands")
 expect(remounted.builds, 1, "remount selects only the new live page")

@@ -169,7 +169,7 @@
         "minHeight": "number",
         "maxWidth": "number",
         "maxHeight": "number",
-        "tabIcon": "number",
+        "tabIcon": "any",
         "tabText": "string",
         "scrollable": "boolean",
         "scrollStep": "number",
@@ -2414,7 +2414,7 @@
         "new": {
           "params": {
             "parent": "any",
-            "spriteID": "number",
+            "spriteID": "any",
             "action": "fun(button: PrettyUI.RibbonButton)?",
             "options": "PrettyUI.RibbonButtonOptions?"
           },
@@ -2424,7 +2424,7 @@
         },
         "SetIcon": {
           "params": {
-            "spriteID": "number"
+            "spriteID": "any"
           }
         },
         "SetActive": {

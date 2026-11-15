@@ -18,6 +18,7 @@ local panel = prettyui.NisPanel.new({
     y = 80,
     width = 300,
     height = 180,
+    tabIcon = id.Sprite.CHILD_TAB_ICON_NOTES,
     tabText = "Encounter",
     buildContent = function(view)
         view:AddTitle("Encounter")
@@ -71,9 +72,11 @@ construction. Pass an explicit parent for a custom mount.
 : Limits for resizing and **SetSize**. Minimums default to **64 × 21**;
   maximums are optional.
 
-`tabIcon`, `tabText`
-: Sprite ID and hover text for the tab and automatic ribbon button.
-  Defaults to a built-in icon and **"Panel"**.
+`tabIcon`
+: A loaded **Plugin.resources** image or a built-in
+  **id.Sprite** ID such as **id.Sprite.CHILD_TAB_ICON_NOTES**. This sets the icon for the tab and ribbon button.
+`tabText`
+: Hover text for the tab and automatic ribbon button. Defaults to **"Panel"**.
 
 `buildContent(panel)`
 : Builds content when the page becomes selected. Use **panel:Add…** helpers or

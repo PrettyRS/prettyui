@@ -112,11 +112,32 @@ local function component(parent, kind, categoryID, dynamicID)
         removeRenderChild(parent, self)
         self.destroyed = true
     end
-    setmetatable(result, { __index = function(self, key)
-        if key ~= "xyGlobal" then return nil end
-        local origin = parent and parent.xyGlobal or { x = 0, y = 0 }
-        return { x = origin.x + self.x, y = origin.y + self.y }
-    end })
+    setmetatable(result, {
+        __index = function(self, key)
+            if key == "sprite" then return self._runtimeSprite or self._spriteID end
+            if key == "spriteID" then return self._spriteID end
+            if key == "runtimeSprite" then return self._runtimeSprite end
+            if key ~= "xyGlobal" then return nil end
+            local origin = parent and parent.xyGlobal or { x = 0, y = 0 }
+            return { x = origin.x + self.x, y = origin.y + self.y }
+        end,
+        __newindex = function(self, key, value)
+            if key == "sprite" or key == "spriteID" then
+                if key == "spriteID" then
+                    assert(value == nil or type(value) == "number", "spriteID only accepts built-in numeric IDs")
+                else
+                    assert(value == nil or type(value) == "number"
+                        or type(value) == "table" and value.imageResource,
+                        "sprite accepts built-in IDs or image resources")
+                end
+                rawset(self, "_spriteID", type(value) == "number" and value or nil)
+                rawset(self, "_runtimeSprite", type(value) == "table"
+                    and { resource = value } or nil)
+            else
+                rawset(self, key, value)
+            end
+        end,
+    })
     if parent then
         parent.children[#parent.children + 1] = result
         parent.renderChildren[#parent.renderChildren + 1] = result
@@ -141,6 +162,7 @@ ui = {
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
     DragRenderBehaviour = { INVISIBLE = 0, OPAQUE = 1, OPAQUE_OVERLAY = 2, TRANSPARENT_OVERLAY = 3 },
 }
+Plugin = { resources = { image = { imageResource = true, path = "resources/image.png" } } }
 local nextSpriteID = 10000
 id = {
     Sprite = setmetatable({}, { __index = function(sprites, key)
@@ -1722,11 +1744,19 @@ do
 
     -- A fitted two-tab group changes selection without replacing its native
     -- hit components, even while a tab click is still being dispatched.
-    source, target = pair()
+    local image = Plugin.resources.image
+    source, target = pair({ tabIcon = image }, { tabIcon = 9001 })
     expect(source:DockTo(target), true, "stable-hit group docks")
     local selectedArt = require("src/core/sprites").NIS_PANEL
     local view = source._nisTabs
     local firstHit, secondHit = view.tabs[1].hit, view.tabs[2].hit
+    local resourceSprite, numericSprite = view.tabs[2].iconSprite, view.tabs[1].iconSprite
+    local runtime = resourceSprite.runtimeSprite
+    expect(runtime.resource, image, "grouped tab paints the plugin image")
+    expect(resourceSprite.sprite, runtime, "sprite getter exposes a runtime sprite for the plugin image")
+    expect(resourceSprite.spriteID, nil, "plugin images are not built-in sprite IDs")
+    expect(numericSprite.spriteID, 9001, "numeric grouped tab still paints its built-in sprite")
+    expect(numericSprite.runtimeSprite, nil, "numeric grouped tab has no runtime sprite")
     expect(view.tabs[2].background.spriteID, selectedArt.tabSelected,
         "newly docked tab starts selected")
     fire(firstHit, ui.Hook.ONCLICK, 10, 10)
@@ -1747,6 +1777,11 @@ do
         "target artwork updates when deselected")
     expect(view.tabs[2].background.spriteID, selectedArt.tabSelected,
         "source artwork updates when reselected")
+    view:Refresh(view.members, source)
+    for _ = 1, 3 do emit("Logic") end
+    expect(view.tabs[2].iconSprite, resourceSprite, "unchanged resource icon does not rebuild grouped visuals")
+    expect(resourceSprite.runtimeSprite, runtime, "steady grouped refresh retains the runtime sprite")
+    expect(view.tabs[1].iconSprite, numericSprite, "steady grouped refresh also retains numeric visuals")
     endPair(source, target)
 
     -- Same-size transitions still change the content insets: no geometry
@@ -2080,6 +2115,7 @@ do
         node.position = { x = x, y = y, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 }
         node.size = { width = width, height = height, widthParentPc = 0, heightParentPc = 0 }
         node.nativeShown = true
+        local spriteMeta = getmetatable(node)
         setmetatable(node, { __index = function(self, key)
             if key == "xyGlobal" then
                 local origin = self.parent and self.parent.xyGlobal or { x = 0, y = 0 }
@@ -2088,7 +2124,8 @@ do
                 return self.nativeShown and self.visible ~= false and not self.hidden
                     and (not self.parent or self.parent.visibleGlobal ~= false)
             end
-        end })
+            return spriteMeta.__index(self, key)
+        end, __newindex = spriteMeta.__newindex })
         function node:SetPos(px, py, xp, yp, xs, ys)
             self.position = { x = px, y = py, xParentPc = xp or 0, yParentPc = yp or 0,
                 xSelfPc = xs or 0, ySelfPc = ys or 0 }
@@ -2164,7 +2201,7 @@ do
                 x + (node.scrollX or 0), y + (node.scrollY or 0), transparentSprite)
             if painted then return painted end
         end
-        return node.spriteID and node.spriteID ~= transparentSprite and node or nil
+        return (node.spriteID or node.runtimeSprite) and node.spriteID ~= transparentSprite and node or nil
     end
     local function expectPaintedNativeTabs(owner, message)
         local group = owner._nisNative.group
@@ -2461,9 +2498,50 @@ do
     bounded:Destroy()
     local function visibleIcons(node, resource)
         if not rendered(node) then return 0 end
-        local count = node.spriteID == resource and 1 or 0
+        local count = (node.spriteID == resource
+            or node.runtimeSprite and node.runtimeSprite.resource == resource) and 1 or 0
         for _, child in ipairs(node.renderChildren) do count = count + visibleIcons(child, resource) end
         return count
+    end
+    do
+        local image = Plugin.resources.image
+        local resourcePanel = NisPanel.new(area, {
+            categoryID = "auto", x = 50, y = 450, width = 280, height = 180,
+            tabIcon = image,
+        })
+        begin(resourcePanel); move(resourcePanel, 650, 130)
+        expect(visibleIcons(area, image), 1, "native drag preview paints the custom image")
+        expect(resourcePanel._nisNative, nil, "resource preview has not committed native membership")
+        release(resourcePanel)
+        local binding = resourcePanel._nisNative
+        expect(binding ~= nil, true, "resource image tab docks in a native row")
+        local tab = binding.tabs[binding.group.current]
+        local icon = tab.artwork.children[2]
+        local runtime = icon.runtimeSprite
+        expect(runtime.resource, image, "docked tab paints the plugin image")
+        expect(icon.sprite, runtime, "native image getter exposes a runtime sprite")
+        expect(icon.spriteID, nil, "docked image has no numeric sprite ID")
+        expect(visibleIcons(area, image), 1, "docked resource icon remains visible")
+        expect(notes.backgrounds[1].spriteID, id.Sprite.RS3_CHILD_TAB_UNSELECTED,
+            "resource selection retains numeric native background artwork")
+        for _ = 1, 3 do emit("Logic") end
+        expect(binding.tabs[binding.group.current].artwork.children[2], icon,
+            "steady native ticks retain the unchanged custom icon visual")
+        expect(icon.runtimeSprite, runtime, "steady native ticks retain the runtime sprite")
+        for _, callback in pairs(notes.tabs.namedSubscriptions[ui.Hook.ONCLICK] or {}) do
+            callback(notes.tabs, 10, 10)
+        end
+        emit("Logic"); emit("Draw")
+        expect(binding.group.active, nil, "native tab selection releases resource page focus")
+        resourcePanel:SelectTab()
+        expect(binding.group.active, resourcePanel, "resource page remains selectable after native selection")
+        expect(visibleIcons(area, image), 1, "resource icon survives switching back to the docked page")
+        notes:rebuild({ 9001, 9002 }, 1)
+        emit("Logic"); emit("Draw")
+        expect(binding.tabs[binding.group.current].artwork.children[2].runtimeSprite.resource, image,
+            "native tab rebuild restores the docked resource icon")
+        resourcePanel:Undock()
+        resourcePanel:Destroy()
     end
     begin(nativePanel)
     local previewBuilds, previewTitle = nativeBuilds, title
@@ -5649,13 +5727,15 @@ do
     local iconReads, watchedIcons = 0, {}
     for _, child in ipairs(notes.tabs.children) do
         if child.width == 24 then
-            local resource, previous = child.spriteID, getmetatable(child)
-            child.spriteID = nil
-            setmetatable(child, { __index = function(node, field)
-                if field == "spriteID" then iconReads = iconReads + 1; return resource end
-                return previous.__index(node, field)
-            end })
-            watchedIcons[#watchedIcons + 1] = { child = child, previous = previous, resource = resource }
+            local previous = getmetatable(child)
+            setmetatable(child, {
+                __index = function(node, field)
+                    if field == "spriteID" then iconReads = iconReads + 1 end
+                    return previous.__index(node, field)
+                end,
+                __newindex = previous.__newindex,
+            })
+            watchedIcons[#watchedIcons + 1] = { child = child, previous = previous }
         end
     end
     expect(#watchedIcons, 6, "call-count scenario tracks all six native icons")
@@ -5671,7 +5751,6 @@ do
         "fresh native icon invalidates the captured signature")
     expect(notes.backgrounds[1].x, 40, "rebuild keeps native artwork after the own tab")
     for _, item in ipairs(watchedIcons) do
-        item.child.spriteID = item.child.spriteID or item.resource
         setmetatable(item.child, item.previous)
     end
     perfPanel:Destroy()

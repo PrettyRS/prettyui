@@ -96,7 +96,7 @@ function View.new(Host, actions)
 
     local function ownSprite(parent, resource)
         local item = Components.new(ui.Sprite, parent)
-        item.spriteID, item.clickthrough = resource, true
+        item.sprite, item.clickthrough = resource, true
         return item
     end
 

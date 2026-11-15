@@ -15,7 +15,7 @@ local NAV_WIDTH = 8
 
 local function sprite(view, parent, spriteID, opaque)
     local part = Components.new(ui.Sprite, parent)
-    part.spriteID = spriteID
+    part.sprite = spriteID
     part.clickthrough = true
     part.alpha = opaque and 1 or view.alpha
     if not opaque then view.visuals[#view.visuals + 1] = part end
@@ -93,6 +93,8 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
     tab.background = sprite(view, visual,
         selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected)
     tab.background:SetSize(NisTabs.WIDTH, NisTabs.HEIGHT)
+    -- Native getters expose the resolved sprite, not the plugin resource wrapper.
+    tab.icon = panel.tabIcon
     tab.iconSprite = sprite(view, visual, panel.tabIcon, true)
     tab.iconSprite:SetPos((NisTabs.WIDTH - ICON) / 2, 2)
     tab.iconSprite:SetSize(ICON, ICON)
@@ -304,7 +306,7 @@ function NisTabs:Refresh(members, active, previewPanel)
             if self.members[index] ~= member then unchanged = false; break end
         end
         for _, tab in ipairs(self.tabs) do
-            if not tab.preview and (tab.hit == nil or tab.iconSprite.spriteID ~= tab.member.tabIcon) then
+            if not tab.preview and (tab.hit == nil or tab.icon ~= tab.member.tabIcon) then
                 unchanged = false
                 break
             end
@@ -325,7 +327,7 @@ function NisTabs:Refresh(members, active, previewPanel)
         for index, member in ipairs(members) do
             if self.members[index] ~= member or self.tabs[index].member ~= member
                 or self.tabs[index].hit == nil
-                or self.tabs[index].iconSprite.spriteID ~= member.tabIcon then
+                or self.tabs[index].icon ~= member.tabIcon then
                 sameMembers = false
                 break
             end
