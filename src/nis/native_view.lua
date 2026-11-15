@@ -55,7 +55,6 @@ function View.new(Host, actions)
     local function hideSeams(group)
         for _, host in ipairs(group.hosts) do
             if host.seam and not host.seam.hidden then Components.setHidden(host.seam, true) end
-            if host.trailingSeam and not host.trailingSeam.hidden then Components.setHidden(host.trailingSeam, true) end
         end
     end
 
@@ -240,18 +239,14 @@ function View.new(Host, actions)
         for child in pairs(scroll.childScrolls or {}) do cancelScrollCapture(child) end
     end
 
-    local function suspend(group, keepView)
+    local function suspend(group)
         group.transient = true
-        local visibleHost = keepView and group.hosts[group.current]
         for _, panel in ipairs(group.members) do
             local binding = group.bindings[panel]
             for _, tab in ipairs(binding.tabs) do
-                if tab.visual then
-                    alignTab(tab, tab.x or 0, tab.y or 0, tab.host == visibleHost, true)
-                end
+                if tab.visual then alignTab(tab, tab.x or 0, tab.y or 0, false) end
             end
-            if panel.root and ui.Interfaces:GetInterface(panel.interfaceID)
-                and not (keepView and group.active == panel and not panel._nisHidden) then
+            if panel.root and ui.Interfaces:GetInterface(panel.interfaceID) then
                 if not panel.root.hidden or panel.root.enabled ~= false then
                     cancelScrollCapture(panel._scroll)
                     Components.setHidden(panel.root, true)
@@ -266,94 +261,11 @@ function View.new(Host, actions)
         end
         for _, host in ipairs(group.hosts) do
             if host.nativeTab and host.nativeTab.visual then
-                alignTab(host.nativeTab, host.nativeTab.x, host.nativeTab.y, host == visibleHost, true)
+                alignTab(host.nativeTab, host.nativeTab.x, host.nativeTab.y, false)
             end
-            if host ~= visibleHost then
-                if host.seam and not host.seam.hidden then Components.setHidden(host.seam, true) end
-                if host.trailingSeam and not host.trailingSeam.hidden then Components.setHidden(host.trailingSeam, true) end
-                if host.chrome and not host.chrome.hidden then Components.setHidden(host.chrome, true) end
-            end
+            if host.seam and not host.seam.hidden then Components.setHidden(host.seam, true) end
+            if host.chrome and not host.chrome.hidden then Components.setHidden(host.chrome, true) end
             if host.overflow then host.overflow:Hide() end
-        end
-    end
-
-    local function layoutPage(group, panel, host)
-        local x, y, width, height = Host.rectInParent(panel, host.content)
-        if not group.grouped then y, height = y + HEIGHT, height - HEIGHT end
-        local moved = panel.root.x ~= x or panel.root.y ~= y
-        local resized = panel.root.width ~= width or panel.root.height ~= height
-        if moved or resized or group.bindings[panel].visible == nil then
-            local old = panel._updatingBounds
-            panel._updatingBounds = true
-            local ok, problem = pcall(function()
-                if moved then panel.root:SetPos(x, y) end
-                if resized then panel.root:SetSize(width, height) end
-                panel.width, panel.height = width, height
-                panel:_LayoutBody()
-                panel:RefreshRowBackgrounds()
-            end)
-            panel._updatingBounds = old
-            if not ok then error(problem) end
-        end
-        return moved or resized
-    end
-
-    local function placeSeam(sprite, x, y, width, show)
-        if sprite.x ~= x or sprite.y ~= y then sprite:SetPos(x, y) end
-        if sprite.width ~= width or sprite.height ~= SEAM then sprite:SetSize(width, SEAM) end
-        show = show and width > 0
-        if sprite.hidden == show then Components.setHidden(sprite, not show) end
-    end
-
-    local function alignSeams(host, selected)
-        if not host.seam then return end
-        local left, right = host.content.x, host.content.x + host.content.width
-        local gapLeft, gapRight = left, left
-        if selected then
-            local viewport = host.overflow.viewport
-            local x = viewport.x + selected.visual.x
-            local visibleLeft = math.max(left, viewport.x)
-            local visibleRight = math.min(right, viewport.x + viewport.width)
-            gapLeft = math.max(visibleLeft, math.min(visibleRight, x))
-            gapRight = math.max(gapLeft, math.min(visibleRight, x + WIDTH))
-        end
-        local y = Host.tabBand(host).y + HEIGHT - SEAM
-        placeSeam(host.seam, left, y, gapLeft - left, selected ~= nil and selected ~= false)
-        placeSeam(host.trailingSeam, gapRight, y, right - gapRight, selected ~= nil and selected ~= false)
-    end
-
-    -- Freeze the mixed tab layout, not the page. Normal content sizing keeps
-    -- text overflow and clipping live without rediscovering or rewriting native tabs.
-    local function presentResize(group)
-        local state = group.resizeState
-        if not state then return end
-        local host = group.hosts[group.current]
-        local chrome, viewport = host.chrome, host.overflow.viewport
-        local x, y, width, height = Host.rectInParent(group.members[1], host.frame)
-        if chrome.x ~= x or chrome.y ~= y then chrome:SetPos(x, y) end
-        if chrome.width ~= width or chrome.height ~= height then chrome:SetSize(width, height) end
-        local right = host.content.x + host.content.width - state.rightGutter
-        local bottom = Host.tabBand(host).y + HEIGHT
-        local vw = math.max(0, math.min(state.viewportWidth, right - viewport.x))
-        local vh = math.max(0, math.min(state.viewportHeight, bottom - viewport.y))
-        if viewport.width ~= vw or viewport.height ~= vh then viewport:SetSize(vw, vh) end
-        local sw, sh = math.max(state.viewportWidth, vw + 1), math.max(state.viewportHeight, vh + 1)
-        if viewport.scrollWidth ~= sw or viewport.scrollHeight ~= sh then viewport:SetScrollSize(sw, sh) end
-        chrome:MoveToFront()
-        alignSeams(host, group.active and group.bindings[group.active].tabs[group.current])
-        if host.divider then
-            local band = Host.tabBand(host)
-            if host.divider.x ~= band.x or host.divider.y ~= band.y + HEIGHT - SEAM then
-                host.divider:SetPos(band.x, band.y + HEIGHT - SEAM)
-            end
-            if host.divider.width ~= band.width then host.divider:SetSize(band.width, SEAM) end
-        end
-        local panel = group.active
-        if panel and not panel._nisHidden and panel.root and not panel.root.hidden
-            and ui.Interfaces:GetInterface(panel.interfaceID) then
-            if layoutPage(group, panel, host) then panel:_SyncChrome() end
-            panel.root:MoveToFront()
-            panel:_SyncOverlays(false)
         end
     end
 
@@ -539,7 +451,20 @@ function View.new(Host, actions)
                 alignTab(tab, x - scroll, band.y, show)
                 selectTab(tab, show and group.active == panel)
             end
-            alignSeams(host, show and group.active and group.bindings[group.active].tabs[i])
+            local seam = host.seam
+            if seam then
+                local selected = show and group.active ~= nil
+                    and group.artwork ~= nil and group.artwork.host == host
+                if selected then
+                    local bg = group.artwork.component
+                    local x, width = host.overflow:Clip(host.tabs.x + bg.x - scroll, bg.width)
+                    local y = host.tabs.y + HEIGHT - SEAM
+                    x, y = x - host.overflow.viewport.x, y - host.overflow.viewport.y
+                    if seam.x ~= x or seam.y ~= y then seam:SetPos(x, y) end
+                    if seam.width ~= width or seam.height ~= SEAM then seam:SetSize(width, SEAM) end
+                end
+                if seam.hidden == selected then Components.setHidden(seam, not selected) end
+            end
         end
         group.current = current
         -- Attachment aligns once before selecting the incoming page. That temporary
@@ -553,7 +478,23 @@ function View.new(Host, actions)
         for _, panel in ipairs(group.members) do
             local binding = group.bindings[panel]
             if panel.root and ui.Interfaces:GetInterface(panel.interfaceID) then
-                local changed = layoutPage(group, panel, host)
+                local x, y, width, height = Host.rectInParent(panel, host.content)
+                if not group.grouped then y, height = y + HEIGHT, height - HEIGHT end
+                local changed = panel.root.x ~= x or panel.root.y ~= y
+                    or panel.root.width ~= width or panel.root.height ~= height
+                if changed or binding.visible == nil then
+                    local old = panel._updatingBounds
+                    panel._updatingBounds = true
+                    local ok, problem = pcall(function()
+                        panel.root:SetPos(x, y)
+                        panel.root:SetSize(width, height)
+                        panel.width, panel.height = width, height
+                        panel:_LayoutBody()
+                        panel:RefreshRowBackgrounds()
+                    end)
+                    panel._updatingBounds = old
+                    if not ok then error(problem) end
+                end
                 local visible = group.active == panel and panel._nisHidden ~= true
                 local visibilityChanged = binding.visible ~= visible or panel.root.hidden == visible
                     or panel.root.enabled ~= visible
@@ -607,7 +548,6 @@ function View.new(Host, actions)
         alignTab = alignTab,
         cancelScrollCapture = cancelScrollCapture,
         suspend = suspend,
-        presentResize = presentResize,
         beforeNative = beforeNative,
         nativeOffset = nativeOffset,
         previewOffset = previewOffset,

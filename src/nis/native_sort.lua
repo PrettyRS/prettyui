@@ -288,7 +288,6 @@ function NativeSort.new(Host, View, warn)
                 alignSortTab(host.nativeTab, nativeX - scroll, band.y, show)
             end
             if host.seam then Components.setHidden(host.seam, true) end
-            if host.trailingSeam then Components.setHidden(host.trailingSeam, true) end
         end
         for _, panel in ipairs(group.members) do
             local binding = group.bindings[panel]

@@ -128,8 +128,7 @@ function Native.candidate(panel, x, y)
             local band = tabBand(host)
             local top = band.xyGlobal
             local targetY = host.grouped and top.y or host.frame.xyGlobal.y
-            local left = host.content.xyGlobal.x
-            if px >= left and px < left + host.content.width
+            if px >= top.x and px < top.x + band.width
                 and py >= targetY and py < top.y + HEIGHT then
                 local occupied = frameGroup(host)
                 local capacity = not (occupied and occupied.nativeSort)
@@ -556,7 +555,6 @@ function Native.select(panel)
         local current = selectedFrame(group)
         if not current then return false end
         if not validHost(group, group.hosts[current]) then error("native frame unavailable") end
-        group.resizeState, group.resizeRaisePending = nil, nil
         reconcileRoots(group)
         if group.pending then
             nativePage(group)
@@ -602,10 +600,8 @@ function Native.sync(panel)
         if group.active and group.needsConceal then moveActive(group, current) end
         local lockReflow = reconcileLock(group, current)
         local repainted = reconcilePage(group, current)
-        local resizing = group.resizeState ~= nil
-        group.resizeState, group.resizeRaisePending = nil, nil
         align(group)
-        if lockReflow or repainted or rootReflow or resizing then raiseGroup(group) end
+        if lockReflow or repainted or rootReflow then raiseGroup(group) end
         saveGroup(group)
     end)
     if not ok then group.failure = problem; warn(problem); return false end
