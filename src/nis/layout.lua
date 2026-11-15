@@ -24,6 +24,11 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
         end
     end
 
+    if #obstacles == 0 then
+        result[1] = { x = 0, y = 0, width = width, height = height }
+        return result
+    end
+
     table.sort(boundaries)
     -- Adjacent panels share edges; enumerate each distinct horizontal span once.
     local uniqueCount = 0

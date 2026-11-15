@@ -170,7 +170,8 @@ function NativeTabLayout.restore(tabs)
     local children, seen = {}, {}
     fresh:IterateDynamicComponents(function(child)
         local childKey = identity(child)
-        if childKey and identity(child.parent) == key then
+        local entry = childKey and saved.records[childKey]
+        if entry and entry.offset ~= 0 and identity(child.parent) == key then
             -- An ambiguous duplicate identity cannot safely identify either child.
             if seen[childKey] then children[childKey] = nil
             else children[childKey], seen[childKey] = child, true end

@@ -71,7 +71,6 @@ end
 
 local function makeTab(view, panel, x, selected, preview, previousTabs)
     local visual = Components.new(ui.Layer, view.parts)
-    visual:SetPos(x, 0)
     visual:SetSize(NisTabs.WIDTH, NisTabs.HEIGHT)
     visual.clickthrough = true
 

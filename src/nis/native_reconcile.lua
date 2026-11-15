@@ -192,6 +192,7 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             end
         end
         local edit = component(host.spec.EDIT_BLOCK)
+        local contentKey, scrollKey, editKey = identity(host.content), identity(host.scroll), identity(edit)
         for _, saved in ipairs(host.flags) do
             local fresh
             if roots then
@@ -200,9 +201,9 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
                 end
             end
             if not fresh then
-                if saved.key == identity(host.content) then fresh = host.content
-                elseif saved.key == identity(host.scroll) then fresh = host.scroll
-                elseif saved.key == identity(edit) then fresh = edit end
+                if saved.key == contentKey then fresh = host.content
+                elseif saved.key == scrollKey then fresh = host.scroll
+                elseif saved.key == editKey then fresh = edit end
             end
             if not fresh then error("native concealment component retired") end
             saved.component = fresh

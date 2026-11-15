@@ -5,6 +5,7 @@ local NativeInterfaceSettings = require("src/core/native_interface_settings")
 local ClassicLayout = {}
 local positions = { "x", "y", "xParentPc", "yParentPc", "xSelfPc", "ySelfPc" }
 local sizes = { "width", "height", "widthParentPc", "heightParentPc" }
+local centeredPosition = { 0, 0, 0.5, 0.5, 0.5, 0.5 }
 local names = {
     top = "TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP",
     viewport = "TOPLEVEL_V2__VIEWPORT",
@@ -34,30 +35,37 @@ local function child(parent, name)
     return parent and type(packed) == "number" and parent:GetChild(packed & 0xffff) or nil
 end
 
+local function identityValues(value)
+    return value.interfaceID, value.staticID, value.categoryID, value.dynamicID
+end
 
 local function identity(value)
     if not value then return nil end
-    local ok, a, b, c, d = pcall(function()
-        return value.interfaceID, value.staticID, value.categoryID, value.dynamicID
-    end)
+    local ok, a, b, c, d = pcall(identityValues, value)
     if not ok or type(a) ~= "number" or type(b) ~= "number"
         or type(c) ~= "number" or type(d) ~= "number" then return nil end
     return a .. ":" .. b .. ":" .. c .. ":" .. d, a, b
 end
 
-local function layout(value)
-    local ok, result = pcall(function()
-        local pos, size, scalars = value.position, value.size, {}
-        for i, field in ipairs(positions) do
-            scalars[i] = pos[field]
-            if type(scalars[i]) ~= "number" then return nil end
-        end
-        for i, field in ipairs(sizes) do
-            scalars[i + 6] = size[field]
-            if type(scalars[i + 6]) ~= "number" then return nil end
-        end
-        return scalars
-    end)
+local function readLayout(value, expected)
+    local pos, size = value.position, value.size
+    local scalars = expected or {}
+    for i, field in ipairs(positions) do
+        local scalar = pos[field]
+        if type(scalar) ~= "number" or expected and scalar ~= expected[i] then return nil end
+        if not expected then scalars[i] = scalar end
+    end
+    for i, field in ipairs(sizes) do
+        local scalar = size[field]
+        if type(scalar) ~= "number" or expected and scalar ~= expected[i + 6] then return nil end
+        if not expected then scalars[i + 6] = scalar end
+    end
+    return scalars
+end
+
+-- Ownership checks compare live scalars without allocating a snapshot.
+local function layout(value, expected)
+    local ok, result = pcall(readLayout, value, expected)
     if ok then return result end
 end
 
@@ -70,20 +78,26 @@ local function fullSize(saved)
     return saved[7] == 0 and saved[8] == 0 and saved[9] == 1 and saved[10] == 1
 end
 
+local function originValues(value)
+    return value.x, value.y, value.width, value.height
+end
+
 local function origin(value)
-    local ok, x, y, width, height = pcall(function()
-        return value.x, value.y, value.width, value.height
-    end)
+    local ok, x, y, width, height = pcall(originValues, value)
     if ok and type(x) == "number" and type(y) == "number"
         and type(width) == "number" and type(height) == "number" then
         return x, y, width, height
     end
 end
 
+local function parentOf(value)
+    return value.parent
+end
+
 local function record(value, parentKey, baseline)
     local key, interfaceID, staticID = identity(value)
     if not key or not baseline then return nil end
-    local ok, parent = pcall(function() return value.parent end)
+    local ok, parent = pcall(parentOf, value)
     if not ok or identity(parent) ~= parentKey then return nil end
     return { key = key, interfaceID = interfaceID, packed = (interfaceID << 16) | staticID,
         parentKey = parentKey, original = baseline, written = { table.unpack(baseline) } }
@@ -99,7 +113,7 @@ local function resolve(saved, interfaceObject)
     if not ok or not loaded or loaded ~= interfaceObject then return nil end
     local found, fresh = pcall(function() return ui.Interfaces:GetComponent(saved.packed) end)
     if not found or identity(fresh) ~= saved.key then return nil end
-    local parentOK, parent = pcall(function() return fresh.parent end)
+    local parentOK, parent = pcall(parentOf, fresh)
     if not parentOK or identity(parent) ~= saved.parentKey then return nil end
     return fresh
 end
@@ -111,22 +125,15 @@ local function restoreRecord(saved, interfaceObject)
     if not fresh then return true end
     local current = layout(fresh)
     if not current then return false end
-    local desired = { table.unpack(current) }
     local changedPos = same(current, saved.written, 1, 6)
         and not same(current, saved.original, 1, 6)
     local changedSize = same(current, saved.written, 7, 10)
         and not same(current, saved.original, 7, 10)
     if changedPos then
-        for i = 1, 6 do desired[i] = saved.original[i] end
+        pcall(function() fresh:SetPos(table.unpack(saved.original, 1, 6)) end)
     end
     if changedSize then
-        for i = 7, 10 do desired[i] = saved.original[i] end
-    end
-    if changedPos then
-        pcall(function() fresh:SetPos(table.unpack(desired, 1, 6)) end)
-    end
-    if changedSize then
-        pcall(function() fresh:SetSize(table.unpack(desired, 7, 10)) end)
+        pcall(function() fresh:SetSize(table.unpack(saved.original, 7, 10)) end)
     end
     -- A setter may apply its change and then throw. Check what remains owned.
     current = layout(fresh)
@@ -156,8 +163,8 @@ function ClassicLayout.restore()
 end
 
 local function set(saved, fresh, desired, which)
-    local current = layout(fresh)
-    if not current or not same(current, saved.written, 1, 10) then return false end
+    local current = layout(fresh, saved.written)
+    if not current then return false end
     local first, last = which == "position" and 1 or 7, which == "position" and 6 or 10
     if same(current, desired, first, last) then return true end
     -- Mark the intended descriptor before invoking the setter: setters can
@@ -198,7 +205,7 @@ local function compatible(top, viewport, area, areaLayout, x, y, w, h, tx, ty, t
         and x == 0 and y == 0 and w > 0 and h > 0
         and tx == 0 and ty == 0 and tw == w and th == h
         and fullSize(areaLayout)
-        and same(areaLayout, { 0, 0, 0.5, 0.5, 0.5, 0.5 }, 1, 6)) then return false end
+        and same(areaLayout, centeredPosition, 1, 6)) then return false end
     local ok, topParent, viewportParent, areaParent = pcall(function()
         return top.parent, viewport.parent, area.parent
     end)
@@ -213,7 +220,7 @@ local function updateGameview(current, width, environmentKey, viewportKey)
     if current.gameviewBlocked then return end
     if saved then
         local fresh = resolve(saved, current.interfaceObject)
-        if not fresh or not same(layout(fresh) or {}, saved.written, 1, 10) then
+        if not fresh or not layout(fresh, saved.written) then
             if restoreRecord(saved, current.interfaceObject) then current.gameview = nil end
             current.gameviewBlocked = true
             optionalWarning(environmentKey)
@@ -285,7 +292,7 @@ local function updateSlayer(current, width)
     local fresh = resolve(saved, current.interfaceObject)
     -- Even an unchanged reservation must still yield to a foreign descriptor.
     if fresh and saved.written[1] == saved.original[1] - width
-        and same(layout(fresh) or {}, saved.written, 1, 10) then return end
+        and layout(fresh, saved.written) then return end
     local desired = { table.unpack(saved.original) }
     desired[1] = desired[1] - width
     local ok, applied = pcall(set, saved, fresh, desired, "position")
@@ -318,7 +325,7 @@ function ClassicLayout.update(reservedWidth)
     end
     if previous and previous.blocked then return suspend(previous.blockedEnvironment) end
     local fresh = previous and resolve(previous.area, loaded)
-    if fresh and not same(layout(fresh) or {}, previous.area.written, 1, 10) then
+    if fresh and not layout(fresh, previous.area.written) then
         restoreState()
         previous.blocked, previous.blockedEnvironment = true, signature
         state = previous

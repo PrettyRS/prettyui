@@ -305,6 +305,7 @@ function View.new(Host, actions)
                 if member == excluded then sourceIndex = index; break end
             end
         end
+        local origin = group and Host.tabOrigin(host)
         if host.grouped then
             for index, bg in ipairs(host.backgrounds) do
                 local offset = group and nativeOffset(group, host, index, excluded) or 0
@@ -318,7 +319,7 @@ function View.new(Host, actions)
             for index, member in ipairs(group.members) do
                 if member ~= excluded then
                     local count = beforeNative(group, member, host)
-                    local midpoint = ownX(group, host, index, true) - Host.tabOrigin(host) + WIDTH / 2
+                    local midpoint = ownX(group, host, index, true) - origin + WIDTH / 2
                     if count > before or count == before and (center < midpoint
                         or center == midpoint and sourceIndex > index) then break end
                     destination = destination + 1

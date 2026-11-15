@@ -121,11 +121,14 @@ function Host.new(byFrame)
             if not key then overflow = true; return true end
             if not seen[key] and same(child.parent, tabs) then
                 children[#children + 1] = child
-                local value, field = spriteID(child)
-                seen[key] = value or true
-                if child.visible and child.hidden ~= true
-                    and (value == art.tabSelected or value == art.tabUnselected) then
-                    backgrounds[#backgrounds + 1] = { component = child, key = key, field = field }
+                seen[key] = true
+                -- Neither a native background nor a usable icon can be hidden.
+                if child.visible and child.hidden ~= true then
+                    local value, field = spriteID(child)
+                    seen[key] = value or true
+                    if value == art.tabSelected or value == art.tabUnselected then
+                        backgrounds[#backgrounds + 1] = { component = child, key = key, field = field }
+                    end
                 end
             end
             return false

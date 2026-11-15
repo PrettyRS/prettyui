@@ -23,10 +23,6 @@ local function visible(panel)
             or not panel.root.hidden and panel.root.visibleGlobal ~= false)
 end
 
-local function members(panel)
-    return panel._nisGroup and panel._nisGroup.members or { panel }
-end
-
 local function limits(list)
     local minWidth, minHeight, maxWidth, maxHeight = 64, 49, math.huge, math.huge
     for _, panel in ipairs(list) do
@@ -205,7 +201,8 @@ function NisGroup.preview(source, target)
     NisGroup.clearPreview()
     if not target or not eligible(source, target) then return end
     previewTarget, previewSource = target, source
-    target._nisTabs:Refresh(members(target), target._nisGroup and target._nisGroup.active or target, source)
+    target._nisTabs:Refresh(target._nisGroup and target._nisGroup.members or nil,
+        target._nisGroup and target._nisGroup.active or target, source)
 end
 
 function NisGroup.select(panel)
