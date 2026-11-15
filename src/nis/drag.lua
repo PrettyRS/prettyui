@@ -62,8 +62,7 @@ end
 -- changes within the same occupied units must not invalidate the free-space cache.
 local function collectSpaces(panel, drag, reindex)
     local width, height = math.floor(panel.parent.width), math.floor(panel.parent.height)
-    -- The native plugin-host layer spans the viewport but is not a NIS panel.
-    -- Exclude its proven identity only; Window's default collection is unchanged.
+    -- The full-viewport plugin host is not a placement obstacle.
     local ok = pcall(Snap.collect, panel, drag.rects, true,
         id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM, not reindex and drag.nativeCache or nil)
     if not ok then
@@ -173,8 +172,7 @@ local function preview(panel, drag)
     local x = math.floor(drag.pointerX - drag.gripFractionX * drag.width + 0.5)
     local y = math.floor(drag.pointerY - drag.gripY + 0.5)
     if candidate or nativeTarget then
-        -- Nesting is indicated by the tab row; orange stays with the dragged
-        -- rectangle rather than wrapping the destination's unrelated bounds.
+        -- The tab preview marks the docking destination; the outline follows the dragged panel.
         feedback:SetTargetRect(x, y, drag.width, drag.height)
     elseif target then
         feedback:SetTargetRect(target.x, target.y, target.width, target.height)
@@ -302,7 +300,7 @@ function NisDrag.install(NisPanel)
         if px then drag.pointerX, drag.pointerY = px, py end
         if not drag.moved then
             if drag.pointerX == drag.pressX and drag.pointerY == drag.pressY then return false end
-            -- Capture the white source before moving the original-size ghost.
+            -- Snapshot the source rectangle before moving the panel.
             self.dragFeedback = self.dragFeedback or DragFeedback.new(self.parent, self.root)
             drag.moved = true
             drag.captureExpanded = true

@@ -444,14 +444,12 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             restoreArtwork(group)
         end
         if group.grouped and not group.artwork then borrow(group, host) end
-        -- Native repaint is not native selection. Only observed input/frame
-        -- selection relinquishes the own page; changed flags/art repair once.
+        -- Preserve the active PrettyUI page when native scripts repaint its host.
         local changed = conceal(group, host)
         return changed or artwork ~= group.artwork
     end
 
-    -- Locking is a native chrome/layout transition, not a request to select a
-    -- native page. Reconcile its one-off repaint without a per-tick paint fight.
+    -- Restore the active page's artwork once after the native lock-state reflow.
     local function reconcileLock(group, current)
         if not group.lockTransition then return end
         if group.active then
@@ -521,9 +519,8 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         return changed
     end
 
-    -- Native scripts may repaint a dropped row after Logic, including reusing all
-    -- objects with new icon identities. Refresh artwork and real input together
-    -- before that row is drawn, rather than leaving one paint at native-only slots.
+    -- Native scripts can repaint rows after Logic, reusing components with new
+    -- icons. Detect those changes before Draw updates artwork and input positions.
     local function nativeRowChanged(group)
         local selected = selectedFrame(group)
         if selected ~= group.current then return true end

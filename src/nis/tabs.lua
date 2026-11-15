@@ -233,7 +233,7 @@ function NisTabs:Contains(parentX, parentY)
         and parentY >= top and parentY < top + NisTabs.HEIGHT
 end
 
--- Empty strip space is a docking target, not a reason to retain a dragged tab.
+-- Drag retention ends at the last tab or navigation control; docking uses the full strip.
 function NisTabs:ContainsDrag(parentX, parentY)
     if not self:Contains(parentX, parentY) then return false end
     local right = 0

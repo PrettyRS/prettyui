@@ -95,7 +95,6 @@ function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID, native
                 root.width - offsets.left - offsets.right, root.height - offsets.top - offsets.bottom)
         end
     end
-    -- Theory: game windows only snap to the layout windows on this layer.
     -- Enumeration failures propagate so placement cannot approve unknown geometry.
     local layoutLayer = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
     local excludedInterface = excludedNativeID and (excludedNativeID >> 16)

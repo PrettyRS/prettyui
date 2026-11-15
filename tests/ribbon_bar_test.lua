@@ -442,9 +442,8 @@ expect(events.prettyui_ribbon_bar, nil, "shutdown unsubscribes logic")
 expect(next(map.watches), nil, "shutdown leaves no map watcher")
 expect(tooltips.contexts, tooltips.unregistered, "every tooltip context is retired")
 
--- The real button hooks now drive a shared Classic sidebar, not two
--- independent modern shell activations. Panel doubles model only the alternate
--- content-host contract; the rail, buttons, geometry and native helper are real.
+-- Classic sidebar tests use panel doubles for the content-host contract and
+-- actual RibbonButton hooks, rail geometry and native layout reservation.
 local function mode(value)
     classicMode = value
     assert(varEvents.prettyui_ribbon_bar, "base-variable listener missing")({
@@ -735,8 +734,8 @@ expect(gameview.width, 3440, "last classic unregister restores gameview")
 expect(tooltips.forTarget[aButton], nil, "unregister releases classic button tooltip")
 expect(tooltips.forTarget[bButton], nil, "last unregister releases classic tooltip")
 
--- An optional gameview setter failure is not an excuse to hide a safely
--- reserved native rail. The mandatory target's foreign overwrite is.
+-- A GAMEVIEW_WINDOW setter failure leaves the rail usable; an external
+-- overwrite of the reserved GAME_AREA suspends it.
 area = gameArea(50, 3440, 1440)
 gameview.failSize = true
 local optional = classicPanel("Optional", true)

@@ -1,6 +1,5 @@
--- Reserve space in the classic native UI's containing GAME_AREA. The Slayer
--- counter lives outside it, so move its containing HUD window as one unit.
--- No native handles or mutable descriptors are used as saved geometry.
+-- Reserves space for the Classic sidebar in GAME_AREA and adjusts the external
+-- Slayer HUD. Saves scalar layouts for restoration across native UI rebuilds.
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
 
 local ClassicLayout = {}
@@ -174,8 +173,7 @@ local function environment(loaded, viewport, top, area)
     local tx, ty, tw, th = origin(top)
     local areaLayout = layout(area)
     local topKey, viewportKey, areaKey = identity(top), identity(viewport), identity(area)
-    -- Scalar baseline is included for failed compatibility checks, so an
-    -- actually changed native environment can become eligible without a tick fight.
+    -- Include the area layout so a changed baseline can retry a suspended reservation.
     local signature = table.concat({ tostring(loaded), tostring(topKey), tostring(viewportKey),
         tostring(areaKey), tostring(x), tostring(y), tostring(w), tostring(h),
         tostring(tx), tostring(ty), tostring(tw), tostring(th) }, "/")

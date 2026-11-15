@@ -65,8 +65,7 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
         end
     end
     local slots = result.slots
-    -- Many exhaustive spaces clip to the same bounded slot. Intern those
-    -- rectangles before allocating/sorting them, not after generating duplicates.
+    -- Deduplicate clipped slots before allocating and sorting them.
     local seenSlots = { x = {}, y = {} }
     local function addSlot(left, top, right, bottom, axis)
         if right - left < minWidth or bottom - top < minHeight then return end
@@ -86,7 +85,6 @@ function NisLayout.spaces(rects, parentWidth, parentHeight, minWidth, minHeight)
                 if not column then column = {}; across[xKey] = column end
                 local slot = column[yKey]
                 if slot then
-                    -- The old sort/dedup retained the smallest facing-edge span.
                     if span < slot.span then slot.span = span end
                 else
                     slot = {

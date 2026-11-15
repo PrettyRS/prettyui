@@ -74,7 +74,7 @@ function View.new(Host, actions)
         for _, bg in ipairs(host.backgrounds) do
             if bg.component.visibleGlobal and not bg.component.hidden
                 and Host.spriteID(bg.component) == art.tabSelected then
-                if chosen then return end -- native artwork is not an own-page prerequisite
+                if chosen then return end -- Multiple selected backgrounds are ambiguous.
                 chosen = bg
             end
         end
@@ -82,7 +82,7 @@ function View.new(Host, actions)
         local saved = { component = chosen.component, key = chosen.key, field = chosen.field,
             original = art.tabSelected, host = host }
         group.artwork = saved -- before a setter that can partially apply
-        chosen.component[chosen.field] = art.tabUnselected -- NOT .sprite (fails to paint native tabs)
+        chosen.component[chosen.field] = art.tabUnselected -- Native tabs paint from the editor sprite field.
         if chosen.component[chosen.field] ~= art.tabUnselected then error("native editor-field write failed") end
     end
 

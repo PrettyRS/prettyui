@@ -177,8 +177,8 @@ forgottenWindow = nil
 collectgarbage()
 expect(#Snap.start(moving).across, 10, "a window nothing else holds drops out of the registry")
 
--- Collection reuses storage, honors each surface's visible edge, and only reads
--- loaded roots. Ordinary snapping intentionally retains its old visibility rule.
+-- Collection reuses rectangle storage and applies surface insets.
+-- Global visibility filtering is opt-in.
 Snap.unregister(crossParentWindow)
 other.root.hidden = false
 other.root.visibleGlobal = false

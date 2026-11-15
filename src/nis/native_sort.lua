@@ -144,9 +144,7 @@ function NativeSort.new(Host, View, warn)
                 break
             end
         end
-        -- Native scripts can reflow any frame copy during a drag and its release.
-        -- A drop-time write is part of that transaction, not an unrelated layout
-        -- conflict that should strand a tab until the next native row rebuild.
+        -- Accept native baseline resets during dragging and release reflow.
         TabLayout.track(tabs, records, fresh or sourceConflict or sort.clientCopies or sort.finishing)
         local saved = {}
         for _, record in ipairs(records) do saved[record.key] = record end
@@ -449,9 +447,8 @@ function NativeSort.new(Host, View, warn)
         end
     end
 
-    -- The visible native row owns the committed order. Hidden copies can retain
-    -- incomplete drag rows until selected; neither they nor our preview order can
-    -- gate restoring input on a complete visible row.
+    -- Validate the committed order against the visible row; hidden copies can
+    -- retain incomplete drag rows until selected.
     local function nativeSortReady(group)
         local selected = selectedFrame(group)
         if not selected then return false end

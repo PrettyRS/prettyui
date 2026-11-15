@@ -1,6 +1,5 @@
--- The captured Classic topology has a separate full-screen plugin layer, an
--- origin-zero GAME_AREA child of VIEWPORT, and right-anchored native children.
--- IDs below are deliberately fixture IDs, not client/capture component numbers.
+-- Classic layout fixture: a separate plugin layer, GAME_AREA under VIEWPORT,
+-- and right-anchored native children. Component IDs are synthetic.
 local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
@@ -106,9 +105,7 @@ local function scene(options)
     if not options.noGameview then
         gameview = component(4202, 87, viewport, pos(0, 0, 0, 0, 0, 0), size(0, 0, 1, 1))
     end
-    -- The client capture uses positive xSelfPc = 1 on its right-anchored
-    -- wrappers; model those exact coefficients, not a sign convention guessed
-    -- from generic layout examples. Children stay fixed inside the wrapper.
+    -- Native right-anchored wrappers use xSelfPc = 1; children retain local positions.
     local minimapWrapper = component(4202, nil, area, pos(-25, 0, 1, 0, 1, 0), size(250, 250, 0, 0))
     local minimap = component(4202, nil, minimapWrapper, pos(0, 0, 0, 0, 0, 0), size(250, 250, 0, 0))
     local buttons = component(4202, nil, area, pos(-520, 0, 1, 0, 1, 0), size(32, 34, 0, 0))
@@ -345,7 +342,7 @@ for _, failure in ipairs({ "before", "after" }) do
     assertRestored(optional, "optional " .. failure .. " failure teardown")
 end
 
--- Mandatory topology is deliberately strict: no overlay-only rail is safe.
+-- Sidebar reservation requires a full-size GAME_AREA and a separate plugin layer.
 local incompatible = scene()
 incompatible.area.size.widthParentPc = .9
 expect(ClassicLayout.update(44), false, "non-full-size GAME_AREA rejects reservation")

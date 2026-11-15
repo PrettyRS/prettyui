@@ -1,7 +1,5 @@
--- World-map focus is temporary occlusion, not a user-requested Hide/Close.
--- Track only PrettyUI roots; native components and nested controls keep their
--- own visibility. Resolve roots by ID at transitions instead of retaining
--- native handles across top-level rebuilds.
+-- Suspends tracked PrettyUI roots while the world map has focus, preserving
+-- their requested visibility. Roots are resolved by ID across native UI rebuilds.
 local WorldMap = {}
 local EVENT_ID = "prettyui_world_map"
 local roots = setmetatable({}, { __mode = "k" })
@@ -61,8 +59,7 @@ local function setFocus(value)
         if suspended then return end
         eachRoot(function(root, saved) saved.hidden = root.hidden == true end)
         suspended = true
-        -- Cancel gestures before hiding their capture surfaces. Callers must
-        -- not interpret the world's disappearing native frames as undocking.
+        -- Notify gesture owners before hiding their capture surfaces.
         notify(true)
         eachRoot(function(root) root.hidden = true end)
     elseif suspended and not waiting then
@@ -97,9 +94,7 @@ function WorldMap.track(root)
     if suspended then root.hidden = true end
 end
 
--- Destroyed roots must leave the registry immediately: tooltips and drag
--- feedback can create thousands of short-lived surfaces between map opens.
--- An older handle must not remove a new native root that reused its ID.
+-- Release short-lived roots promptly without removing a replacement that reused the ID.
 function WorldMap.untrack(root)
     local saved = roots[root]
     if not saved then return end

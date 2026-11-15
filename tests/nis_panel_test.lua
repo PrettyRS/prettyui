@@ -464,8 +464,8 @@ do
     font.maxAscent, font.maxDescent = oldAscent, oldDescent
 end
 
--- A plugin owns durable data, not UI handles: each visible mount gets fresh
--- controls, tooltips, row backdrops, Scroll and sibling input overlays.
+-- Each content mount creates fresh controls, tooltips, row backdrops, scroll
+-- containers and sibling input overlays.
 do
     local Components = require("src/core/components")
     local Tooltip = require("src/tooltip")
@@ -576,8 +576,7 @@ do
     expect(#parent.children, children, "constructor rollback leaves no sibling controls")
 end
 
--- Default roots span categories without boilerplate, and mount-owned resources
--- cannot leak callbacks to expired controls or interfere with another panel.
+-- Category allocation and content cleanup remain isolated between panels.
 do
     local gameAreaID = id.Component.TOPLEVEL_V2__GAME_AREA
     id.Component.TOPLEVEL_V2__GAME_AREA = (parent.interfaceID << 16) | parent.staticID
@@ -783,7 +782,7 @@ move(moving, 460, 100)
 release(moving)
 expectRect(moving.root, 400, 94, 120, 400, "leaving a gap retains committed dimensions")
 
--- A blocked pointer moves orange to free space while the body follows the pointer.
+-- Over an obstacle, the destination outline moves to free space while the panel follows the pointer.
 begin(moving)
 move(moving, 200, 450)
 expectRect(moving.dragFeedback.active, 400, 300, 120, 400, "blocked pointer finds and fills nearest gap")
@@ -1107,8 +1106,8 @@ expectRect(constrained.root, 100, 100, 452, 200, "failed native collection rejec
 enumerationFails = false
 constrained:Destroy(); registered:Destroy()
 
--- Client evidence: 1477:62 is PLUGIN_BUILD_LAYER_BOTTOM, a visible
--- full-viewport plugin host, not a native panel. Only NisPanel fitting excludes it.
+-- PLUGIN_BUILD_LAYER_BOTTOM (1477:62) spans the viewport.
+-- NisPanel fitting excludes it; ordinary window snapping includes it.
 parent:SetSize(3440, 1439)
 obstacles = {
     { interfaceID = 1477, staticID = 62, x = 0, y = 0, width = 3440, height = 1439 },
@@ -2216,7 +2215,7 @@ do
     local wrapper = nativeNode(1417, 3, notes.body, 0, 0, 371, 309)
     wrapper:SetSize(0, 0, 1, 1)
     id.Component.NOTES_CHILD__WRAPPER = (1417 << 16) | 3
-    -- Actual standalone roots and anchors supplied by the user's read-only report.
+    -- Standalone native pages with top-left and centered content roots.
     local standaloneHosts = {
         { label = "Inventory", frame = 103, name = "INVENTORY_WINDOW", icon = 18772,
             owner = 1473, static = 0, rootName = "TOPLEVEL_V2_INVENTORY__MAIN_LAYER", width = 204, height = 292 },
@@ -2462,8 +2461,7 @@ do
     emit("Logic")
     expect(drawable(title, nativePanel), true, "native docking keeps an actual title visible inside the viewport")
     expectRect(nativePanel.viewport, 0, 0, 353, 309, "native docking retains a nonzero clipped content viewport")
-    -- Opening the map temporarily removes native top-level visibility. This is
-    -- not a close/undock request, and no PrettyUI sibling may paint above it.
+    -- World-map suspension hides PrettyUI surfaces while preserving native docking.
     do
         local WorldMap = require("src/core/world_map")
         local Components = require("src/core/components")
@@ -4443,8 +4441,8 @@ do
         notes.frame:SetPos(500, 100)
     end
     expect(next(events.Logic), nil, "native teardown removes its logic observer")
-    -- Broader user capture: single-root books, compact RuneMetrics chrome,
-    -- and self-contained native tab rows with no matching outer-frame copy.
+    -- Native host variants: single-root books, compact RuneMetrics chrome,
+    -- and tab rows without a matching outer-frame copy.
     local expandedHosts = {
         { name = "ABILITY_WINDOW_MELEE", frame = 147, owner = 1460, static = 11,
             rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_MELEE__MAIN_LAYER", width = 112, height = 292 },

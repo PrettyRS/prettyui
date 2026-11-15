@@ -1,6 +1,4 @@
 -- Native docking coordinator: public operations, membership and saved restoration.
--- Discovery, presentation, client sorting, reconciliation and event timing have
--- separate owners; none of those helpers require this facade back.
 local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local Persistence = require("src/nis/persistence")
