@@ -157,8 +157,10 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                             end
                         end
                         if group.failure then error(group.failure) end
-                        align(group)
-                        if lockReflow or repainted or rootReflow or settledSort then raiseGroup(group) end
+                        local resized = align(group)
+                        if lockReflow or repainted or rootReflow or settledSort or resized then
+                            raiseGroup(group)
+                        end
                         if changed or selectionChanged or settledSort then actions.saveGroup(group) end
                         if group.mapSelection then
                             local panel = group.mapSelection
