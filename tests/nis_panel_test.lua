@@ -3294,17 +3294,17 @@ do
         do
             -- Sample actual painter order, not just hidden flags: an enabled
             -- native backdrop can cover otherwise-visible GAME_AREA artwork.
-            local function paintedAt(node, x, y)
+            local function paintedAt(node, x, y, transparentSprite)
                 if node.hidden or node.visibleGlobal == false then return nil end
                 local origin = node.xyGlobal
                 if x < origin.x or x >= origin.x + node.width
                     or y < origin.y or y >= origin.y + node.height then return nil end
                 for index = #node.renderChildren, 1, -1 do
                     local painted = paintedAt(node.renderChildren[index],
-                        x + (node.scrollX or 0), y + (node.scrollY or 0))
+                        x + (node.scrollX or 0), y + (node.scrollY or 0), transparentSprite)
                     if painted then return painted end
                 end
-                return node.spriteID and node or nil
+                return node.spriteID and node.spriteID ~= transparentSprite and node or nil
             end
             local function paintedWithDrag(source, x, y)
                 local mode = source.dragConfig.renderBehaviour
@@ -3315,9 +3315,29 @@ do
                 end
                 return paintedAt(area, x, y)
             end
+            local function expectSeparatorClipping(group, message)
+                for _, member in ipairs(group.members) do
+                    local tab = member._nisNative.tabs[group.current]
+                    local origin = tab.visual.xyGlobal
+                    for _, x in ipairs({ 2, 20, 38 }) do
+                        for y = 24, 27 do
+                            -- A separator sprite is not an opaque mask. Sample
+                            -- through its transparent pixels into the owned art.
+                            local painted = paintedAt(tab.visual, origin.x + x, origin.y + y,
+                                id.Sprite.RS3_CHILD_TAB_BAR_TILE)
+                            if group.active == member then
+                                expect(painted ~= nil, true, message .. " keeps the selected tab open")
+                            else
+                                expect(painted, nil, message .. " clips inactive backgrounds and icons")
+                            end
+                        end
+                    end
+                end
+            end
             for _, selected in ipairs({ nativePanel, peer }) do
                 selected:SelectTab()
                 local group = selected._nisNative.group
+                expectSeparatorClipping(group, "native selection")
                 for _, member in ipairs({ nativePanel, peer }) do
                     local tab = member._nisNative.tabs[group.current]
                     local origin = tab.visual.xyGlobal
@@ -3433,6 +3453,7 @@ do
                 nativeHook(source, ui.Hook.ONDRAG, 12, 12)
                 expect(rendered(binding.tabs[group.current].background), true,
                     "native sort start keeps the real PrettyUI tab visibly present")
+                expectSeparatorClipping(group, "native drag start")
                 source:SetPos(-12, 0) -- a transient native-only move, before its icon/frame copies follow
                 emit("Logic")
                 expect(peer._nisNative, binding, "native drag start cannot eject the interleaved own page")
@@ -3447,6 +3468,7 @@ do
                 for _ = 1, 12 do emit("Logic") end
                 expect(binding.tabs[group.current].visual.x, 92,
                     "PrettyUI tab occupies its live mixed slot before native release")
+                expectSeparatorClipping(group, "native drag interpolation")
                 expect(peer.root, originalRoot, "native drag retains the actual own root")
                 expect(peer.content, nil, "native selection releases the inactive own page during sorting")
                 if finish == "escape" or finish == "focus" or finish == "lock" then
@@ -3461,6 +3483,7 @@ do
                     expect(peer._nisNative, binding, "in-flight native row replacement retains membership")
                     expect(rendered(binding.tabs[group.current].background), true,
                         "same-ID native source rebuild keeps PrettyUI tabs drawn during the drag")
+                    expectSeparatorClipping(group, "native in-flight row replacement")
                     if finish == "release" then nativeHook(source, ui.Hook.ONRELEASE, 12, 12)
                     else nativeHook(source, ui.Hook.ONDRAGCOMPLETE, nil, 12, 12) end
                     for _ = 1, 3 do emit("Logic") end
@@ -3471,6 +3494,7 @@ do
                     for _ = 1, 3 do emit("Logic") end
                 end
                 expect(peer._nisNative, binding, "native sort completion retains the own binding")
+                expectSeparatorClipping(group, "native sort completion")
                 local cancelled = finish == "escape" or finish == "focus" or finish == "lock"
                 expect(binding.tabs[group.current].visual.x, cancelled and 48 or 92,
                     "native sort keeps its live mixed insertion on release and restores it on cancellation")
@@ -3637,6 +3661,7 @@ do
                         notes.frame:MoveToFront()
                         emit("Draw")
                         expectPaintedTabs("native drag-start repaint cannot cover PrettyUI tabs")
+                        expectSeparatorClipping(group, "native drag-start repaint")
                         expect(peer._nisNative.tabs[group.current].hit.enabled, false,
                             "raising drag artwork does not enable its input")
                     end
@@ -3737,6 +3762,7 @@ do
                     expect(rendered(tab.background), true,
                         "native capture handoff preserves PrettyUI artwork on its first draw")
                     expect(tab.hit.enabled, false, "capture handoff leaves native input ownership intact")
+                    expectSeparatorClipping(group, "native capture handoff")
                     local function expectSeparated(includeSource)
                         for _, copy in ipairs({ notes, ranged, magic }) do
                             if finish ~= "stale-hidden" or copy.frame.nativeShown then
@@ -3798,6 +3824,7 @@ do
                         copy.frame:MoveToFront()
                         emit("Draw")
                         expectSeparated()
+                        expectSeparatorClipping(group, "native frame-copy repaint")
                         emit("Logic")
                         expectSeparated()
                     end
@@ -3852,6 +3879,7 @@ do
                     emit("Logic")
                     expect(group.nativeSort, nil,
                         "complete visible native row settles on the first logic tick despite stale copies or preview order")
+                    expectSeparatorClipping(group, "native capture settlement")
                     expect(peer._nisNative.tabs[group.current].hit.enabled, true,
                         "first settled tick restores the visible PrettyUI click target")
                     for _ = 1, 3 do emit("Logic"); emit("Draw"); expectSeparated(true) end

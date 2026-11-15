@@ -58,12 +58,20 @@ function View.new(Host, actions)
         end
     end
 
+    local function selectTab(tab, selected)
+        local value = selected and art.tabSelected or art.tabUnselected
+        if tab.background.spriteID ~= value then tab.background.spriteID = value end
+        local height = selected and HEIGHT or HEIGHT - SEAM
+        if tab.artwork.height ~= height then tab.artwork:SetSize(WIDTH, height) end
+        if tab.seam.hidden == (not selected) then Components.setHidden(tab.seam, selected) end
+    end
+
     local function nativePage(group)
         hideSeams(group)
         restoreArtwork(group)
         for _, host in ipairs(group.hosts) do
             for _, saved in ipairs(host.flags) do restoreFlag(group, saved) end
-            if host.nativeTab then host.nativeTab.background.spriteID = art.tabUnselected end
+            if host.nativeTab then selectTab(host.nativeTab, false) end
         end
         group.active, group.pending, group.needsConceal = nil, nil, nil
     end
@@ -90,12 +98,6 @@ function View.new(Host, actions)
         local item = Components.new(ui.Sprite, parent)
         item.spriteID, item.clickthrough = resource, true
         return item
-    end
-
-    local function selectTab(tab, selected)
-        local value = selected and art.tabSelected or art.tabUnselected
-        if tab.background.spriteID ~= value then tab.background.spriteID = value end
-        if tab.seam.hidden == (not selected) then Components.setHidden(tab.seam, selected) end
     end
 
     local function releaseTab(tab)
@@ -126,12 +128,18 @@ function View.new(Host, actions)
         tab.visual = Components.new(ui.Layer, host.overflow.viewport, { _categoryPolicy = "auto" })
         tab.visual:SetSize(WIDTH, HEIGHT)
         tab.visual.clickthrough = true
-        tab.background = ownSprite(tab.visual, art.tabUnselected)
+        -- Clip inactive artwork instead of relying on the separator sprite to
+        -- cover it: transparent separator pixels must reveal the native strip.
+        tab.artwork = Components.new(ui.Layer, tab.visual)
+        tab.artwork:SetSize(WIDTH, HEIGHT - SEAM)
+        tab.artwork:SetScrollSize(WIDTH, HEIGHT)
+        tab.artwork.clickthrough = true
+        tab.background = ownSprite(tab.artwork, art.tabUnselected)
         tab.background:SetSize(WIDTH, HEIGHT)
-        local iconSprite = ownSprite(tab.visual, icon)
+        local iconSprite = ownSprite(tab.artwork, icon)
         iconSprite:SetPos(8, 2)
         iconSprite:SetSize(24, 24)
-        -- Paint above both background and icon; the icon overlaps the divider by two pixels.
+        -- Only the selected tab may paint through the separator.
         tab.seam = ownSprite(tab.visual, art.tabBarTile)
         tab.seam:SetPos(0, HEIGHT - SEAM)
         tab.seam:SetSize(WIDTH, SEAM)
