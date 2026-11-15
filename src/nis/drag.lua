@@ -391,7 +391,7 @@ function NisDrag.install(NisPanel)
                 self:_SyncOverlays(self.root.hidden == true)
             else
                 self.root:MoveToFront()
-                self._nisTabs:Sync(self.root.hidden == true)
+                self:_SyncOverlays(self.root.hidden == true)
             end
         end
         if self._nisGroup then NisGroup.notify(self) else self:_NotifyBoundsChange() end

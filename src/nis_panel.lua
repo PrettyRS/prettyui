@@ -645,6 +645,7 @@ function NisPanel:Show()
     if not loaded(self) then return end
     if self._nisHidden then return self:SetActive(true) end
     if self._nisClassic then return RibbonBar.selectClassic(self, false) end
+    if self:_SyncTopLevelVisibility() then return end
     self._nisHidden = false
     if self._nisNative then
         NisNative.select(self)
@@ -797,6 +798,12 @@ end
 
 function NisPanel:_IsTopLevelVisible()
     if self.parent.visibleGlobal == false then return false end
+    -- Transmogs hide native windows without hiding GAME_AREA or GAMEPLAY_HUDS.
+    local unmorphID = id.Component.TRH61_UNMORPH__BUTTON_LAYER
+    if type(unmorphID) == "number" and unmorphID >= 0 then
+        local unmorph = ui.Interfaces:GetComponent(unmorphID)
+        if unmorph and unmorph.visibleGlobal == true then return false end
+    end
     local hudID = id.Component.TOPLEVEL_V2__GAMEPLAY_HUDS
     if type(hudID) ~= "number" then return true end
     local hud = ui.Interfaces:GetComponent(hudID)
@@ -840,9 +847,9 @@ function NisPanel:_SyncTopLevelVisibility()
     self.root.enabled = enabled
     self:_LayoutBody()
     self:_SyncContent(visible)
+    if visible then self.root:MoveToFront() end
     self:_SyncChrome()
     self:_SyncOverlays(not visible)
-    if visible then self.root:MoveToFront() end
     return false
 end
 

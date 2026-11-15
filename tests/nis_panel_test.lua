@@ -2690,14 +2690,19 @@ do
         expect(standalone.root.hidden, false, "restored top-level UI reveals standalone NIS content")
         standalone:Destroy()
     end
-    -- Morphing can hide the gameplay HUD while GAME_AREA, the chatbox and the
-    -- world map remain visible. That HUD is the top-level visibility signal.
+    -- HUD suppression and transmog are separate native visibility signals.
     do
         local hudID = id.Component.TOPLEVEL_V2__GAMEPLAY_HUDS
         local hud = nativeNode(1477, 199, area, 0, 0, 1000, 700)
         id.Component.TOPLEVEL_V2__GAMEPLAY_HUDS = (1477 << 16) | 199
+        local builds = 0
         local standalone = NisPanel.new(area, {
             categoryID = "auto", x = 140, y = 440, width = 220, height = 140,
+            contentHeight = 400,
+            buildContent = function(owner)
+                builds = builds + 1
+                owner:AddTitle("Retained transmog content")
+            end,
         })
         local nativeBounds = {
             x = nativePanel.root.x, y = nativePanel.root.y,
@@ -2715,6 +2720,80 @@ do
             nativeBounds.width, nativeBounds.height,
             "restored gameplay HUD restores native NIS placement")
         expect(standalone.root.hidden, false, "restored gameplay HUD reveals standalone NIS content")
+        standalone.root.enabled = true
+        local unmorphID = id.Component.TRH61_UNMORPH__BUTTON_LAYER
+        local unmorph = nativeNode(1633, 0, nil, 0, 0, 100, 30)
+        unmorph.nativeShown = false
+        id.Component.TRH61_UNMORPH__BUTTON_LAYER = 1633 << 16
+        local inactive = NisPanel.new(area, { categoryID = "auto", active = false })
+        local standaloneOverlay = component(area, "layer")
+        standalone:_RegisterOverlay(standaloneOverlay)
+        standalone:_SyncOverlays(false)
+        standalone:SetScrollPosition(64)
+        local content, thumb = standalone.content, standalone._scroll.thumbDrag
+        expect(thumb.hidden, false, "standalone scroll input starts visible")
+        local binding = nativePanel._nisNative
+        local nativeFrame = binding.group.hosts[binding.group.current].frame
+        nativeFrame.nativeShown = false
+        unmorph.nativeShown = true
+        emit("Logic"); emit("Logic")
+        expect(area.visibleGlobal, true, "transmog leaves GAME_AREA visible")
+        expect(hud.visibleGlobal, true, "transmog leaves GAMEPLAY_HUDS visible")
+        expect(standalone.root.hidden, true, "visible unmorph control hides standalone content")
+        expect(standalone.root.enabled, false, "transmog disables standalone body input")
+        expect(standalone.dragLayer.hidden, true, "transmog hides standalone drag input")
+        expect(standalone.resize.enabled, false, "transmog disables standalone resizing")
+        expect(standaloneOverlay.hidden, true, "transmog hides sibling overlays")
+        expect(thumb.hidden, true, "transmog hides sibling scroll input")
+        expect(standalone.content, content, "transmog preserves mounted consumer content")
+        expect(standalone:IsActive(), true, "transmog does not deactivate the panel")
+        expect(nativePanel._nisNative, binding, "transmog retains native membership")
+        expect(nativePanel.root.hidden, true, "transmog keeps native-docked content hidden")
+        standalone:Show()
+        emit("Logic")
+        expect(standalone.root.hidden, true, "Show cannot reveal standalone content during transmog")
+        expect(standaloneOverlay.hidden, true, "Show cannot reveal overlays during transmog")
+        local late = NisPanel.new(area, { categoryID = "auto", width = 220, height = 140 })
+        expect(late.root.hidden, true, "construction during transmog starts hidden")
+        expect(late.content, nil, "construction during transmog defers consumer content")
+        unmorph.nativeShown = false -- The interface can remain loaded after unmorphing.
+        nativeFrame.nativeShown = true
+        emit("Logic"); emit("Logic")
+        expect(standalone.root.hidden, false, "unmorphing restores standalone content")
+        expect(standalone.root.enabled, true, "unmorphing restores standalone input")
+        expect(standaloneOverlay.hidden, false, "unmorphing restores sibling overlays")
+        expect(thumb.hidden, false, "unmorphing restores sibling scroll input")
+        expect(standalone.content, content, "unmorphing reuses retained consumer content")
+        expect(standalone.scrollY, 64, "unmorphing preserves scroll position")
+        expect(builds, 1, "HUD and transmog suspension never rebuild retained content")
+        expectRect(standalone.root, 140, 440, 220, 140, "unmorphing preserves standalone placement")
+        expect(inactive.root.hidden, true, "unmorphing does not reveal disabled panels")
+        expect(late.root.hidden, false, "unmorphing reveals panels created while transformed")
+        expect(late.content ~= nil, true, "unmorphing builds deferred consumer content")
+        expect(nativePanel._nisNative, binding, "unmorphing retains native membership")
+        expect(nativePanel.root.hidden, false, "unmorphing restores native-docked content")
+        expect(standalone.locked, false, "unmorphing retains edit mode without a lock toggle")
+        local header = hitAt(area, 250, 446)
+        expect(header, standalone.dragLayer, "restored header receives clicks above the body")
+        expect(hitAt(area, 358, 510), standalone.resize.handles.e,
+            "restored inner resize edge receives clicks above the body")
+        fire(header, ui.Hook.ONCLICK, 110, 6)
+        fire(header, ui.Hook.ONHOLD, 140, 26)
+        fire(header, ui.Hook.ONRELEASE)
+        expectRect(standalone.root, 170, 460, 220, 140,
+            "restored header drag commits movement without toggling the lock")
+        local edge = hitAt(area, 388, 530)
+        expect(edge, standalone.resize.handles.e, "resize edge remains reachable after the restored drag")
+        fire(edge, ui.Hook.ONCLICK, 3, 30)
+        fire(edge, ui.Hook.ONHOLD, 33, 30)
+        fire(edge, ui.Hook.ONRELEASE)
+        expectRect(standalone.root, 170, 460, 250, 140,
+            "restored edge resize commits dimensions without toggling the lock")
+        standalone:_UnregisterOverlay(standaloneOverlay)
+        standaloneOverlay:Destroy()
+        inactive:Destroy(); late:Destroy()
+        unmorph:Destroy()
+        id.Component.TRH61_UNMORPH__BUTTON_LAYER = unmorphID
         standalone:Destroy()
         id.Component.TOPLEVEL_V2__GAMEPLAY_HUDS = hudID
         hud:Destroy()
