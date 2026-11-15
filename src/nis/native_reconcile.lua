@@ -92,6 +92,8 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             host.divider.spriteID = art.tabBarTile
             host.divider.isTiling = true
             host.divider.enabled, host.divider.clickthrough = false, true
+            -- The fill and divider must stay behind the clipped tab artwork.
+            host.overflow.viewport:MoveToFront()
             -- The native-page input is created after the first member supplies a
             -- GAME_AREA parent. No client-hidden native tab strip is revealed.
         end

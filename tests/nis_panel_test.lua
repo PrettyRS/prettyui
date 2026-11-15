@@ -2153,6 +2153,37 @@ do
             and top < owner.viewport.height and top + label.height > 0
     end
     local area = nativeNode(1477, 61, nil, 80, 40, 1000, 700)
+    -- Sample painter order as well as visibility: a sibling can cover live tabs.
+    local function paintedAt(node, x, y, transparentSprite)
+        if node.hidden or node.visibleGlobal == false then return nil end
+        local origin = node.xyGlobal
+        if x < origin.x or x >= origin.x + node.width
+            or y < origin.y or y >= origin.y + node.height then return nil end
+        for index = #node.renderChildren, 1, -1 do
+            local painted = paintedAt(node.renderChildren[index],
+                x + (node.scrollX or 0), y + (node.scrollY or 0), transparentSprite)
+            if painted then return painted end
+        end
+        return node.spriteID and node.spriteID ~= transparentSprite and node or nil
+    end
+    local function expectPaintedNativeTabs(owner, message)
+        local group = owner._nisNative.group
+        local host = group.hosts[group.current]
+        local function check(tab, selected)
+            local origin = tab.visual.xyGlobal
+            expect(paintedAt(area, origin.x + 2, origin.y + 12), tab.background,
+                message .. " paints the tab background above the strip fill")
+            expect(paintedAt(area, origin.x + 2, origin.y + 26),
+                selected and tab.background or tab.seam,
+                message .. " paints the selected opening or inactive separator")
+            expect(hitAt(area, tab.hit.x + 2, tab.hit.y + 12), tab.hit,
+                message .. " keeps the visible tab aligned with its click target")
+        end
+        if host.nativeTab then check(host.nativeTab, group.active == nil) end
+        for _, member in ipairs(group.members) do
+            check(group.bindings[member].tabs[group.current], group.active == member)
+        end
+    end
     local frames = {}
     function area:IterateStaticComponents(callback)
         for _, frame in ipairs(frames) do if callback(frame, frame.visibleGlobal) then break end end
@@ -3292,20 +3323,6 @@ do
             "PrettyUI tab occupies the gap between native tabs")
         rapidNativeSwitch(0, 84, 48)
         do
-            -- Sample actual painter order, not just hidden flags: an enabled
-            -- native backdrop can cover otherwise-visible GAME_AREA artwork.
-            local function paintedAt(node, x, y, transparentSprite)
-                if node.hidden or node.visibleGlobal == false then return nil end
-                local origin = node.xyGlobal
-                if x < origin.x or x >= origin.x + node.width
-                    or y < origin.y or y >= origin.y + node.height then return nil end
-                for index = #node.renderChildren, 1, -1 do
-                    local painted = paintedAt(node.renderChildren[index],
-                        x + (node.scrollX or 0), y + (node.scrollY or 0), transparentSprite)
-                    if painted then return painted end
-                end
-                return node.spriteID and node.spriteID ~= transparentSprite and node or nil
-            end
             local function paintedWithDrag(source, x, y)
                 local mode = source.dragConfig.renderBehaviour
                 if mode == ui.DragRenderBehaviour.OPAQUE_OVERLAY
@@ -4158,6 +4175,7 @@ do
             emit("Logic")
             expect(drawable(title, owner), true, captured.label .. " retained consumer content remains drawable")
             expect(owner.content, content, captured.label .. " docking retains consumer controls")
+            expectPaintedNativeTabs(owner, captured.label .. " docking")
             local binding = owner._nisNative
             fire(binding.group.hosts[1].nativeTab.hit, ui.Hook.ONCLICK)
             expect(owner.content, nil, captured.label .. " native tab destroys its controls")
@@ -4165,9 +4183,11 @@ do
             expect(embedded.hidden, false, captured.label .. " native tab restores embedded content")
             expect(item.scroll.hidden, false, captured.label .. " native tab restores scrollbar visibility")
             expect(edit.hidden, false, captured.label .. " native tab restores edit visibility")
+            expectPaintedNativeTabs(owner, captured.label .. " native selection")
             owner:SelectTab()
             content = owner.content
             expect(drawable(title, owner), true, captured.label .. " own-tab return rebuilds the title")
+            expectPaintedNativeTabs(owner, captured.label .. " own selection")
             if captured.label == "Prayer" then
                 local retainedBinding, retainedRoot = owner._nisNative, owner.root
                 local nativeWrites = 0
@@ -4287,6 +4307,7 @@ do
             expect(owner._nisNative ~= nil, true, captured.label .. " saved standalone host restores while locked")
             expectRect(embedded, 0, 28, captured.width, captured.height - 28,
                 captured.label .. " reload reserves one band, not two")
+            expectPaintedNativeTabs(owner, captured.label .. " locked restoration")
             owner:Undock(); owner:Destroy()
             expectRect(embedded, 0, 0, captured.width, captured.height, captured.label .. " locked teardown restores native page")
             item.frame.nativeShown = false
@@ -4755,6 +4776,7 @@ do
         emit("Logic")
         expect(drawable(title, owner), true, captured.name .. " retains drawable consumer controls")
         expect(owner.content, content, captured.name .. " active page keeps its current controls")
+        expectPaintedNativeTabs(owner, captured.name .. " docking")
         if captured.row then
             nativeClick(item.tabs)
         else
@@ -4762,12 +4784,14 @@ do
         end
         expect(embedded.visibleGlobal, true, captured.name .. " returns to native page")
         expect(item.scroll.hidden, false, captured.name .. " restores native scrollbar")
+        expectPaintedNativeTabs(owner, captured.name .. " native selection")
         if captured.tooltip then expect(captured.tooltip.visibleGlobal, true, "Clan tooltip root returns with native page") end
         if captured.quest then
             expect(captured.controls.visibleGlobal, true, "native selection restores Quest controls")
             expect(captured.filters.visibleGlobal, true, "native selection restores the native-open filter panel")
         end
         owner:SelectTab()
+        expectPaintedNativeTabs(owner, captured.name .. " own selection")
         if captured.quest then
             item.body:SetSize(captured.width, 50)
             emit("Logic")
@@ -4787,6 +4811,7 @@ do
         owner = NisPanel.new(area, { id = panelID, categoryID = "auto" })
         expect(owner._nisNative ~= nil, true, captured.name .. " restores membership while locked")
         expectRect(embedded, 0, rootY + inset, captured.width, rootHeight - inset, captured.name .. " reload does not double inset")
+        expectPaintedNativeTabs(owner, captured.name .. " locked restoration")
         owner:Undock()
         expectRect(embedded, 0, rootY, captured.width, rootHeight, captured.name .. " undock restores the original page")
         expect(embedded.visibleGlobal, true, captured.name .. " undock restores native visibility")
