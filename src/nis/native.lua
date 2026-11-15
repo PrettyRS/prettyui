@@ -600,8 +600,8 @@ function Native.sync(panel)
         if group.active and group.needsConceal then moveActive(group, current) end
         local lockReflow = reconcileLock(group, current)
         local repainted = reconcilePage(group, current)
-        local resized = align(group)
-        if lockReflow or repainted or rootReflow or resized then raiseGroup(group) end
+        align(group)
+        if lockReflow or repainted or rootReflow then raiseGroup(group) end
         saveGroup(group)
     end)
     if not ok then group.failure = problem; warn(problem); return false end

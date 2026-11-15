@@ -407,11 +407,6 @@ function View.new(Host, actions)
     local function align(group)
         local current = Host.selectedFrame(group)
         if not current then error("native group has no unique visible frame") end
-        -- Native resize scripts can raise their frame after Logic has aligned
-        -- this width. Keep the repair pending until Draw, even if geometry agrees.
-        local currentHost = group.hosts[current]
-        local resized = currentHost.overflow.bandWidth ~= currentHost.content.width
-        if resized then group.paintPending = true end
         local scroll = scrollPosition(group, current)
         for i, host in ipairs(group.hosts) do
             local show = i == current
@@ -519,7 +514,6 @@ function View.new(Host, actions)
                 binding.current = current
             end
         end
-        return resized
     end
 
     local function raiseGroup(group)

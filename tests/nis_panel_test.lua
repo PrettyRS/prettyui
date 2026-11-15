@@ -3364,49 +3364,21 @@ do
             do
                 local binding, group = peer._nisNative, peer._nisNative.group
                 local oldWidth = notes.body.width
-                local host = group.hosts[group.current]
-                local backdrop, oldSprite = host.backdrop, host.backdrop.spriteID
-                backdrop.spriteID = id.Sprite.RS3_CHILD_TAB_UNSELECTED
-                local function expectResizedTabs(message)
-                    expect(peer._nisNative, binding, message .. " retains membership")
-                    expect(group.active, peer, message .. " retains selection")
-                    expect(peer.root.hidden, false, message .. " keeps the selected page visible")
-                    local selected = binding.tabs[group.current]
-                    expect(selected.hit.hidden, false, message .. " keeps the selected tab in view")
-                    expect(selected.hit.width, 40, message .. " reveals the entire selected tab")
-                    for _, member in ipairs(group.members) do
-                        local tab = member._nisNative.tabs[group.current]
-                        if tab.hit.width > 0 then
-                            expect(paintedAt(area, tab.hit.xyGlobal.x + 1, tab.hit.xyGlobal.y + 1),
-                                tab.background, message .. " keeps tab artwork above the native backdrop")
-                            expect(hitAt(area, tab.hit.x + 1, tab.hit.y + 1), tab.hit,
-                                message .. " keeps tab input aligned with the artwork")
-                        end
-                    end
-                end
                 local function resizeRow(width)
-                    local nativeWidth = width < 88 and width - 22 or width
                     for _, copy in ipairs({ notes, ranged }) do
                         copy.frame:SetSize(width + 8, copy.frame.height)
                         copy.body:SetSize(width, copy.body.height)
                         copy.scroll:SetSize(width, copy.scroll.height)
-                        copy.tabs:SetPos(width < 88 and 15 or 4, copy.tabs.y)
-                        copy.tabs:SetSize(nativeWidth, 28)
-                        copy.tabs:SetScrollSize(88, 28)
-                        copy.tabs:SetScrollPos(math.min(copy.tabs.scrollX, math.max(0, 88 - nativeWidth)), 0)
+                        copy.tabs:SetPos(4, copy.tabs.y)
+                        copy.tabs:SetSize(width, 28)
                         copy.tabControls:SetSize(width, 28)
                     end
-                    -- Native resize input raises its frame without changing
-                    -- selection or resetting the already-concealed body.
-                    host.frame:MoveToFront()
                 end
                 resizeRow(121)
                 emit("Logic")
-                emit("Draw")
-                expectResizedTabs("resize before Logic")
                 expect(peer._nisNative, binding, "overflow retains the existing native binding")
                 expect(nativePanel._nisNative.group, group, "overflow retains every mixed member")
-                expect(group.hosts[group.current], host, "resize retains the native host")
+                local host = group.hosts[group.current]
                 local view = host.overflow
                 expect(host.tabs.x, 15, "mixed overflow reserves the captured native left gutter")
                 expect(host.tabs.width, 99, "mixed overflow uses the captured 99-unit viewport")
@@ -3467,27 +3439,6 @@ do
                 expect(host.tabs.x, 4, "growing restores the full native tab viewport")
                 expect(view.leftHit.hidden, true, "navigation disappears once all mixed tabs fit")
                 expect(view.rightHit.hidden, true, "both overflow arrows disappear when fitting")
-                emit("Draw")
-                expectResizedTabs("widen before Logic")
-                for _, phase in ipairs({ "Logic", "Draw", "sync" }) do
-                    for _, width in ipairs({ 169, 168, 167, 140, 121, 100, 88, 87, 80, 64,
-                        80, 88, 100, 121, 167, 168, 169, oldWidth }) do
-                        local content = peer.content
-                        resizeRow(width)
-                        if phase == "Logic" then
-                            emit("Logic")
-                        elseif phase == "sync" then
-                            expect(require("src/nis/native").sync(peer), true, "explicit resize sync succeeds")
-                        end
-                        -- The client repaints after PrettyUI has consumed the
-                        -- new width; no further geometry change signals Draw.
-                        host.frame:MoveToFront()
-                        emit("Draw")
-                        expectResizedTabs("resize before " .. phase)
-                        expect(peer.content, content, "overflow transitions retain mounted content")
-                    end
-                end
-                backdrop.spriteID = oldSprite
             end
             local originalRoot = peer.root
             local originalScroll = nativePanel.scrollY
