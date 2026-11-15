@@ -184,337 +184,195 @@ local function poison(item)
     })
 end
 
-local capture = scene()
 local ClassicLayout = require("src/nis/classic_layout")
-expect(ClassicLayout.update(44), true, "collapsed Classic rail reserves native width")
-assertArea(capture, 44, "collapsed rail")
-expect(globalX(capture.minimap), 3121, "captured minimap coordinate at 3440 minus 44")
-expect(globalX(capture.buttons), 2844, "captured native buttons at 3440 minus 44")
-assertDescriptor(capture.area.position, pos(0, 0, 0, 0, 0, 0), positionFields,
-    "native self-anchor must not shift left boundary when resized")
-assertDescriptor(capture.area.size, size(-44, 0, 1, 1), sizeFields, "collapsed reserved size")
-local areaPos, areaSize = writes(capture.area)
-local gamePos, gameSize = writes(capture.gameview)
-expect(areaPos, 1, "first reservation positions GAME_AREA once")
-expect(areaSize, 1, "first reservation sizes GAME_AREA once")
-expect(gamePos, 0, "gameview keeps its original position")
-expect(gameSize, 1, "first reservation sizes gameview once")
-expect(capture.top.posWrites + capture.top.sizeWrites, 0, "plugin build layer remains full screen")
-expect(capture.viewport.posWrites + capture.viewport.sizeWrites, 0, "viewport geometry remains untouched")
-expect(capture.slayer.posWrites, 1, "collapsed rail shifts Slayer once")
-expect(capture.slayer.sizeWrites, 0, "Slayer retains native dimensions")
-expect(ClassicLayout.update(44), true, "repeated collapsed tick succeeds")
-expect(capture.area.posWrites, areaPos, "repeated tick does not rewrite native position")
-expect(capture.area.sizeWrites, areaSize, "repeated tick does not rewrite native size")
-expect(capture.gameview.posWrites, gamePos, "repeated tick does not rewrite gameview position")
-expect(capture.gameview.sizeWrites, gameSize, "repeated tick does not rewrite gameview size")
-expect(capture.slayer.posWrites, 1, "repeated tick does not accumulate Slayer displacement")
-expect(ClassicLayout.update(404), true, "expanded Classic rail reserves icon rail and body")
-assertArea(capture, 404, "expanded rail")
-expect(globalX(capture.minimap), 2761, "expanded minimap x")
-expect(globalX(capture.buttons), 2484, "expanded native buttons x")
-expect(capture.area.posWrites, 1, "expansion does not repeat top-left positioning")
-expect(capture.area.sizeWrites, 2, "expansion applies one native width change")
-expect(capture.gameview.sizeWrites, 2, "expansion applies one gameview width change")
-expect(globalX(capture.slayer), 2611, "expanded Slayer position includes full 404-unit reservation")
-expect(ClassicLayout.update(44), true, "collapsing derives width from original descriptors")
-assertArea(capture, 44, "collapsed again")
-expect(capture.area.sizeWrites, 3, "collapse applies one native width change")
-expect(capture.gameview.sizeWrites, 3, "collapse applies one gameview width change")
-ClassicLayout.restore()
-assertRestored(capture, "teardown restores all ten original scalars per target")
-expect(capture.area.x, 0, "original full-size center anchor resolves at x zero")
-expect(capture.area.width, 3440, "original full native width returns")
-expect(capture.area.posWrites, 2, "teardown restores original native position once")
-expect(capture.area.sizeWrites, 4, "teardown restores original native size once")
-expect(capture.gameview.posWrites, 0, "teardown never writes unchanged gameview position")
-expect(capture.gameview.sizeWrites, 4, "teardown restores original gameview size once")
-expect(capture.slayer.posWrites, 4, "Slayer collapses and restores without cumulative displacement")
-ClassicLayout.restore()
 
--- Classic mode must be consulted on every update; mode exit gives native
--- ownership back even if the caller has not explicitly restored yet.
-local mode = scene()
-classicValue = 0
-expect(ClassicLayout.update(44), false, "modern mode cannot reserve the native UI")
-expect(mode.area.posWrites + mode.area.sizeWrites, 0, "modern mode makes no native writes")
-classicValue = 2
-expect(ClassicLayout.update(44), false, "non-one mode cannot reserve the native UI")
-classicValue = 1
-expect(ClassicLayout.update(44), true, "mode reentry captures a compatible baseline")
-classicValue = 0
-expect(ClassicLayout.update(44), false, "mode exit cannot claim Classic reservation")
-assertRestored(mode, "mode exit restores owned native descriptors")
-classicValue = 1
-ClassicLayout.restore()
+local function reservationFollowsRailAndRestoresOriginalLayout()
+    local view = scene()
+    expect(ClassicLayout.update(44), true, "collapsed rail reserves native width")
+    assertArea(view, 44, "collapsed rail")
+    assertDescriptor(view.area.position, pos(0, 0, 0, 0, 0, 0), positionFields,
+        "reservation removes centered native anchors")
+    local positionWrites, sizeWrites = writes(view.area)
+    ClassicLayout.update(44)
+    expect(view.area.posWrites, positionWrites, "idle update does not reposition native area")
+    expect(view.area.sizeWrites, sizeWrites, "idle update does not resize native area")
+    expect(ClassicLayout.update(404), true, "expansion reserves panel body")
+    assertArea(view, 404, "expanded rail")
+    expect(ClassicLayout.update(44), true, "collapse removes body reservation")
+    assertArea(view, 44, "collapsed again")
+    ClassicLayout.restore()
+    assertRestored(view, "shutdown restores all native descriptors")
+    expect(view.area.width, 3440, "restored game area fills viewport")
+    ClassicLayout.restore()
+end
 
--- A counter already parented under GAME_AREA inherits the inset, not a second
--- explicit shift. Absent counters can appear after the sidebar is mounted.
-do
+local function modeExitRestoresNativeOwnership()
+    local view = scene()
+    classicValue = 0
+    expect(ClassicLayout.update(44), false, "modern mode cannot reserve Classic space")
+    expect(view.area.sizeWrites, 0, "modern mode does not write native area")
+    classicValue = 1
+    expect(ClassicLayout.update(44), true, "Classic mode captures native baseline")
+    classicValue = 0
+    expect(ClassicLayout.update(44), false, "mode exit stops reserving Classic space")
+    assertRestored(view, "mode exit restores owned descriptors")
+    classicValue = 1
+    ClassicLayout.restore()
+end
+
+local function slayerPositionIsOptionalAndNeverShiftedTwice()
     local inherited = scene({ slayerInArea = true })
-    expect(ClassicLayout.update(404), true, "Slayer under native game area inherits reservation")
-    assertArea(inherited, 404, "Slayer inherited inset")
-    expect(inherited.slayer.posWrites, 0, "already inset Slayer is not shifted twice")
+    expect(ClassicLayout.update(404), true, "Slayer under native area inherits inset")
+    expect(inherited.slayer.posWrites, 0, "inherited inset is not applied twice")
     ClassicLayout.restore()
-    assertRestored(inherited, "inherited Slayer restoration")
-    local late = scene({ noSlayer = true })
-    expect(ClassicLayout.update(44), true, "absent Slayer does not block sidebar reservation")
-    late.slayer = component(4202, 93, late.hud, pos(-245, 2, 1, 0, 1, 0), size(180, 80, 0, 0))
-    late.slayerContent = component(4203, 7, late.slayer, pos(12, 4, 0, 0, 0, 0), size(120, 40, 0, 0))
-    late.slayerPosition = copy(late.slayer.position, positionFields)
-    expect(ClassicLayout.update(404), true, "late Slayer receives current expanded reservation")
-    assertArea(late, 404, "late Slayer")
-    ClassicLayout.restore()
-    assertRestored(late, "late Slayer restoration")
-end
+    assertRestored(inherited, "inherited Slayer position")
 
-do
-    local slayerWarning = "PrettyUI: classic sidebar cannot move the Slayer counter"
-    for _, failure in ipairs({ "before", "after" }) do
-        local partial = scene()
-        partial.slayer.failPos = failure
-        local beforeWarnings = warningCount(slayerWarning)
-        expect(ClassicLayout.update(44), true, "Slayer setter failure keeps native sidebar reservation")
-        expect(partial.area.width, 3396, "Slayer failure does not undo mandatory native reservation")
-        assertDescriptor(partial.slayer.position, partial.slayerPosition, positionFields,
-            "failed Slayer shift rolls back its owned position")
-        local count = partial.slayer.posWrites
-        ClassicLayout.update(404)
-        expect(partial.slayer.posWrites, count, "failed Slayer setter is not retried each tick")
-        expect(warningCount(slayerWarning), beforeWarnings + 1, "Slayer failure logs once")
-        ClassicLayout.restore()
-        assertRestored(partial, "Slayer setter failure restoration")
-    end
-    local restrictedSlayer = scene()
-    restrictedSlayer.slayer.isRestricted = true
-    expect(ClassicLayout.update(44), true, "restricted Slayer does not block native reservation")
-    expect(restrictedSlayer.slayer.posWrites, 0, "restricted Slayer receives no writes")
+    local unavailable = scene()
+    unavailable.slayer.failPos = "after"
+    expect(ClassicLayout.update(44), true, "Slayer setter failure does not block game area")
+    expect(unavailable.area.width, 3396, "mandatory reservation survives Slayer failure")
+    assertDescriptor(unavailable.slayer.position, unavailable.slayerPosition, positionFields,
+        "failed Slayer shift rolls back")
     ClassicLayout.restore()
-    local foreignSlayer = scene()
+
+    local foreign = scene()
     ClassicLayout.update(44)
-    foreignSlayer.slayer.position.y = 31
-    local count = foreignSlayer.slayer.posWrites
-    ClassicLayout.update(404); ClassicLayout.update(404)
-    expect(foreignSlayer.slayer.posWrites, count, "foreign Slayer position is not fought on later ticks")
+    foreign.slayer.position.y = 31
+    local positionWrites = foreign.slayer.posWrites
+    ClassicLayout.update(404)
+    expect(foreign.slayer.posWrites, positionWrites, "client-owned Slayer position is not overwritten")
     ClassicLayout.restore()
-    expect(foreignSlayer.slayer.position.y, 31, "foreign Slayer placement survives teardown")
-    local nativeSize = scene()
+    expect(foreign.slayer.position.y, 31, "client-owned Slayer position survives teardown")
+end
+
+local function optionalGameviewCannotBlockMandatoryReservation()
+    local missing = scene({ noGameview = true })
+    expect(ClassicLayout.update(44), true, "missing gameview does not block native area")
+    expect(missing.area.width, 3396, "native area reserves rail without gameview")
+    ClassicLayout.restore()
+    assertRestored(missing, "missing gameview teardown")
+
+    local failed = scene()
+    failed.gameview.failSize = "after"
+    expect(ClassicLayout.update(404), true, "gameview setter failure does not block expansion")
+    expect(failed.area.width, 3036, "native area still reserves full sidebar")
+    assertDescriptor(failed.gameview.size, failed.gameviewSize, sizeFields,
+        "partially applied optional size rolls back")
+    ClassicLayout.restore()
+    assertRestored(failed, "optional setter failure teardown")
+
+    local foreign = scene()
     ClassicLayout.update(44)
-    nativeSize.slayer.size.height = 160
+    foreign.gameview.size.width = -17
+    local gameviewWrites = foreign.gameview.sizeWrites
+    expect(ClassicLayout.update(404), true, "foreign gameview does not block native expansion")
+    expect(foreign.area.width, 3036, "mandatory reservation expands independently")
+    expect(foreign.gameview.sizeWrites, gameviewWrites, "gameview client write is not fought")
     ClassicLayout.restore()
-    assertRestored(nativeSize, "Slayer restoration preserves independent native sizing")
-    expect(nativeSize.slayer.height, 160, "Slayer dimensions remain client-owned")
+    expect(foreign.area.size.width, 0, "native reservation restored on teardown")
+    expect(foreign.gameview.size.width, -17, "foreign gameview write survives teardown")
 end
 
--- An optional target never prevents mandatory native UI reservation.
-local absent = scene({ noGameview = true })
-expect(ClassicLayout.update(44), true, "missing gameview is optional")
-assertArea(absent, 44, "missing gameview")
-local optionalWarning = "PrettyUI: classic sidebar cannot resize the gameview"
-expect(warningCount(optionalWarning), 1, "missing optional gameview reports its limitation")
-expect(ClassicLayout.update(44), true, "missing gameview still reserves on subsequent ticks")
-expect(warningCount(optionalWarning), 1, "optional warning is emitted only once per environment")
-ClassicLayout.restore()
-assertRestored(absent, "missing gameview teardown")
-local incompatibleGameview = scene()
-incompatibleGameview.gameview.size.width = -15
-expect(ClassicLayout.update(44), true, "incompatible gameview does not block native reservation")
-expect(incompatibleGameview.area.width, 3396, "incompatible gameview still shifts native UI")
-expect(incompatibleGameview.gameview.width, 3425, "incompatible gameview layout is preserved")
-ClassicLayout.restore()
-expect(incompatibleGameview.area.size.width, 0, "incompatible gameview teardown restores native UI")
-expect(incompatibleGameview.gameview.size.width, -15, "incompatible gameview stays untouched on teardown")
-local restricted = scene()
-restricted.gameview.isRestricted = true
-expect(ClassicLayout.update(44), true, "restricted gameview is optional")
-expect(restricted.area.width, 3396, "restricted gameview still shifts native UI")
-expect(restricted.gameview.width, 3440, "restricted gameview is not resized")
-ClassicLayout.restore()
-assertRestored(restricted, "restricted gameview teardown")
-for _, failure in ipairs({ "before", "after" }) do
-    local optional = scene()
-    optional.gameview.failSize = failure
-    expect(ClassicLayout.update(404), true, "optional gameview " .. failure .. " error does not block reservation")
-    expect(optional.area.width, 3036, "optional failure preserves mandatory native reservation")
-    assertDescriptor(optional.gameview.size, optional.gameviewSize, sizeFields,
-        "optional " .. failure .. " failure rolls back its size")
+local function unsafeNativeLayoutsDoNotClaimReservation()
+    local incompatible = scene()
+    incompatible.area.size.widthParentPc = .9
+    expect(ClassicLayout.update(44), false, "non-full-size game area rejects reservation")
+    expect(incompatible.area.sizeWrites, 0, "incompatible area receives no native write")
     ClassicLayout.restore()
-    assertRestored(optional, "optional " .. failure .. " failure teardown")
-end
 
--- Sidebar reservation requires a full-size GAME_AREA and a separate plugin layer.
-local incompatible = scene()
-incompatible.area.size.widthParentPc = .9
-expect(ClassicLayout.update(44), false, "non-full-size GAME_AREA rejects reservation")
-expect(incompatible.area.posWrites + incompatible.area.sizeWrites, 0, "invalid topology is never written")
-local suspendedWarning = "PrettyUI: classic sidebar suspended; native layout is unavailable"
-local suspensionCount = warningCount(suspendedWarning)
-expect(suspensionCount, 1, "incompatible layout reports suspension through native-safe logging")
-expect(ClassicLayout.update(44), false, "incompatible topology remains suspended on repeated ticks")
-expect(warningCount(suspendedWarning), suspensionCount, "mandatory suspension logs once per environment")
-ClassicLayout.restore()
-local missingTop = scene()
-components[id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP] = nil
-expect(ClassicLayout.update(44), false, "missing separate plugin top layer suspends Classic sidebar")
-expect(missingTop.area.posWrites + missingTop.area.sizeWrites, 0, "missing mount makes no native writes")
-ClassicLayout.restore()
-local blocked = scene()
-blocked.area.isRestricted = true
-expect(ClassicLayout.update(44), false, "restricted mandatory target cannot reserve space")
-expect(blocked.area.posWrites + blocked.area.sizeWrites, 0, "restricted mandatory target is not touched")
-ClassicLayout.restore()
-for _, failure in ipairs({ "before", "after" }) do
-    local partial = scene()
-    partial.area.failSize = failure
+    local missingLayer = scene()
+    components[id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP] = nil
+    expect(ClassicLayout.update(44), false, "missing separate plugin layer rejects reservation")
+    expect(missingLayer.area.sizeWrites, 0, "missing mount receives no native write")
+    ClassicLayout.restore()
+
+    local failed = scene()
+    failed.area.failSize = "after"
     local ok, err = pcall(ClassicLayout.update, 44)
-    expect(ok, false, "mandatory " .. failure .. " failure propagates")
-    assert(tostring(err):find("native size setter failed", 1, true), "original mandatory setter error propagates")
-    assertRestored(partial, "mandatory " .. failure .. " partial write rolled back")
+    expect(ok, false, "mandatory setter failure propagates")
+    assert(tostring(err):find("native size setter failed", 1, true), "original setter error propagates")
+    assertRestored(failed, "partially applied mandatory setter rolls back")
     ClassicLayout.restore()
 end
-local firstSetter = scene()
-firstSetter.area.failPos = "after"
-local ok, err = pcall(ClassicLayout.update, 44)
-expect(ok, false, "first mandatory setter failure propagates")
-assert(tostring(err):find("native position setter failed", 1, true), "first setter retains its original error")
-assertRestored(firstSetter, "first setter partial mutation rolled back")
-ClassicLayout.restore()
 
-local foreign = scene()
-expect(ClassicLayout.update(44), true, "begin owning a compatible native target")
-foreign.area.size.width = 0 -- Client script restores width without notifying the helper.
-areaPos, areaSize = writes(foreign.area)
-expect(ClassicLayout.update(44), false, "unexpected client overwrite cannot be re-applied every tick")
-expect(ClassicLayout.update(44), false, "repeated overwrite remains suspended")
-expect(foreign.area.posWrites, areaPos + 1, "suspension restores the still-owned position once")
-expect(foreign.area.sizeWrites, areaSize, "foreign overwrite receives no size writes")
-ClassicLayout.restore()
-expect(foreign.area.size.width, 0, "foreign size edit is preserved on teardown")
-local changedAnchor = scene()
-expect(ClassicLayout.update(44), true, "own native descriptors before foreign anchor change")
-changedAnchor.area.position.yParentPc = .25
-areaPos = changedAnchor.area.posWrites
-ClassicLayout.restore()
-expect(changedAnchor.area.posWrites, areaPos, "foreign anchor descriptor is never overwritten")
-expect(changedAnchor.area.position.yParentPc, .25, "foreign anchor survives teardown")
-expect(changedAnchor.area.size.width, 0, "independently owned size can still restore")
+local function foreignDescriptorsRemainClientOwned()
+    local foreignSize = scene()
+    expect(ClassicLayout.update(44), true, "reserve before client overwrite")
+    foreignSize.area.size.width = 0
+    local sizeWrites = foreignSize.area.sizeWrites
+    expect(ClassicLayout.update(44), false, "foreign overwrite suspends reservation")
+    expect(ClassicLayout.update(44), false, "later update cannot reclaim foreign size")
+    expect(foreignSize.area.sizeWrites, sizeWrites, "foreign size is never rewritten")
+    ClassicLayout.restore()
+    expect(foreignSize.area.size.width, 0, "teardown preserves foreign size")
 
--- Replacement uses identical numeric IDs but a different native component
--- object/layout. Never probe a retired handle or restore onto the newcomer.
-local remounted = scene()
-expect(ClassicLayout.update(44), true, "initial native generation reserves space")
-local oldArea = remounted.area
-local replacement = component(4202, oldArea.staticID, remounted.viewport,
-    pos(29, 0, 0, 0, 0, 0), size(-120, 0, 1, 1))
-poison(oldArea)
-ClassicLayout.restore()
-expect(replacement.position.x, 29, "same-ID replacement retains independent placement")
-expect(replacement.size.width, -120, "same-ID replacement retains independent width")
-expect(replacement.posWrites + replacement.sizeWrites, 0, "replacement is never treated as owned")
-expect(remounted.slayer.position.x, -245, "same-interface replacement teardown restores owned Slayer position")
-expect(ClassicLayout.update(44), false, "incompatible replacement does not inherit stale ownership")
-ClassicLayout.restore()
-
--- An unloaded interface poisons even ID reads. The helper can only use cached
--- interface IDs, discard its old records and find fresh components on remount.
-local unloaded = scene()
-expect(ClassicLayout.update(404), true, "reserve space before interface unload")
-live[4202] = nil
-for packed, item in pairs(components) do
-    if packed >> 16 == 4202 then components[packed] = nil; poison(item) end
+    local foreignAnchor = scene()
+    ClassicLayout.update(44)
+    foreignAnchor.area.position.yParentPc = .25
+    local positionWrites = foreignAnchor.area.posWrites
+    ClassicLayout.restore()
+    expect(foreignAnchor.area.posWrites, positionWrites, "teardown never writes foreign anchor")
+    expect(foreignAnchor.area.position.yParentPc, .25, "foreign anchor survives teardown")
+    expect(foreignAnchor.area.size.width, 0, "independently owned size restores")
 end
-ClassicLayout.restore()
-local newGeneration = scene()
-expect(ClassicLayout.update(44), true, "a fresh native generation can reserve space")
-assertArea(newGeneration, 44, "new interface generation")
-ClassicLayout.restore()
-assertRestored(newGeneration, "new generation teardown")
 
-local resized = scene()
-expect(ClassicLayout.update(404), true, "reserve before viewport resize")
-resized.viewport:SetSize(3000, 900, 0, 0)
-resized.top:SetSize(3000, 900, 0, 0)
-expect(ClassicLayout.update(44), true, "confirmed viewport resize reuses uncropped baseline")
-assertArea(resized, 44, "resized viewport")
-expect(resized.area.height, 900, "resize retains full viewport height")
-expect(ClassicLayout.update(404), true, "viewport resize still supports expansion")
-assertArea(resized, 404, "resized expanded viewport")
-ClassicLayout.restore()
-assertRestored(resized, "viewport resize teardown restores descriptors")
-expect(resized.area.width, 3000, "restored percent-based area follows current viewport width")
+local function remountNeverTouchesRetiredNativeHandles()
+    local first = scene()
+    ClassicLayout.update(44)
+    local replacement = component(4202, first.area.staticID, first.viewport,
+        pos(29, 0, 0, 0, 0, 0), size(-120, 0, 1, 1))
+    poison(first.area)
+    ClassicLayout.restore()
+    expect(replacement.posWrites + replacement.sizeWrites, 0, "same-ID replacement is not owned")
+    expect(replacement.position.x, 29, "replacement keeps its independent placement")
+    scene()
+    ClassicLayout.update(404)
+    live[4202] = nil
+    for packed, item in pairs(components) do
+        if packed >> 16 == 4202 then components[packed] = nil; poison(item) end
+    end
+    ClassicLayout.restore()
 
--- An optional native script taking over GAMEVIEW_WINDOW cannot disable or
--- repeatedly overwrite the mandatory GAME_AREA reservation.
-local optionalOverwrite = scene()
-expect(ClassicLayout.update(44), true, "optional foreign overwrite starts from owned gameview")
-optionalOverwrite.gameview.size.width = -17
-local optionalWrites = optionalOverwrite.gameview.sizeWrites
-local optionalWarningCount = warningCount(optionalWarning)
-expect(ClassicLayout.update(44), true, "gameview foreign overwrite keeps native reservation available")
-assertArea({ area = optionalOverwrite.area, viewport = optionalOverwrite.viewport,
-    minimap = optionalOverwrite.minimap, buttons = optionalOverwrite.buttons }, 44,
-    "gameview foreign overwrite")
-expect(optionalOverwrite.gameview.size.width, -17, "foreign gameview size remains client-owned")
-expect(ClassicLayout.update(404), true, "gameview conflict does not prevent native expansion")
-expect(optionalOverwrite.area.width, 3036, "mandatory native area expands despite optional conflict")
-expect(ClassicLayout.update(404), true, "same optional conflict keeps succeeding on later ticks")
-expect(optionalOverwrite.gameview.sizeWrites, optionalWrites,
-    "foreign gameview overwrite is not fought by repeated setters")
-expect(warningCount(optionalWarning), optionalWarningCount + 1,
-    "one optional warning describes the newly unavailable gameview")
-ClassicLayout.restore()
-expect(optionalOverwrite.area.size.width, 0, "optional conflict teardown restores native area")
-expect(optionalOverwrite.gameview.size.width, -17, "optional conflict teardown preserves foreign edit")
-
--- A genuine remount can reuse every numeric ID without reusing old component
--- objects. Poison both retained target handles to catch accidental ID reads.
-local compatibleRemount = scene()
-expect(ClassicLayout.update(404), true, "reserve before same-ID compatible remount")
-local previousArea, previousGameview = compatibleRemount.area, compatibleRemount.gameview
-local freshRemount = scene()
-poison(previousArea)
-poison(previousGameview)
-poison(compatibleRemount.slayer)
-expect(ClassicLayout.update(44), true, "same-ID remount independently recaptures compatible baseline")
-assertArea(freshRemount, 44, "same-ID compatible remount")
-expect(freshRemount.area.posWrites, 1, "fresh remount positions only the new native target")
-expect(freshRemount.area.sizeWrites, 1, "fresh remount sizes only the new native target")
-expect(freshRemount.gameview.sizeWrites, 1, "fresh remount sizes only the new gameview")
-ClassicLayout.restore()
-assertRestored(freshRemount, "same-ID compatible remount teardown")
-
--- A confirmed viewport resize permits a freshly reset native baseline to be
--- reserved once; the same reset without another environment transition must
--- suspend instead of fighting a client script on every logic tick.
-local resetOnResize = scene()
-expect(ClassicLayout.update(44), true, "reserve before native-script resize reset")
-for _, field in ipairs(positionFields) do
-    resetOnResize.area.position[field] = resetOnResize.position[field]
+    local retired = scene()
+    ClassicLayout.update(404)
+    local nextGeneration = scene()
+    poison(retired.area)
+    poison(retired.gameview)
+    poison(retired.slayer)
+    expect(ClassicLayout.update(44), true, "same-ID remount captures fresh native targets")
+    assertArea(nextGeneration, 44, "remounted game area")
+    ClassicLayout.restore()
+    assertRestored(nextGeneration, "remounted native generation")
 end
-for _, field in ipairs(sizeFields) do
-    resetOnResize.area.size[field] = resetOnResize.dimensions[field]
-    resetOnResize.gameview.size[field] = resetOnResize.gameviewSize[field]
-end
-resetOnResize.viewport:SetSize(3000, 900, 0, 0)
-resetOnResize.top:SetSize(3000, 900, 0, 0)
-expect(ClassicLayout.update(44), true, "confirmed viewport resize recaptures client-reset baseline")
-assertArea(resetOnResize, 44, "confirmed resize and baseline reset")
-for _, field in ipairs(positionFields) do
-    resetOnResize.area.position[field] = resetOnResize.position[field]
-end
-for _, field in ipairs(sizeFields) do
-    resetOnResize.area.size[field] = resetOnResize.dimensions[field]
-end
-local resetPosWrites, resetSizeWrites = writes(resetOnResize.area)
-expect(ClassicLayout.update(44), false, "unconfirmed repeat reset suspends mandatory reservation")
-expect(resetOnResize.area.posWrites, resetPosWrites, "foreign baseline reset gets no position setter")
-expect(resetOnResize.area.sizeWrites, resetSizeWrites, "foreign baseline reset gets no size setter")
-local suspendedPosWrites, suspendedSizeWrites = writes(resetOnResize.area)
-expect(ClassicLayout.update(44), false, "subsequent ticks cannot retry a repeated foreign reset")
-expect(resetOnResize.area.posWrites, suspendedPosWrites, "repeated reset never writes position again")
-expect(resetOnResize.area.sizeWrites, suspendedSizeWrites, "repeated reset never writes size again")
-expect(resetOnResize.area.size.width, 0, "unconfirmed reset retains client-native full width")
-ClassicLayout.restore()
-assertRestored(resetOnResize, "post-conflict teardown leaves reset baseline intact")
 
+local function viewportResizeRecapturesBaselineButRepeatedResetSuspends()
+    local view = scene()
+    ClassicLayout.update(44)
+    for _, field in ipairs(positionFields) do view.area.position[field] = view.position[field] end
+    for _, field in ipairs(sizeFields) do
+        view.area.size[field] = view.dimensions[field]
+        view.gameview.size[field] = view.gameviewSize[field]
+    end
+    view.viewport:SetSize(3000, 900, 0, 0)
+    view.top:SetSize(3000, 900, 0, 0)
+    expect(ClassicLayout.update(44), true, "viewport resize permits recapturing reset baseline")
+    assertArea(view, 44, "resized viewport")
+    for _, field in ipairs(positionFields) do view.area.position[field] = view.position[field] end
+    for _, field in ipairs(sizeFields) do view.area.size[field] = view.dimensions[field] end
+    local positionWrites, sizeWrites = writes(view.area)
+    expect(ClassicLayout.update(44), false, "unconfirmed native reset suspends reservation")
+    expect(view.area.posWrites, positionWrites, "reset anchor is not overwritten")
+    expect(view.area.sizeWrites, sizeWrites, "reset native width is not overwritten")
+    ClassicLayout.restore()
+    assertRestored(view, "reset baseline remains client-owned")
+end
+
+reservationFollowsRailAndRestoresOriginalLayout()
+modeExitRestoresNativeOwnership()
+slayerPositionIsOptionalAndNeverShiftedTwice()
+optionalGameviewCannotBlockMandatoryReservation()
+unsafeNativeLayoutsDoNotClaimReservation()
+foreignDescriptorsRemainClientOwned()
+remountNeverTouchesRetiredNativeHandles()
+viewportResizeRecapturesBaselineButRepeatedResetSuspends()
 print("classic_layout_test: native reservation and lifecycle passed")

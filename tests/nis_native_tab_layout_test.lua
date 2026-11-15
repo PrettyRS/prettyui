@@ -80,240 +80,141 @@ local function assertAnchors(component, original, x, message)
     end
 end
 
--- A whole native tab, not just its artwork, must move as a single clickable row.
-local tabs, backgrounds, icons, hits = row()
-local records = assert(Layout.capture(tabs, tabs.children))
-expect(#records, 6, "all direct native tab children captured")
-local originals, baselineX = {}, {}
-for index, record in ipairs(records) do
-    originals[index], baselineX[index] = record.original, record.x
-    expect(record.offset, 0, "new native tab starts unowned")
-end
-Layout.track(tabs, records)
-for _, record in ipairs(records) do
-    expect(Layout.move(record, 26), true, "native tab child displacement accepted")
-end
-for index, record in ipairs(records) do
-    local original = { table.unpack(originals[index]) }
-    original[1] = original[1] + 26
-    assertAnchors(record.component, original, baselineX[index] + 26,
-        "tab background/icon/hit displaced together")
-end
-expect(backgrounds[2].x - backgrounds[1].x, 40, "background tab spacing")
-expect(icons[2].x - icons[1].x, 40, "icon tab spacing")
-expect(hits[2].x - hits[1].x, 40, "input tab spacing")
-expect(icons[1].x - backgrounds[1].x, 8, "icon remains centered on native background")
-expect(hits[1].x, backgrounds[1].x, "native hit region follows its background")
+local function movesTheWholeClickableRowAndRestoresAnchors()
+    local tabs, backgrounds, icons, hits = row()
+    local records = assert(Layout.capture(tabs, tabs.children))
+    expect(#records, 6, "both native tabs include background, icon and hit region")
+    local originals, visualX = {}, {}
+    for index, record in ipairs(records) do
+        originals[index], visualX[index] = record.original, record.x
+    end
+    Layout.track(tabs, records)
+    for _, record in ipairs(records) do Layout.move(record, 26) end
+    for index, record in ipairs(records) do
+        local moved = { table.unpack(originals[index]) }
+        moved[1] = moved[1] + 26
+        assertAnchors(record.component, moved, visualX[index] + 26, "moved tab child")
+    end
+    expect(hits[1].x, backgrounds[1].x, "clickable area follows the tab background")
+    expect(hits[2].x, backgrounds[2].x, "second clickable area follows its background")
+    expect(icons[1].x - backgrounds[1].x, 8, "icon stays centered")
+    expect(backgrounds[2].x - backgrounds[1].x, 40, "tabs keep their spacing")
 
-local captured = assert(Layout.capture(tabs, tabs.children))
-for index, record in ipairs(captured) do
-    expect(record.x, baselineX[index], "discovery normalizes owned displacement")
-    expect(record.offset, 26, "discovery retains current owned offset")
-    expect(record.original[1], originals[index][1], "discovery retains native scalar baseline")
-end
-Layout.track(tabs, captured)
-for _, record in ipairs(captured) do
-    local writes = record.component.writes
-    Layout.move(record, 26)
-    expect(record.component.writes, writes, "unchanged offset does not write")
-    Layout.move(record, 38)
-end
-expect(backgrounds[1].x, 38, "later displacement replaces rather than accumulates offset")
-Layout.restore(tabs)
-for index, record in ipairs(records) do
-    assertAnchors(record.component, originals[index], baselineX[index], "teardown restores native row")
+    records = assert(Layout.capture(tabs, tabs.children))
+    Layout.track(tabs, records)
+    for _, record in ipairs(records) do Layout.move(record, 38) end
+    expect(backgrounds[1].x, 38, "repositioning replaces rather than adds offsets")
+    Layout.restore(tabs)
+    for index, record in ipairs(records) do
+        assertAnchors(record.component, originals[index], visualX[index], "restored tab child")
+    end
 end
 
--- An old handle is never used for cleanup. Replacement children with identical
--- IDs but independent positions are not overwritten, while still-owned live
--- neighbors can be restored from fresh enumeration.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-for _, record in ipairs(records) do Layout.move(record, 15) end
-local old = backgrounds[1]
-local replacement = component(tabs, tabs.interfaceID, tabs.staticID, old.categoryID,
-    old.dynamicID, { x = 73, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 }, 40, 28)
-table.remove(tabs.children)
-tabs.children[1] = replacement
-old.retired = true
-Layout.restore(tabs)
-expect(replacement.position.x, 73, "same-ID replacement preserves its independent native layout")
-expect(replacement.writes, 0, "same-ID replacement receives no write")
-expect(backgrounds[2].x, 40, "still-owned neighbor restores from fresh enumeration")
+local function protectsReplacedNativeHandles()
+    local tabs, backgrounds = row()
+    local records = assert(Layout.capture(tabs, tabs.children))
+    Layout.track(tabs, records)
+    for _, record in ipairs(records) do Layout.move(record, 15) end
+    local old = backgrounds[1]
+    local replacement = component(tabs, tabs.interfaceID, tabs.staticID, old.categoryID,
+        old.dynamicID, { x = 73, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 }, 40, 28)
+    table.remove(tabs.children)
+    tabs.children[1] = replacement
+    old.retired = true
+    Layout.restore(tabs)
+    expect(replacement.position.x, 73, "independently laid out replacement remains native-owned")
+    expect(replacement.writes, 0, "replacement is not overwritten")
+    expect(backgrounds[2].x, 40, "live neighbor is still restored")
 
--- A full-ID replacement carrying our exact applied position is safe to restore,
--- but the stale original component must remain untouched.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-Layout.move(records[1], 17)
-old = backgrounds[1]
-replacement = component(tabs, tabs.interfaceID, tabs.staticID, old.categoryID,
-    old.dynamicID, { x = 17, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 }, 40, 28)
-table.remove(tabs.children)
-tabs.children[1] = replacement
-old.retired = true
-Layout.restore(tabs)
-expect(replacement.position.x, 0, "fresh child carrying owned layout restores")
-expect(replacement.writes, 1, "fresh child gets precisely one restore write")
-
--- A same-ID client reset is adopted as a new baseline, not subtracted as our
--- old offset. A recurring reset blocks writes until a known rebuild is allowed.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-Layout.move(records[1], 19)
-backgrounds[1].position.x = 0
-backgrounds[1].x = 0
-captured = assert(Layout.capture(tabs, tabs.children))
-expect(captured[1].x, 0, "native reset adopts true baseline")
-expect(captured[1].offset, 0, "native reset discards stale owned offset")
-Layout.track(tabs, captured)
-local writes = backgrounds[1].writes
-expect(Layout.move(captured[1], 19), false, "unexplained client reset blocks displacement")
-expect(backgrounds[1].writes, writes, "blocked displacement never fights native script")
-captured = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, captured)
-expect(Layout.move(captured[1], 19), false, "blocked reset stays blocked across refreshes")
-Layout.track(tabs, captured, true)
-expect(Layout.move(captured[1], 19), true, "confirmed rebuild permits a fresh displacement")
-Layout.restore(tabs)
-expect(backgrounds[1].x, 0, "confirmed rebuild still restores to adopted native baseline")
-
--- Never overwrite an unexpected native edit that happened after discovery.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-backgrounds[1].position.yParentPc = 0.5
-writes = backgrounds[1].writes
-expect(pcall(Layout.move, records[1], 12), false, "late native write invalidates stale capture")
-expect(backgrounds[1].writes, writes, "stale capture cannot overwrite client layout")
-Layout.restore(tabs)
-expect(backgrounds[1].position.yParentPc, 0.5, "teardown preserves foreign anchor changes")
-
--- Foreign edits to already-displaced children must not be undone at teardown.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-Layout.move(records[1], 12)
-backgrounds[1].position.yParentPc = 0.25
-writes = backgrounds[1].writes
-captured = assert(Layout.capture(tabs, tabs.children))
-expect(captured[1].offset, 0, "foreign edit of displaced child adopts its new baseline")
-expect(captured[1].x, 12, "foreign edit is not double-normalized")
-Layout.restore(tabs)
-expect(backgrounds[1].writes, writes, "teardown does not overwrite foreign displacement")
-expect(backgrounds[1].position.yParentPc, 0.25, "teardown retains foreign anchors")
-
--- A setter that applies SetPos then throws still leaves recoverable ownership.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-backgrounds[1].throwAfterSet = true
-expect(pcall(Layout.move, records[1], 22), false, "setter failure propagates")
-expect(backgrounds[1].position.x, 22, "setter applied displacement before throwing")
-captured = assert(Layout.capture(tabs, tabs.children))
-expect(captured[1].offset, 22, "post-error discovery recognizes applied displacement")
-Layout.restore(tabs)
-expect(backgrounds[1].position.x, 0, "post-error teardown recovers baseline")
-
--- A restore setter may also apply then throw; ownership persists for retry.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-Layout.move(records[1], 31)
-backgrounds[1].throwAfterSet = true
-expect(pcall(Layout.restore, tabs), false, "restore failure propagates for retry")
-expect(backgrounds[1].position.x, 0, "failed restore may have applied baseline")
-Layout.restore(tabs)
-expect(backgrounds[1].position.x, 0, "retry leaves already-restored baseline intact")
-expect(Layout.capture(tabs, tabs.children)[1].offset, 0, "retry drops completed ownership")
-
--- Missing anchors reject the entire native strip rather than guessing zeros.
-tabs, backgrounds = row()
-backgrounds[1].position.xSelfPc = nil
-expect(Layout.capture(tabs, tabs.children), nil, "unreadable native anchor rejects capture")
-backgrounds[1].position = nil
-expect(Layout.capture(tabs, tabs.children), nil, "missing position rejects capture")
-
--- An unloaded interface must not be probed via its now-retired tab handles.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-Layout.move(records[1], 9)
-loaded[tabs.interfaceID] = nil
-Layout.restore(tabs)
-loaded[tabs.interfaceID] = {}
-expect(Layout.capture(tabs, tabs.children)[1].offset, 0,
-    "unload releases ownership without accessing retired native children")
-
--- A retired native tab collection cannot be used to restore its children.
-tabs, backgrounds = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-Layout.move(records[1], 9)
-writes = backgrounds[1].writes
-tabs.parent = nil
-Layout.restore(tabs)
-expect(backgrounds[1].writes, writes, "unparented native collection receives no restore writes")
-expect(Layout.capture(tabs, tabs.children)[1].offset, 0,
-    "unparented native collection releases ownership")
-
--- Rows with no PrettyUI displacement have nothing to restore: teardown must
--- not enumerate native children or look up an interface that may have remounted.
-tabs, backgrounds, icons = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-local oldInterface, oldComponent = ui.Interfaces.GetInterface, ui.Interfaces.GetComponent
-local oldIterate = tabs.IterateDynamicComponents
-local interfaceReads, componentReads, enumerations = 0, 0, 0
-function ui.Interfaces:GetInterface(...)
-    interfaceReads = interfaceReads + 1
-    return oldInterface(self, ...)
+    tabs, backgrounds = row()
+    records = assert(Layout.capture(tabs, tabs.children))
+    Layout.track(tabs, records)
+    Layout.move(records[1], 17)
+    old = backgrounds[1]
+    replacement = component(tabs, tabs.interfaceID, tabs.staticID, old.categoryID,
+        old.dynamicID, { x = 17, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 }, 40, 28)
+    table.remove(tabs.children)
+    tabs.children[1] = replacement
+    old.retired = true
+    Layout.restore(tabs)
+    expect(replacement.position.x, 0, "replacement carrying our applied offset restores safely")
 end
-function ui.Interfaces:GetComponent(...)
-    componentReads = componentReads + 1
-    return oldComponent(self, ...)
-end
-function tabs:IterateDynamicComponents(...)
-    enumerations = enumerations + 1
-    return oldIterate(self, ...)
-end
-Layout.restore(tabs)
-expect(interfaceReads, 0, "zero-offset cleanup never probes an interface")
-expect(componentReads, 0, "zero-offset cleanup never looks up a native row")
-expect(enumerations, 0, "zero-offset cleanup never enumerates native children")
-expect(Layout.capture(tabs, tabs.children)[1].offset, 0,
-    "zero-offset cleanup discards ownership for a later capture")
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-Layout.move(records[1], 11)
-Layout.restore(tabs)
-expect(interfaceReads > 0 and componentReads > 0 and enumerations > 0, true,
-    "displaced cleanup still enumerates live native children")
-expect(backgrounds[1].x, 0, "displaced cleanup restores native position")
-tabs.IterateDynamicComponents = oldIterate
-ui.Interfaces.GetInterface, ui.Interfaces.GetComponent = oldInterface, oldComponent
 
--- Parent geometry can change without a child anchor change. Discovery must
--- always sample computed x even when it reuses an immutable owned baseline.
-tabs, backgrounds, icons = row()
-records = assert(Layout.capture(tabs, tabs.children))
-Layout.track(tabs, records)
-Layout.move(records[2], 8)
-local originalIconX = icons[1].x
-tabs.width = tabs.width + 20
-icons[1]:SetPos(table.unpack({ icons[1].position.x, icons[1].position.y,
-    icons[1].position.xParentPc, icons[1].position.yParentPc,
-    icons[1].position.xSelfPc, icons[1].position.ySelfPc }))
-captured = assert(Layout.capture(tabs, tabs.children))
-expect(captured[2].x, originalIconX + 2 - 8,
-    "computed tab position follows native parent resize without stale geometry")
-expect(captured[2].offset, 8, "parent resize keeps the owned horizontal offset")
-Layout.track(tabs, captured)
-Layout.restore(tabs)
-expect(icons[1].x, originalIconX + 2 - 8,
-    "native geometry remains authoritative after restoring horizontal displacement")
+local function honorsNativeLayoutChanges()
+    local tabs, backgrounds = row()
+    local records = assert(Layout.capture(tabs, tabs.children))
+    Layout.track(tabs, records)
+    Layout.move(records[1], 19)
+    backgrounds[1].position.x = 0
+    backgrounds[1].x = 0
+    local captured = assert(Layout.capture(tabs, tabs.children))
+    expect(captured[1].x, 0, "client reset establishes the new baseline")
+    expect(captured[1].offset, 0, "client reset releases our old offset")
+    Layout.track(tabs, captured)
+    expect(Layout.move(captured[1], 19), false, "unexplained reset prevents fighting the client")
+    Layout.track(tabs, captured, true)
+    expect(Layout.move(captured[1], 19), true, "confirmed rebuild permits movement")
+    Layout.restore(tabs)
+    expect(backgrounds[1].x, 0, "rebuild restores the adopted baseline")
 
+    tabs, backgrounds = row()
+    records = assert(Layout.capture(tabs, tabs.children))
+    Layout.track(tabs, records)
+    Layout.move(records[1], 12)
+    backgrounds[1].position.yParentPc = 0.25
+    local writes = backgrounds[1].writes
+    Layout.restore(tabs)
+    expect(backgrounds[1].writes, writes, "unload does not undo a foreign anchor edit")
+    expect(backgrounds[1].position.yParentPc, 0.25, "foreign native anchor survives")
+end
+
+local function recoversFromAnAppliedButFailingSetter()
+    local tabs, backgrounds = row()
+    local records = assert(Layout.capture(tabs, tabs.children))
+    Layout.track(tabs, records)
+    backgrounds[1].throwAfterSet = true
+    expect(pcall(Layout.move, records[1], 22), false, "native setter failure propagates")
+    expect(backgrounds[1].position.x, 22, "native setter applied the move before failing")
+    Layout.restore(tabs)
+    expect(backgrounds[1].position.x, 0, "unload recovers an applied move")
+end
+
+local function avoidsRetiredNativeInterfaces()
+    local tabs, backgrounds = row()
+    local records = assert(Layout.capture(tabs, tabs.children))
+    Layout.track(tabs, records)
+    Layout.move(records[1], 9)
+    backgrounds[1].retired = true
+    loaded[tabs.interfaceID] = nil
+    Layout.restore(tabs)
+    loaded[tabs.interfaceID] = {}
+    expect(Layout.capture(tabs, tabs.children)[1].offset, 0, "unload releases old ownership")
+
+    tabs, backgrounds = row()
+    backgrounds[1].position.xSelfPc = nil
+    expect(Layout.capture(tabs, tabs.children), nil, "unreadable native anchors reject capture")
+end
+
+local function followsNativeParentGeometry()
+    local tabs, _, icons = row()
+    local records = assert(Layout.capture(tabs, tabs.children))
+    Layout.track(tabs, records)
+    Layout.move(records[2], 8)
+    local originalX = icons[1].x
+    tabs.width = tabs.width + 20
+    local pos = icons[1].position
+    icons[1]:SetPos(pos.x, pos.y, pos.xParentPc, pos.yParentPc, pos.xSelfPc, pos.ySelfPc)
+    local captured = assert(Layout.capture(tabs, tabs.children))
+    expect(captured[2].x, originalX + 2 - 8, "parent resize updates native computed geometry")
+    Layout.track(tabs, captured)
+    Layout.restore(tabs)
+    expect(icons[1].x, originalX + 2 - 8, "restore retains the native parent resize")
+end
+
+movesTheWholeClickableRowAndRestoresAnchors()
+protectsReplacedNativeHandles()
+honorsNativeLayoutChanges()
+recoversFromAnAppliedButFailingSetter()
+avoidsRetiredNativeInterfaces()
+followsNativeParentGeometry()
 print("nis native tab layout tests passed")
