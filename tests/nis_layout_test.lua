@@ -1,4 +1,4 @@
-local NisLayout = require("src/core/nis_layout")
+local NisLayout = require("src/nis/layout")
 
 local function expect(actual, expected, message)
     if actual ~= expected then

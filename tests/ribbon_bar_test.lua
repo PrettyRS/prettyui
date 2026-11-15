@@ -268,9 +268,9 @@ package.loaded["src/core/wheel"] = require("src/core/wheel")
 package.loaded["src/core/mouse"] = { GetPosition = function() return nil end }
 package.loaded["src/window"] = Window
 
-package.loaded["src/core/nis_group"] = { resume = function() end }
-package.loaded["src/core/nis_persistence"] = { setActive = function() return false end }
-package.loaded["src/core/nis_native"] = {
+package.loaded["src/nis/group"] = { resume = function() end }
+package.loaded["src/nis/persistence"] = { setActive = function() return false end }
+package.loaded["src/nis/native"] = {
     remember = function() return nil end, register = function() end,
 }
 local RibbonBar = require("src/ribbon_bar")

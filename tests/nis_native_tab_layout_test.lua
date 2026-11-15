@@ -1,4 +1,4 @@
-local Layout = require("src/core/nis_native_tab_layout")
+local Layout = require("src/nis/native_tab_layout")
 
 local function expect(actual, expected, message)
     if actual ~= expected then

@@ -835,7 +835,7 @@ do
     }
     local owner = makePanel()
     local before = nativeEnumerations
-    local layout = require("src/core/nis_layout")
+    local layout = require("src/nis/layout")
     local buildSpaces, builds = layout.spaces, 0
     layout.spaces = function(...)
         builds = builds + 1
@@ -1820,8 +1820,8 @@ do
         return NisPanel.new(parent, options)
     end
     local function restart()
-        for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
-            "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence", "src/ribbon_bar" }) do
+        for _, name in ipairs({ "src/nis_panel", "src/nis/group",
+            "src/nis/drag", "src/nis/native", "src/nis/persistence", "src/ribbon_bar" }) do
             package.loaded[name] = nil
         end
         NisPanel = require("src/nis_panel")
@@ -2790,7 +2790,7 @@ do
         local tab = nativeBinding.tabs[group.current]
         fire(tab.hit, ui.Hook.ONCLICK, 10, 10)
         expect(nativePanel._nisTabPress, nil, "live lock rejects own sorting before watcher delivery")
-        expect(require("src/core/nis_native").reorder(nativePanel, notes.frame.x, 10), false,
+        expect(require("src/nis/native").reorder(nativePanel, notes.frame.x, 10), false,
             "live lock also protects the mixed reorder entry point")
         nativeHook(notes.backgrounds[1], ui.Hook.ONRELEASE, 11, 10)
         nativeHook(notes.backgrounds[1], ui.Hook.ONDRAGCOMPLETE, nil, 11, 10)
@@ -3917,7 +3917,7 @@ do
             copy.tabs:SetScrollPos(30, 0)
             copy.tabControls:SetSize(80, 28)
         end
-        local Native = require("src/core/nis_native")
+        local Native = require("src/nis/native")
         local candidate = Native.candidate(nativePanel, ranged.frame.x + 30, ranged.frame.y + ranged.tabs.y + 10)
         expect(candidate ~= nil, true, "an already-scrolled native viewport remains a docking target")
         expect(nativePanel:DockTo(ranged.frame), true, "docking accepts a native row that already overflows")
@@ -3995,7 +3995,7 @@ do
     expect(wrapper.hidden, false, "standalone detach restores the native wrapper visibility")
     begin(nativePanel); move(nativePanel, 300, 500); move(nativePanel, 650, 130); release(nativePanel)
     expect(wrapper.hidden, true, "shutdown scenario starts with a concealed native page")
-    require("src/core/nis_native").shutdown()
+    require("src/nis/native").shutdown()
     expect(nativePanel._nisNative, nil, "library shutdown detaches retained native members")
     expect(wrapper.y, 0, "library shutdown restores the native wrapper inset")
     expect(wrapper.hidden, false, "library shutdown restores native visibility")
@@ -4103,7 +4103,7 @@ do
                     local tab = retainedBinding.tabs[retainedBinding.group.current]
                     expect(tab.visual.y, top, "Prayer synthetic artwork follows content, not stale hidden strip")
                     expect(tab.hit.y, item.frame.y + top, "Prayer tab input follows its artwork")
-                    expect(require("src/core/nis_native").contains(owner, tab.hit.x + 10, tab.hit.y + 10),
+                    expect(require("src/nis/native").contains(owner, tab.hit.x + 10, tab.hit.y + 10),
                         true, "Prayer tab containment follows the current synthetic row")
                     expect(rendered(tab.background), true, "Prayer lock retains visible synthetic tab artwork")
                     if active == owner then
@@ -4208,8 +4208,8 @@ do
     -- Native memberships survive complete Lua restarts without retaining handles.
     do
         local function restart()
-            for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
-                "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence", "src/ribbon_bar" }) do
+            for _, name in ipairs({ "src/nis_panel", "src/nis/group",
+                "src/nis/drag", "src/nis/native", "src/nis/persistence", "src/ribbon_bar" }) do
                 package.loaded[name] = nil
             end
             NisPanel = require("src/nis_panel")
@@ -4231,7 +4231,7 @@ do
         b:SelectTab()
         expect(saved("b").native.frame, "TOPLEVEL_V2__NOTES_WINDOW", "save named native identity")
         expectRect(saved("a"), 30, 450, 280, 180, "native saves retain free bounds")
-        require("src/core/nis_native").shutdown()
+        require("src/nis/native").shutdown()
         b:Destroy(); a:Destroy(); c:Destroy()
         restart()
         locked = true; transmit(12)
@@ -4358,7 +4358,7 @@ do
         expect(saved("mixed-b").native.beforeNative, 1, "between-native insertion persists")
         expect(notes.backgrounds[1].x, 40, "two mixed members shift the first native once")
         expect(notes.backgrounds[2].x, 124, "two mixed members shift the second native twice")
-        require("src/core/nis_native").shutdown()
+        require("src/nis/native").shutdown()
         expect(notes.backgrounds[1].x, 0, "shutdown restores the first native tab")
         expect(notes.backgrounds[2].x, 44, "shutdown restores the second native tab")
         b:Destroy(); a:Destroy()
@@ -4567,8 +4567,8 @@ do
             id.Component.TOPLEVEL_V2_PLUGIN_CONTENT__LISTENERS_AND_TIMERS = (1604 << 16) | 0
         end
     end
-    for _, name in ipairs({ "src/nis_panel", "src/core/nis_group",
-        "src/core/nis_drag", "src/core/nis_native", "src/core/nis_persistence", "src/ribbon_bar" }) do
+    for _, name in ipairs({ "src/nis_panel", "src/nis/group",
+        "src/nis/drag", "src/nis/native", "src/nis/persistence", "src/ribbon_bar" }) do
         package.loaded[name] = nil
     end
     NisPanel = require("src/nis_panel")
@@ -4836,9 +4836,9 @@ do
     -- Suspend real PrettyUI groups and named native membership without a
     -- ribbon transition; the coordinator will perform this batch on mode exit.
     do
-        local Group = require("src/core/nis_group")
-        local Native = require("src/core/nis_native")
-        local Persistence = require("src/core/nis_persistence")
+        local Group = require("src/nis/group")
+        local Native = require("src/nis/native")
+        local Persistence = require("src/nis/persistence")
         local function record(name)
             return savedLayouts["prettyui.nis-layout.v1"].panels["classic-suspend:" .. name]
         end
@@ -5415,7 +5415,7 @@ do
     notes:rebuild({ 9001, 9002, 9003, 9004, 9005, 9006 }, 1)
     local perfPanel = NisPanel.new(area, { categoryID = "auto" })
     expect(perfPanel:DockTo(notes.frame), true, "six-tab native row accepts a retained panel")
-    local Native = require("src/core/nis_native")
+    local Native = require("src/nis/native")
     perfPanel._nisNative.beforeNative = 0
     Native.sync(perfPanel)
     expect(notes.backgrounds[1].x, 40, "leading own tab displaces the native row")
@@ -5821,7 +5821,7 @@ end
 do
     local RibbonBar = require("src/ribbon_bar")
     local Tooltip = require("src/tooltip")
-    local ClassicLayout = require("src/core/classic_layout")
+    local ClassicLayout = require("src/nis/classic_layout")
     local previousGet = ui.Interfaces.GetComponent
     local previousLayerNew = ui.Layer.new
     local previousNames = {}

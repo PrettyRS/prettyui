@@ -188,7 +188,7 @@ local function poison(item)
 end
 
 local capture = scene()
-local ClassicLayout = require("src/core/classic_layout")
+local ClassicLayout = require("src/nis/classic_layout")
 expect(ClassicLayout.update(44), true, "collapsed Classic rail reserves native width")
 assertArea(capture, 44, "collapsed rail")
 expect(globalX(capture.minimap), 3121, "captured minimap coordinate at 3440 minus 44")

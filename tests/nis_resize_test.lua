@@ -1,4 +1,4 @@
-local NisResize = require("src/core/nis_resize")
+local NisResize = require("src/nis/resize")
 
 local edges = {
     e = { east = true }, w = { west = true },
