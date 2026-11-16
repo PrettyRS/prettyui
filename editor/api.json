@@ -2388,15 +2388,6 @@
         }
       }
     },
-    "RibbonBar": {
-      "description": "Automatic NisPanel ribbon. The cog configures placement and auto-hide; panel buttons toggle enabled state.",
-      "methods": {
-        "SetPosition": { "static": true, "params": { "value": "'left'|'right'|'top'" }, "returns": ["nil"] },
-        "GetPosition": { "static": true, "params": {}, "returns": ["'left'|'right'|'top'"] },
-        "SetAutoHide": { "static": true, "params": { "value": "boolean" }, "returns": ["nil"] },
-        "GetAutoHide": { "static": true, "params": {}, "returns": ["boolean"] }
-      }
-    },
     "RibbonButton": {
       "options": {
         "active": "boolean",

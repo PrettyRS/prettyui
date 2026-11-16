@@ -2,6 +2,7 @@
   "name": "PrettyUI",
   "version": "1.4.0",
   "contactEmailAddress": "plugins@j3.gg",
+  "hasSettingsIcon": true,
   "requiredDependencies": {},
   "optionalDependencies": {}
 }

@@ -16,7 +16,7 @@ local function component(parent, kind)
         staticID = parent and parent.staticID or 61,
         categoryID = 1, dynamicID = nextDynamic,
         width = 0, height = 0, x = 0, y = 0,
-        cursorConfig = {}, opConfig = { SetOpCursor = function() end },
+        cursorConfig = {}, opConfig = { SetOpCursor = function() end, ClearOpCursors = function() end },
     }
     function self:SetPos(x, y, xAnchor, yAnchor, xSelf, ySelf)
         self.posWrites = (self.posWrites or 0) + 1
@@ -116,7 +116,7 @@ local function gameArea(interfaceID, width, height)
 end
 ui = {
     Layer = {}, Sprite = {},
-    Hook = { ONCLICK = 1, ONMOUSEOVER = 2, ONMOUSELEAVE = 3, ONSCROLLWHEEL = 4 },
+    Hook = { ONCLICK = 1, ONMOUSEOVER = 2, ONMOUSELEAVE = 3, ONSCROLLWHEEL = 4, ONRELEASE = 5, ONRESIZE = 6 },
     Interfaces = {
         GetComponent = function(_, a, b, c, d)
             if d ~= nil then
@@ -196,6 +196,7 @@ var = { VarPlayer = {
 } }
 config = { Cursor = { CURSOR_OPEN = { id = 7 } } }
 local events, varEvents = {}, {}
+local settingsEvents = {}
 Event = {
     Logic = {
         Subscribe = function(key, callback) events[key] = callback end,
@@ -205,11 +206,17 @@ Event = {
         Subscribe = function(key, callback) varEvents[key] = callback end,
         Unsubscribe = function(key) varEvents[key] = nil end,
     },
+    SettingsLayerReady = {
+        Subscribe = function(key, callback) settingsEvents[key] = callback end,
+        Unsubscribe = function(key) settingsEvents[key] = nil end,
+    },
 }
 local db = { ribbonBarPosition = "right", ribbonBarAutoHide = false }
 PersistentDB = {
     GetString = function(_, key) return db[key] end,
     GetBool = function(_, key) return db[key] end,
+    GetInt = function(_, key) return db[key] end,
+    SetInt = function(_, key, value) db[key] = value end,
     SetString = function(_, key, value) db[key] = value end,
     SetBool = function(_, key, value) db[key] = value end,
 }
@@ -268,32 +275,73 @@ function map.watch(owner, callback)
 end
 function map.unwatch(owner) map.watches[owner] = nil end
 function map.isSuspended() return map.suspended end
-local windows = {}
-local Window = {}
-function Window.new(parent, options)
-    expect(parent, classicMode == 1 and top or area, "settings use current mode's full game parent")
-    expect(options.categoryID, "auto", "settings use automatic allocation")
+local windows, views = {}, {}
+local function contentHost(options)
     local instance = { options = options, content = {}, controls = {} }
-    windows[#windows + 1] = instance
     function instance:AddTitle(text) self.content[#self.content + 1] = text end
-    function instance:AddText(text) self.content[#self.content + 1] = text end
-    function instance:AddRadioButton(values)
-        local result = { values = values }
-        function result:SetSelectedValue(value) self.selected = value end
+    function instance:AddText(text)
+        local result = { content = text }
+        self.content[#self.content + 1] = result
+        return result
+    end
+    function instance:AddSlider(sliderOptions)
+        local result = { options = sliderOptions, value = sliderOptions.value }
+        function result:SetValue(value)
+            assert(not instance.destroyed, "updating a destroyed settings host")
+            self.value = value
+        end
+        self.controls.cap = result
+        return result
+    end
+    function instance:AddComboBox(options)
+        local result = { options = options, selected = options.selectedID }
+        function result:Select(value)
+            assert(not instance.destroyed, "updating a destroyed settings host")
+            self.selected = value
+        end
         self.controls.position = result
         return result
     end
-    function instance:AddCheckboxButton(values)
-        local result = { values = values }
-        function result:SetSelected(_, value) self.selected = value end
+    function instance:AddCheckboxButton(values, options)
+        local result = { values = values, options = options, selected = values[1].selected }
+        function result:SetSelected(_, value)
+            assert(not instance.destroyed, "updating a destroyed settings host")
+            self.selected = value
+        end
         self.controls.autoHide = result
         return result
     end
     function instance:Show() self.visible = true end
     function instance:Close() self.options.onClose(); self.visible = false end
-    function instance:Destroy() self.destroyed = true end
+    function instance:SetSize(width, height) self.width, self.height = width, height end
+    function instance:Destroy()
+        self.destroyed = true
+        if self.root then self.root:Destroy() end
+    end
+    function instance:Refresh() self.refreshes = (self.refreshes or 0) + 1 end
     return instance
 end
+local Window = {}
+function Window.new(parent, options)
+    expect(classicMode, 0, "Classic settings never open a floating window")
+    expect(parent, area, "Modern settings use the game area")
+    expect(options.categoryID, "auto", "settings use automatic allocation")
+    local instance = contentHost(options)
+    instance.interfaceID = parent.interfaceID
+    windows[#windows + 1] = instance
+    return instance
+end
+package.loaded["src/simple_view"] = {
+    new = function(parent, options)
+        local instance = contentHost(options)
+        instance.parent = parent
+        instance.interfaceID = parent.interfaceID
+        instance.root = component(parent, "settings view")
+        instance:SetSize(options.width, options.height)
+        views[#views + 1] = instance
+        return instance
+    end,
+}
 package.loaded["src/core/components"] = components
 package.loaded["src/tooltip"] = tooltips
 package.loaded["src/core/world_map"] = map
@@ -322,8 +370,9 @@ local function buttons()
     end
     local result = {}
     local function collect(node)
-        if node.kind == "layer" and node.subscriptions[ui.Hook.ONCLICK] then
-            result[#result + 1] = node
+        if node.subscriptions[ui.Hook.ONCLICK] and tooltips.forTarget[node] then
+            if tooltips.forTarget[node] == "PrettyUI settings" then table.insert(result, 1, node)
+            else result[#result + 1] = node end
         end
         for _, child in ipairs(node.children) do collect(child) end
     end
@@ -389,7 +438,6 @@ local function modernRegistrationAndSettings()
 
     click({ root = roots[1] })
     local settings = windows[#windows]
-    expect(settings.options.title, "Ribbon settings", "settings cog opens ribbon controls")
     expect(settings.controls.position ~= nil and settings.controls.autoHide ~= nil, true,
         "modern settings show position and auto-hide")
     click({ root = roots[1] })
@@ -398,7 +446,8 @@ local function modernRegistrationAndSettings()
     RibbonBar.SetAutoHide(true)
     expect(db.ribbonBarPosition, "top", "position persisted")
     expect(db.ribbonBarAutoHide, true, "auto-hide persisted")
-    expect(roots[3].x, 6 + 2 * 34, "top setting lays out buttons horizontally")
+    expect(roots[2].parent.x + roots[2].x - roots[1].x - roots[1].width, 2,
+        "top ribbon keeps a normal button gap after the compact cog")
     tick()
     expect(surface.y, -8, "auto-hide slides by one step")
     for _ = 1, 10 do tick() end
@@ -588,23 +637,32 @@ local function classicSelectionAndModeTransitions()
     expect(disabled.builds, 1, "disabled panel builds once")
     expect(RibbonBar.selectClassic({ root = area }, false), false, "unregistered panel cannot select")
 
-    clickRoot(buttonNamed("Ribbon settings"))
-    local settings = windows[#windows]
-    expect(settings.controls.position, nil, "Classic settings do not reposition the fixed rail")
-    expect(settings.controls.autoHide, nil, "Classic settings do not offer auto-hide")
+    clickRoot(buttonNamed("PrettyUI settings"))
+    local settings = views[#views]
+    expect(settings.parent.parent, surface, "Classic settings mount inside the sidebar body")
+    expect(RibbonBar.isClassicSelected(disabled), false, "settings replace the selected page")
+    expect(settings.controls.position ~= nil and settings.controls.autoHide ~= nil, true,
+        "Classic settings can edit all Modern ribbon preferences")
     expect(RibbonBar.GetPosition(), "top", "Classic mode preserves modern position")
     expect(RibbonBar.GetAutoHide(), true, "Classic mode preserves modern auto-hide")
+    clickRoot(buttonNamed("PrettyUI settings"))
+    expect(settings.destroyed, true, "settings cog closes and destroys sidebar settings")
+    rail(44, "closing settings collapses sidebar")
+    clickRoot(buttonNamed("Disabled"))
+    expect(disabled.builds, 2, "leaving settings permits rebuilding panel content")
+    clickRoot(buttonNamed("PrettyUI settings"))
+    settings = views[#views]
     map.suspended = true
     map.watches[surface](true)
     tick()
-    expect(RibbonBar.isClassicSelected(disabled), true, "map overlay retains selected page")
+    expect(settings.destroyed, nil, "map overlay retains settings page")
     map.suspended = false
     map.watches[surface](false)
     top:SetSize(200, 220, 0, 0)
     viewport:SetSize(200, 220, 0, 0)
     tick()
     rail(199, "narrow viewport clamps expanded rail")
-    expect(disabled.classicHost.width, 155, "narrow viewport keeps one unit for game")
+    expect(settings.width, 147, "narrow viewport resizes the settings view")
     top:SetSize(3440, 1440, 0, 0)
     viewport:SetSize(3440, 1440, 0, 0)
     tick()
@@ -670,6 +728,76 @@ local function classicOverflowKeepsButtonsReachable()
     RibbonBar.Shutdown()
 end
 
+local function modernOverflowAndCap()
+    db.ribbonBarButtonCap, db.ribbonBarAutoHide = 3, false
+    start(55)
+    local panels = {}
+    for index = 1, 23 do
+        panels[index] = classicPanel("Modern " .. index, false)
+        RibbonBar.register(panels[index])
+    end
+    expect(RibbonBar.GetButtonCap(), 3, "saved button cap restored")
+    local surface = assert(buttons())
+    local cog = buttonNamed("PrettyUI settings")
+    expect(cog.spriteID, id.Sprite.RS3_ICON_SETTINGS_30PX_2, "cog uses the settings sprite")
+    local previous, nextArrow
+    for _, child in ipairs(surface.children) do
+        if child.spriteID == id.Sprite.RS3_ICON_ACCORDION_5 then previous = child end
+        if child.spriteID == id.Sprite.RS3_ICON_ACCORDION_2 then nextArrow = child end
+    end
+    for _, edge in ipairs({ "left", "right", "top" }) do
+        RibbonBar.SetPosition(edge)
+        local first, last = buttonNamed("Modern 1"), buttonNamed("Modern 23")
+        local list = first.parent
+        local wheel = list.subscriptions[ui.Hook.ONSCROLLWHEEL]
+        wheel(list, -100)
+        local visible = 0
+        for index = 1, 23 do
+            if not buttonNamed("Modern " .. index).hidden then visible = visible + 1 end
+        end
+        expect(visible, 3, edge .. " obeys configured cap")
+        expect(previous.hidden, true, edge .. " hides previous at start")
+        expect(nextArrow.hidden, false, edge .. " indicates more buttons")
+        expect(cog.parent, surface, edge .. " cog stays outside viewport")
+        clickRoot(last)
+        expect(panels[23]:IsActive(), false, edge .. " offscreen click cannot toggle a panel")
+        clickRoot(nextArrow)
+        expect(previous.hidden, false, edge .. " previous appears after arrow scrolling")
+        expect(nextArrow.hidden, false, edge .. " both directions available in middle")
+        wheel(list, 100)
+        expect(nextArrow.hidden, true, edge .. " hides next at end")
+        expect(last.hidden, false, edge .. " last panel reachable")
+        expect(first.enabled, false, edge .. " first panel cannot intercept clicks")
+        clickRoot(last)
+        expect(panels[23]:IsActive(), true, edge .. " scrolled panel activates")
+        panels[23]:SetActive(false)
+        local x, y = tooltips.contextOrigins[list](last)
+        local originX, originY = tooltips.contextOrigins[surface]({ x = 0, y = 0 })
+        expect(x, originX + list.x + last.x - (list.scrollX or 0), edge .. " tooltip tracks horizontal scroll")
+        expect(y, originY + list.y + last.y - (list.scrollY or 0), edge .. " tooltip tracks vertical scroll")
+        clickRoot(cog)
+        local settings = windows[#windows]
+        settings.controls.cap.options.onChange(nil, 1)
+        expect(RibbonBar.GetButtonCap(), 1, "settings control changes cap")
+        expect(db.ribbonBarButtonCap, 1, "cap persisted")
+        wheel(list, 100)
+        expect(last.hidden, false, "last panel remains reachable with a one-button cap")
+        clickRoot(cog)
+        RibbonBar.SetButtonCap(3)
+    end
+    area:SetSize(140, 140, 0, 0)
+    tick()
+    expect(surface.width <= area.width, true, "ribbon fits a smaller game area")
+    RibbonBar.SetPosition("right")
+    expect(surface.height <= area.height, true, "vertical ribbon fits a smaller game area")
+    for index = 1, 22 do RibbonBar.unregister(panels[index]) end
+    local last = buttonNamed("Modern 23")
+    expect(last.hidden, false, "removing buttons clamps scroll to remaining panel")
+    expect(last.parent.scrollY, 0, "removing overflow resets scroll")
+    expect(previous.hidden and nextArrow.hidden, true, "no indicators without overflow")
+    RibbonBar.Shutdown()
+end
+
 local function classicUnavailableNativeLayoutAndRemount()
     start(60, 1)
     gameview.failSize = true
@@ -730,7 +858,62 @@ local function classicUnavailableNativeLayoutAndRemount()
     expect(tooltips.contexts, tooltips.unregistered, "all tooltip contexts retired")
 end
 
+local function sharedNativeSettingsLifecycle()
+    start(70)
+    local mountSettings = assert(settingsEvents.prettyui_ribbon_bar)
+    local parent = component(area, "native settings layer")
+    parent:SetSize(440, 500)
+    mountSettings({ component = parent })
+    local native = views[#views]
+    expect(buttons(), nil, "native settings are available without panel registrations")
+    native.controls.position.options.onChange(nil, 1)
+    native.controls.autoHide.options.onChange(nil, nil, nil, false)
+    native.controls.cap.options.onChange(nil, 4)
+    expect(RibbonBar.GetPosition(), "left", "native settings update saved placement")
+    expect(RibbonBar.GetButtonCap(), 4, "native settings update saved cap without panels")
+
+    local owner = classicPanel("Settings sync", false)
+    RibbonBar.register(owner)
+    clickRoot(buttonNamed("PrettyUI settings"))
+    local floating = windows[#windows]
+    expect(floating.controls.cap.value, 4, "floating settings load native edits")
+    floating.controls.autoHide.options.onChange(nil, nil, nil, true)
+    expect(native.controls.autoHide.selected, true, "floating changes synchronize to native settings")
+    native.controls.position.options.onChange(nil, 3)
+    expect(floating.controls.position.selected, 3, "native changes synchronize to floating settings")
+    mode(1)
+    expect(native.destroyed, nil, "mode change preserves native settings")
+    clickRoot(buttonNamed("PrettyUI settings"))
+    local sidebar = views[#views]
+    expect(sidebar.controls.position.selected, 3, "Classic settings expose saved placement")
+    expect(sidebar.controls.autoHide.selected, true, "Classic settings expose saved auto-hide")
+    sidebar.controls.cap.options.onChange(nil, 6)
+    expect(native.controls.cap.value, 6, "Classic changes synchronize to native settings")
+    native.controls.position.options.onChange(nil, 2)
+    expect(sidebar.controls.position.selected, 2, "native changes synchronize to Classic settings")
+    rail(404, "editing Modern preferences leaves Classic sidebar fixed")
+    RibbonBar.unregister(owner)
+    expect(sidebar.destroyed, true, "last panel unregister destroys sidebar settings")
+    expect(native.destroyed, nil, "last panel unregister preserves native settings")
+    native.controls.cap.options.onChange(nil, 7)
+    expect(RibbonBar.GetButtonCap(), 7, "native settings still work without the ribbon")
+
+    mountSettings({ component = parent })
+    local replacement = views[#views]
+    expect(native.destroyed, true, "remount destroys old settings view")
+    expect(parent.destroyed, nil, "remount preserves the client-owned layer")
+    expect(replacement.controls.cap.value, 7, "remount loads current saved settings")
+    replacement.controls.cap.options.onChange(nil, 8)
+    expect(db.ribbonBarButtonCap, 8, "remounted settings remain interactive")
+    RibbonBar.Shutdown()
+    expect(replacement.destroyed, true, "shutdown destroys native settings")
+    expect(parent.destroyed, nil, "shutdown preserves the client-owned layer")
+    expect(settingsEvents.prettyui_ribbon_bar, nil, "shutdown unsubscribes native settings")
+end
+
 classicSelectionAndModeTransitions()
 classicOverflowKeepsButtonsReachable()
 classicUnavailableNativeLayoutAndRemount()
+modernOverflowAndCap()
+sharedNativeSettingsLifecycle()
 print("ribbon_bar_test: ok")

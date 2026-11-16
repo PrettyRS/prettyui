@@ -23,6 +23,7 @@ hero:
 ## Unreleased {#unreleased}
 
 ### Added
+- PrettyUI now has user facing settings accessible from the plugin menu, the ribbon and the Classic sidebar.
 - Added `prettyui.IsClassicUI()` to read the player's current Classic Interface mode independently of Classic Combat and slim headers.
 - Added [Table](index.html#tables-api) component, this can be used to easily display data in a responsive table format.
 - Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.

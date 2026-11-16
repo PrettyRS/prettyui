@@ -222,6 +222,7 @@ function Fixture.new()
     Event = {
         Logic = event("Logic"), Draw = event("Draw"), VarTransmit = event("VarTransmit"),
         KeyDown = event("KeyDown"), WindowFocusChanged = event("WindowFocusChanged"),
+        SettingsLayerReady = event("SettingsLayerReady"),
     }
     local locked, transparency = true, 0
     local classicMode = { value = 0 }
@@ -271,6 +272,8 @@ function Fixture.new()
         SetString = function(_, key, value) savedPreferences[key] = value; return true end,
         GetBool = function(_, key) return savedPreferences[key] end,
         SetBool = function(_, key, value) savedPreferences[key] = value; return true end,
+        GetInt = function(_, key) return savedPreferences[key] end,
+        SetInt = function(_, key, value) savedPreferences[key] = value; return true end,
         GetStructuredData = function(_, key) return copy(savedLayouts[key]) end,
         SetStructuredData = function(_, key, value)
             savedLayouts[key] = copy(value)

@@ -1,5 +1,7 @@
 local Components = require("src/core/components")
 local RibbonButton = require("src/ribbon_button")
+local SpriteButton = require("src/sprite_button")
+local SimpleView = require("src/simple_view")
 local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
@@ -17,27 +19,39 @@ local RibbonBar = {}
 local EVENT_ID = "prettyui_ribbon_bar"
 local POSITION_STORAGE_KEY = "ribbonBarPosition"
 local AUTO_HIDE_STORAGE_KEY = "ribbonBarAutoHide"
+local BUTTON_CAP_STORAGE_KEY = "ribbonBarButtonCap"
+local POSITION_IDS = { left = 1, right = 2, top = 3 }
+local POSITION_VALUES = { "left", "right", "top" }
+local DEFAULT_BUTTON_CAP = 10
+local MAX_BUTTON_CAP = 50
+local INDICATOR_SIZE = 12
 local BORDER = 4
 local PADDING = 6
 local BUTTON_SIZE = 32
+local SETTINGS_BUTTON_SIZE = 24
+local SETTINGS_BUTTON_OFFSET = (BUTTON_SIZE - SETTINGS_BUTTON_SIZE) / 2
 local BUTTON_GAP = 2
 local AUTO_HIDE_SLIDE_STEP = 8
 local SETTINGS_WIDTH = 340
-local SETTINGS_HEIGHT = 250
+local SETTINGS_HEIGHT = 320
 local CLASSIC_CONTENT_WIDTH = 360
 local MODERN_NATIVE_RESTORE_TICKS = 10 -- 200 ms at the client's fixed 50 Hz.
 local RAIL_WIDTH = BUTTON_SIZE + PADDING * 2
 local PITCH = BUTTON_SIZE + BUTTON_GAP
+local SETTINGS_PITCH = SETTINGS_BUTTON_SIZE + BUTTON_GAP
 
 local entries = {}
 local byPanel = {}
 local gameArea, root, interfaceID, frame, settingsButton, settingsWindow
-local settingsPositionControl, settingsAutoHideControl
+local settingsControls = {}
+local settingsView, settingsLayerView
+local buttonCap = DEFAULT_BUTTON_CAP
 local started, settingsOpen, autoHide, hitboxHovered = false, false, false, false
 local position, slideOffset = "left", 0
 local classic = false
-local classicSelectedPanel, classicBody, classicIconList
-local classicIconScrollY = 0
+local classicSelectedPanel, classicBody
+local iconList, previousIndicator, nextIndicator
+local iconScroll = 0
 local classicSelecting = false
 local mountKey, mountGeneration
 local layoutWidth, layoutHeight, layoutPosition, layoutSlideOffset, layoutScrollY, layoutCount
@@ -129,13 +143,21 @@ end
 
 local function barSize()
     if classic then
-        local rail, body = classicWidths(classicSelectedPanel ~= nil)
+        local rail, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
         return rail + body, gameArea.height
     end
-    local count = #entries + 1
-    local run = PADDING * 2 + count * BUTTON_SIZE + (count - 1) * BUTTON_GAP
-    if position == "top" then return run, BUTTON_SIZE + PADDING * 2 end
-    return BUTTON_SIZE + PADDING * 2, run
+    local span = position == "top" and gameArea.width or gameArea.height
+    local available = math.max(0, span - PADDING * 2 - SETTINGS_PITCH)
+    local count = math.min(#entries, buttonCap)
+    local run = math.max(0, count * PITCH - BUTTON_GAP)
+    if #entries > count or run > available then
+        count = math.min(count, math.max(0,
+            math.floor((available - INDICATOR_SIZE * 2 + BUTTON_GAP) / PITCH)))
+        run = math.max(0, count * PITCH - BUTTON_GAP) + INDICATOR_SIZE * 2
+    end
+    run = math.min(span, PADDING * 2 + SETTINGS_PITCH + run)
+    if position == "top" then return run, RAIL_WIDTH end
+    return RAIL_WIDTH, run
 end
 
 local function ribbonOrigin(width, height)
@@ -167,93 +189,156 @@ local function layoutRoot()
     local width, height = barSize()
     local rearrange = width ~= layoutWidth or height ~= layoutHeight
         or position ~= layoutPosition or #entries ~= layoutCount
-    if not rearrange and slideOffset == layoutSlideOffset
-        and classicIconScrollY == layoutScrollY then return end
+    if not rearrange and slideOffset == layoutSlideOffset and iconScroll == layoutScrollY then return end
+    local horizontal = not classic and position == "top"
+    local body = 0
     if classic then
-        local rail, body = classicWidths(classicSelectedPanel ~= nil)
-        if rearrange then
-            root:SetPos(-width, 0, 1, 0)
-            if root.width ~= width or root.height ~= height then root:SetSize(width, height) end
-            settingsButton.root:SetPos(body + PADDING, PADDING)
-        end
+        local _
+        _, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
+        if rearrange then root:SetPos(-width, 0, 1, 0) end
         local resized = classicBody.width ~= body or classicBody.height ~= height
         if resized then
             classicBody:SetSize(body, height)
             frame.contentBackground:SetSize(math.max(0, body - BORDER * 2), math.max(0, height - BORDER * 2))
-        end
-        Components.setHidden(classicBody, classicSelectedPanel == nil)
-        local listHeight = math.max(0, height - PADDING * 2 - PITCH)
-        local scrollHeight = math.max(0, #entries * PITCH - BUTTON_GAP)
-        if rearrange then
-            classicIconList:SetPos(body, PADDING + PITCH)
-            classicIconList:SetSize(rail, listHeight)
-            classicIconList:SetScrollSize(rail, math.max(listHeight, scrollHeight))
-        end
-        classicIconScrollY = math.max(0, math.min(classicIconScrollY, scrollHeight - listHeight))
-        classicIconList:SetScrollPos(0, classicIconScrollY)
-        for index, entry in ipairs(entries) do
-            if entry.button then
-                local y = (index - 1) * PITCH
-                if rearrange then entry.button.root:SetPos(PADDING, y) end
-                entry.classicVisible = y + BUTTON_SIZE > classicIconScrollY
-                    and y < classicIconScrollY + listHeight
-                entry.button.root.enabled = entry.classicVisible
-                Components.setHidden(entry.button.root, not entry.classicVisible)
+            if settingsView then
+                settingsView:SetSize(math.max(0, body - BORDER * 2), math.max(0, height - BORDER * 2))
             end
         end
+        Components.setHidden(classicBody, classicSelectedPanel == nil and not settingsOpen)
         if resized and classicSelectedPanel and classicSelectedPanel._scroll then
             classicSelectedPanel._scroll:Refresh()
             classicSelectedPanel:RefreshRowBackgrounds()
         end
+    elseif horizontal then
+        root:SetPos(-math.floor(width / 2), -slideOffset, 0.5, 0)
+    elseif position == "right" then
+        root:SetPos(-width + slideOffset, -math.floor(height / 2), 1, 0.5)
     else
-        if position == "top" then
-            root:SetPos(-math.floor(width / 2), -slideOffset, 0.5, 0)
-        elseif position == "right" then
-            root:SetPos(-width + slideOffset, -math.floor(height / 2), 1, 0.5)
+        root:SetPos(-slideOffset, -math.floor(height / 2), 0, 0.5)
+    end
+    local available = math.max(0, (horizontal and width or height) - PADDING * 2 - SETTINGS_PITCH)
+    local total = math.max(0, #entries * PITCH - BUTTON_GAP)
+    local gutter = total > available and INDICATOR_SIZE or 0
+    local extent = math.max(0, available - gutter * 2)
+    if rearrange then
+        root:SetSize(width, height)
+        settingsButton.root:SetPos(body + PADDING + (horizontal and 0 or SETTINGS_BUTTON_OFFSET),
+            PADDING + (horizontal and SETTINGS_BUTTON_OFFSET or 0))
+        if horizontal then
+            iconList:SetPos(PADDING + SETTINGS_PITCH + gutter, PADDING)
+            iconList:SetSize(extent, BUTTON_SIZE)
+            iconList:SetScrollSize(math.max(extent, total), BUTTON_SIZE)
+            previousIndicator:SetPos(PADDING + SETTINGS_PITCH, PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2)
+            nextIndicator:SetPos(width - PADDING - INDICATOR_SIZE, PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2)
         else
-            root:SetPos(-slideOffset, -math.floor(height / 2), 0, 0.5)
+            iconList:SetPos(body + PADDING, PADDING + SETTINGS_PITCH + gutter)
+            iconList:SetSize(BUTTON_SIZE, extent)
+            iconList:SetScrollSize(BUTTON_SIZE, math.max(extent, total))
+            previousIndicator:SetPos(body + PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2, PADDING + SETTINGS_PITCH)
+            nextIndicator:SetPos(body + PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2, height - PADDING - INDICATOR_SIZE)
         end
-        if rearrange then
-            root:SetSize(width, height)
-            if settingsButton then settingsButton.root:SetPos(PADDING, PADDING) end
-            for index, entry in ipairs(entries) do
-                if entry.button then
-                    local offset = PADDING + index * (BUTTON_SIZE + BUTTON_GAP)
-                    if position == "top" then entry.button.root:SetPos(offset, PADDING)
-                    else entry.button.root:SetPos(PADDING, offset) end
-                end
-            end
+        previousIndicator.rotationDegrees = horizontal and -90 or 0
+        nextIndicator.rotationDegrees = horizontal and -90 or 0
+    end
+    iconScroll = math.max(0, math.min(iconScroll, total - extent))
+    iconList:SetScrollPos(horizontal and iconScroll or 0, horizontal and 0 or iconScroll)
+    Components.setHidden(previousIndicator, gutter == 0 or iconScroll == 0)
+    Components.setHidden(nextIndicator, gutter == 0 or iconScroll >= total - extent)
+    for index, entry in ipairs(entries) do
+        if entry.button then
+            local offset = (index - 1) * PITCH
+            if rearrange then entry.button.root:SetPos(horizontal and offset or 0, horizontal and 0 or offset) end
+            entry.visible = extent > 0 and offset + BUTTON_SIZE > iconScroll and offset < iconScroll + extent
+            entry.button.root.enabled = entry.visible
+            Components.setHidden(entry.button.root, not entry.visible)
         end
     end
     layoutWidth, layoutHeight, layoutPosition = width, height, position
-    layoutSlideOffset, layoutScrollY, layoutCount = slideOffset, classicIconScrollY, #entries
+    layoutSlideOffset, layoutScrollY, layoutCount = slideOffset, iconScroll, #entries
 end
 
-local function scrollClassicIcons(_, delta)
-    if not classic or WorldMap.isSuspended() then return true end
-    local previous = classicIconScrollY
-    classicIconScrollY = classicIconScrollY + delta * PITCH
+local function scrollIcons(_, delta)
+    if WorldMap.isSuspended() then return true end
+    local previous = iconScroll
+    iconScroll = iconScroll + delta * PITCH
     layoutRoot()
-    return previous == classicIconScrollY
+    return previous == iconScroll
 end
 
 local function closeSettings()
     settingsOpen = false
-    if settingsButton then settingsButton:SetActive(false) end
+end
+
+local function destroySettingsHost(host)
+    if host then
+        settingsControls[host] = nil
+        host:Destroy()
+    end
+end
+
+local function buildSettings(host, showTitle)
+    if showTitle then host:AddTitle("PrettyUI settings") end
+    host:AddTitle("Ribbon settings")
+    host:AddText("These preferences apply to the Modern Interface ribbon. Classic Interface uses a fixed, full-height sidebar.")
+    local controls = {}
+    settingsControls[host] = controls
+    host:AddText("Ribbon alignment")
+    controls.position = host:AddComboBox({
+        entries = {
+            { label = "Left", id = POSITION_IDS.left },
+            { label = "Right", id = POSITION_IDS.right },
+            { label = "Top", id = POSITION_IDS.top },
+        },
+        selectedID = POSITION_IDS[position],
+        onChange = function(_, entryID) RibbonBar.SetPosition(POSITION_VALUES[entryID]) end,
+    })
+    controls.autoHide = host:AddCheckboxButton({
+        { text = "Auto-hide ribbon", value = "autoHide", selected = autoHide },
+    }, {
+        onChange = function(_, _, _, selected) RibbonBar.SetAutoHide(selected) end,
+    })
+    controls.capLabel = host:AddText("Visible panel buttons: " .. buttonCap)
+    controls.cap = host:AddSlider({
+        min = 1, max = MAX_BUTTON_CAP, step = 1, value = buttonCap,
+        onChange = function(_, value) RibbonBar.SetButtonCap(value) end,
+    })
+end
+
+local function mountSettingsLayer(event)
+    destroySettingsHost(settingsLayerView)
+    settingsLayerView = SimpleView.new(event.component, {
+        categoryID = "auto",
+        width = 0, height = 0, widthAnchor = 1, heightAnchor = 1,
+    })
+    local view = settingsLayerView
+    view.root:Subscribe(ui.Hook.ONRESIZE, EVENT_ID, function() view:Refresh() end)
+    buildSettings(view, true)
 end
 
 local function showSettings()
+    if classic then
+        local rail, body = classicWidths(true)
+        if body == 0 then return end
+        collapseClassic(false)
+        if not reserveClassic(rail + body) then return end
+        settingsOpen = true
+        layoutRoot()
+        settingsView = SimpleView.new(classicBody, {
+            categoryID = "auto", x = BORDER, y = BORDER,
+            width = math.max(0, body - BORDER * 2),
+            height = math.max(0, gameArea.height - BORDER * 2),
+        })
+        buildSettings(settingsView, true)
+        return
+    end
     if settingsWindow then
         settingsOpen = true
-        if settingsPositionControl then settingsPositionControl:SetSelectedValue(position, false) end
-        if settingsAutoHideControl then settingsAutoHideControl:SetSelected("autoHide", autoHide, false) end
         settingsWindow:Show()
-        settingsButton:SetActive(true)
         return
     end
     settingsWindow = Window.new(gameArea, {
         categoryID = "auto",
-        title = "Ribbon settings",
+        title = "PrettyUI settings",
         x = -math.floor(SETTINGS_WIDTH / 2),
         y = -math.floor(SETTINGS_HEIGHT / 2),
         xAnchor = 0.5,
@@ -266,32 +351,16 @@ local function showSettings()
         maxHeight = SETTINGS_HEIGHT,
         onClose = closeSettings,
     })
-    settingsWindow:AddTitle("PLUGIN RIBBON")
-    if classic then
-        settingsWindow:AddText("Classic Interface uses a fixed right sidebar; position and auto-hide apply in Modern Interface.")
-    else
-        settingsWindow:AddText("Choose which game-window edge holds the panel ribbon.")
-        settingsPositionControl = settingsWindow:AddRadioButton({
-            { text = "Left", value = "left" },
-            { text = "Right", value = "right" },
-            { text = "Top", value = "top" },
-        }, {
-            selectedValue = position,
-            onChange = function(_, value) RibbonBar.SetPosition(value) end,
-        })
-        settingsAutoHideControl = settingsWindow:AddCheckboxButton({
-            { text = "Auto-hide ribbon", value = "autoHide", selected = autoHide },
-        }, {
-            onChange = function(_, _, _, selected) RibbonBar.SetAutoHide(selected) end,
-        })
-    end
+    buildSettings(settingsWindow)
     settingsOpen = true
-    settingsButton:SetActive(true)
 end
 
 local function toggleSettings()
-    if settingsOpen and settingsWindow then settingsWindow:Close()
-    else showSettings() end
+    if settingsOpen then
+        if classic then collapseClassic() else settingsWindow:Close() end
+    else
+        showSettings()
+    end
 end
 
 destroySurface = function(keepLayout)
@@ -300,8 +369,9 @@ destroySurface = function(keepLayout)
     local ok, problem = true, nil
     if selected then ok, problem = pcall(selected._SetClassicHost, selected, nil) end
     if not keepLayout then ClassicLayout.restore() end
-    if settingsWindow then settingsWindow:Destroy(); settingsWindow = nil end
-    settingsPositionControl, settingsAutoHideControl = nil, nil
+    destroySettingsHost(settingsWindow)
+    destroySettingsHost(settingsView)
+    settingsWindow, settingsView = nil, nil
     settingsOpen, hitboxHovered, slideOffset = false, false, 0
     if settingsButton then settingsButton:Destroy(); settingsButton = nil end
     for _, entry in ipairs(entries) do
@@ -311,12 +381,13 @@ destroySurface = function(keepLayout)
         WorldMap.unwatch(root)
         Tooltip.unregisterContext(root)
         if classicBody then Tooltip.unregisterContext(classicBody) end
-        if classicIconList then Tooltip.unregisterContext(classicIconList) end
+        if iconList then Tooltip.unregisterContext(iconList) end
         if ui.Interfaces:GetInterface(interfaceID) ~= nil then root:Destroy() end
         root = nil
     end
     frame, gameArea, interfaceID = nil, nil, nil
-    classicBody, classicIconList, classicIconScrollY = nil, nil, 0
+    classicBody, iconList, iconScroll = nil, nil, 0
+    previousIndicator, nextIndicator = nil, nil
     mountKey, mountGeneration = nil, nil
     layoutWidth = nil
     if not ok then error(problem, 0) end
@@ -355,10 +426,9 @@ end
 local function createEntryButton(entry)
     local panel = entry.panel
     layoutWidth = nil
-    entry.button = RibbonButton.new(classic and classicIconList or root, panel.tabIcon, function()
-        if byPanel[panel] ~= entry or not panelLoaded(panel) then return end
+    entry.button = RibbonButton.new(iconList, panel.tabIcon, function()
+        if byPanel[panel] ~= entry or not panelLoaded(panel) or not entry.visible then return end
         if classic then
-            if not entry.classicVisible then return end
             if not panel:IsActive() then panel:SetActive(true)
             else RibbonBar.selectClassic(panel, true) end
         else
@@ -368,7 +438,7 @@ local function createEntryButton(entry)
     end, {
         _categoryPolicy = "auto",
         tooltip = panel.tabText or "Panel",
-        _onScrollWheel = classic and scrollClassicIcons or nil,
+        _onScrollWheel = scrollIcons,
     })
     entry.button:SetActive(classic and classicSelectedPanel == panel or not classic and panel:IsActive())
     entry.icon, entry.text = panel.tabIcon, panel.tabText
@@ -468,6 +538,11 @@ end
 collapseClassic = function(reserve)
     local panel = classicSelectedPanel
     classicSelectedPanel = nil
+    if classic then settingsOpen = false end
+    if settingsView then
+        destroySettingsHost(settingsView)
+        settingsView = nil
+    end
     local ok, problem = true, nil
     if panel then ok, problem = pcall(panel._SetClassicHost, panel, nil) end
     local reserved = true
@@ -510,7 +585,7 @@ ensureMounted = function()
     gameArea, interfaceID = current, current.interfaceID
     mountKey, mountGeneration = currentKey, generation
     if classic then
-        local rail, body = classicWidths(classicSelectedPanel ~= nil)
+        local rail, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
         local ok, reserved = pcall(reserveClassic, rail + body)
         if not ok or not reserved then
             pcall(destroySurface, true)
@@ -542,13 +617,30 @@ ensureMounted = function()
             Tooltip.registerContext(classicBody, gameArea, function(target)
                 return gameArea.width - root.width + (target.x or 0), (target.y or 0)
             end, rootContext)
-            classicIconList = Components.new(ui.Layer, root)
-            classicIconList.clickthrough = false
-            Wheel.bind(classicIconList, { _onScrollWheel = scrollClassicIcons })
-            Tooltip.registerContext(classicIconList, gameArea, function(target)
-                return gameArea.width - root.width + classicIconList.x + (target.x or 0),
-                    classicIconList.y + (target.y or 0) - classicIconScrollY
-            end, rootContext)
+        end
+        iconList = Components.new(ui.Layer, root)
+        iconList.clickthrough = false
+        Wheel.bind(iconList, { _onScrollWheel = scrollIcons })
+        Wheel.bind(root, { _onScrollWheel = scrollIcons })
+        Tooltip.registerContext(iconList, gameArea, function(target)
+            local width, height = barSize()
+            local x, y = ribbonOrigin(width, height)
+            local horizontal = not classic and position == "top"
+            return x + iconList.x + (target.x or 0) - (horizontal and iconScroll or 0),
+                y + iconList.y + (target.y or 0) - (horizontal and 0 or iconScroll)
+        end, rootContext)
+        previousIndicator = sprite(root, id.Sprite.RS3_ICON_ACCORDION_5)
+        nextIndicator = sprite(root, id.Sprite.RS3_ICON_ACCORDION_2)
+        previousIndicator:SetSize(INDICATOR_SIZE, INDICATOR_SIZE)
+        nextIndicator:SetSize(INDICATOR_SIZE, INDICATOR_SIZE)
+        for _, indicator in ipairs({ previousIndicator, nextIndicator }) do
+            indicator.clickthrough = false
+            local delta = indicator == previousIndicator and -1 or 1
+            indicator:Subscribe(ui.Hook.ONCLICK, function()
+                if not indicator.hidden then scrollIcons(indicator, delta) end
+                return false
+            end)
+            Wheel.bind(indicator, { _onScrollWheel = scrollIcons })
         end
         WorldMap.watch(root, function(suspended)
             if suspended then Tooltip.hideContextTooltips(root) end
@@ -561,8 +653,9 @@ ensureMounted = function()
                 panel:_SyncOverlays(suspended)
             end
         end)
-        settingsButton = RibbonButton.new(root, Sprites.SPRITE_BUTTONS.SETTINGS.neutral,
-            toggleSettings, { tooltip = "Ribbon settings", _categoryPolicy = "auto" })
+        settingsButton = SpriteButton.new(root, "SETTINGS", toggleSettings, {
+            tooltip = "PrettyUI settings", _categoryPolicy = "auto", size = SETTINGS_BUTTON_SIZE,
+        })
         for _, entry in ipairs(entries) do createEntryButton(entry) end
     end
     if not classic then
@@ -666,8 +759,10 @@ end
 function RibbonBar.SetPosition(value)
     position = normalizePosition(value)
     PersistentDB:SetString(POSITION_STORAGE_KEY, position)
-    if settingsPositionControl and ui.Interfaces:GetInterface(interfaceID) ~= nil then
-        settingsPositionControl:SetSelectedValue(position, false)
+    for host, controls in pairs(settingsControls) do
+        if ui.Interfaces:GetInterface(host.interfaceID) ~= nil then
+            controls.position:Select(POSITION_IDS[position], false)
+        end
     end
     layoutRoot()
 end
@@ -679,8 +774,10 @@ end
 function RibbonBar.SetAutoHide(value)
     autoHide = value == true
     PersistentDB:SetBool(AUTO_HIDE_STORAGE_KEY, autoHide)
-    if settingsAutoHideControl and ui.Interfaces:GetInterface(interfaceID) ~= nil then
-        settingsAutoHideControl:SetSelected("autoHide", autoHide, false)
+    for host, controls in pairs(settingsControls) do
+        if ui.Interfaces:GetInterface(host.interfaceID) ~= nil then
+            controls.autoHide:SetSelected("autoHide", autoHide, false)
+        end
     end
 end
 
@@ -688,11 +785,35 @@ function RibbonBar.GetAutoHide()
     return autoHide
 end
 
+local function normalizeButtonCap(value)
+    value = tonumber(value)
+    if value == nil or value ~= value then return DEFAULT_BUTTON_CAP end
+    return math.max(1, math.min(MAX_BUTTON_CAP, math.floor(value)))
+end
+
+function RibbonBar.SetButtonCap(value)
+    buttonCap = normalizeButtonCap(value)
+    PersistentDB:SetInt(BUTTON_CAP_STORAGE_KEY, buttonCap)
+    for host, controls in pairs(settingsControls) do
+        if ui.Interfaces:GetInterface(host.interfaceID) ~= nil then
+            controls.cap:SetValue(buttonCap, false)
+            controls.capLabel.content = "Visible panel buttons: " .. buttonCap
+        end
+    end
+    layoutRoot()
+end
+
+function RibbonBar.GetButtonCap()
+    return buttonCap
+end
+
 function RibbonBar.Start()
     if started then return end
     started = true
     position = normalizePosition(PersistentDB:GetString(POSITION_STORAGE_KEY))
     autoHide = PersistentDB:GetBool(AUTO_HIDE_STORAGE_KEY) == true
+    buttonCap = normalizeButtonCap(PersistentDB:GetInt(BUTTON_CAP_STORAGE_KEY))
+    Event.SettingsLayerReady.Subscribe(EVENT_ID, mountSettingsLayer)
     Event.Logic.Subscribe(EVENT_ID, ensureMounted)
     Event.VarTransmit.Subscribe(EVENT_ID, function(event)
         if #entries > 0 and event.var.id == id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP then ensureMounted() end
@@ -704,8 +825,11 @@ function RibbonBar.Shutdown()
     if started then
         Event.Logic.Unsubscribe(EVENT_ID)
         Event.VarTransmit.Unsubscribe(EVENT_ID)
+        Event.SettingsLayerReady.Unsubscribe(EVENT_ID)
     end
     started = false
+    destroySettingsHost(settingsLayerView)
+    settingsLayerView = nil
     local ok, problem = pcall(destroySurface)
     clearEntries()
     if not ok then error(problem, 0) end

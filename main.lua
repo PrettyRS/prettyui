@@ -49,7 +49,6 @@ local PrettyUI = {
     OverheadBar = OverheadBar,
     Sprites = require("src/core/sprites"),
     RibbonButton = require("src/ribbon_button"),
-    RibbonBar = RibbonBar,
     RadioButton = SelectionButtons.RadioButton,
     SimpleButton = require("src/simple_button"),
     Slider = require("src/slider"),

@@ -207,20 +207,9 @@ windows rather than following native window occlusion.
 
 {{% /api-grid %}}
 
-### Panel ribbon {#ribbon-bar-api}
+### Automatic panel ribbon {#panel-ribbon}
 
-Each panel automatically adds a ribbon button using **tabIcon** and **tabText**.
-In Modern Interface, click to toggle enabled state; highlighting means enabled,
-not necessarily selected. The cog controls ribbon placement and auto-hide.
-
-In Classic Interface, click to select a sidebar page; clicking it again collapses
-the sidebar without disabling the panel. The sidebar starts collapsed on mode
-entry. Modern placement, tab groups, and ribbon preferences are preserved.
-
-`prettyui.RibbonBar.SetPosition("left" | "right" | "top")`, `GetPosition()`
-: Changes or reads the saved modern ribbon edge.
-
-`prettyui.RibbonBar.SetAutoHide(boolean)`, `GetAutoHide()`
-: Changes or reads saved modern sliding auto-hide.
+Panels automatically use a ribbon in Modern Interface or a sidepanel in Classic
+Interface, depending on the user's UI mode.
 
 {{% /doc-section %}}
