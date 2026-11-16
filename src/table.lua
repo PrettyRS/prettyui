@@ -684,6 +684,8 @@ function Table:_Teardown()
     self.bodyArea = nil
     self.headerBackground = nil
     self.headerLabels = nil
+    self.headerBorder = nil
+    self.headerHighlight = nil
 end
 
 return Table
