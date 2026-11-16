@@ -206,6 +206,11 @@ end
 
 function Table:SetRows(rows, keepScroll)
     self.rows = rows or {}
+    
+    if self:_NeedsScrollbar() ~= self.hasScrollbar then
+        self:_Relayout()
+    end
+
     self:_BuildBody(keepScroll)
 end
 
@@ -380,11 +385,19 @@ function Table:_LayoutRow(rendered)
     end
 end
 
+function Table:_NeedsScrollbar()
+    local bodyHeight = self.height - self.headerHeight
+    return #self.rows * self.rowHeight > bodyHeight
+end
+
 function Table:_ComputeLayout()
-    local available = math.max(0, self.width - self.scrollbarGap)
+    self.hasScrollbar = self:_NeedsScrollbar()
+
+    local gap = self.hasScrollbar and self.scrollbarGap or 0
+    local available = math.max(0, self.width - gap)
 
     self.columnWidths, self.rowWidth = layoutColumns(self.columns, available, self.stretch)
-    self.frameWidth = math.min(self.width, self.rowWidth + self.scrollbarGap)
+    self.frameWidth = math.min(self.width, self.rowWidth + gap)
 end
 
 function Table:_BuildFrame()
@@ -671,6 +684,8 @@ function Table:_Teardown()
     self.bodyArea = nil
     self.headerBackground = nil
     self.headerLabels = nil
+    self.headerBorder = nil
+    self.headerHighlight = nil
 end
 
 return Table

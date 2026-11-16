@@ -62,8 +62,6 @@ local bossTable = window:AddTable({
 })
 ```
 
-Some Text here
-
 {{% api-grid compact="true" %}}
 
 {{% api-card %}}
@@ -74,7 +72,7 @@ Some Text here
 :  An array of column tables one per column. Each column's `key` picks which field of a row it shows and `label` sets its header text. A table must have at least one column. See the [Columns](#columns) section for every column option.
 
 `rows`
-: An array of row tables, one per row displayed in order. Each rows fields are matched to columns by the columns `key` so `{ bossName = "King Black Dragon", bossLevel = 276 }` fills the `Boss Name` and `Boss Level` columns. Render columns get the whole rows table, so a row can also hold fields that no column shows (IDs, callbacks and so on). 
+: An array of row tables, one per row displayed in order. Each rows fields are matched to columns by the column's `key` so `{ bossName = "King Black Dragon", bossLevel = 276 }` fills the `Boss Name` and `Boss Level` columns. Render columns get the whole rows table, so a row can also hold fields that no column shows (IDs, callbacks and so on). 
 
 `width`, `height`
 : Default size is **600 × 400**.
@@ -119,7 +117,7 @@ Some Text here
 ### Columns
 
 `key`
-: Column refrece key for data to be applied to the right columns, Render columns do not need keys.
+: Column reference key for data to be applied to the right columns, Render columns do not need keys.
 
 `label`
 : The text displayed at the top of each column in the header. 
@@ -131,7 +129,7 @@ Some Text here
 : When set to false it stops the column from being stretched is `stretch` in table.options is set to true. Default is **true**
 
 `format`
-: Optional callback function(value, rowData, rowIndex) Allows you to format the text passed in by the orginal data table without changing the underlying data. `format` is ignored on `render` columns. `rowData` contains all the data for that row including all other keys information. 
+: Optional callback function(value, rowData, rowIndex) Allows you to format the text passed in by the original data table without changing the underlying data. `format` is ignored on `render` columns. `rowData` contains all the data for that row including all other keys information. 
 
     ```lua
         { key = "salary", label = "Salary", width = 100, format = function(value, rowData, rowIndex)

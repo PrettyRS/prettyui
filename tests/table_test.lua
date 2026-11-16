@@ -173,7 +173,7 @@ expectError(function() Table.new(newParent(), {}) end, "new with no columns erro
 
 local t = Table.new(newParent(), { columns = COLUMNS })
 
-expect(t.root.width, 268, "frame shrinks to columns + scrollbar gap")
+expect(t.root.width, 250, "no scrollbar frame shrinks to just the columns")
 
 local headers = childrenOfKind(t.headerArea, "Text")
 
@@ -186,14 +186,14 @@ expect(childrenOfKind(t.scrollView.content, "Text")[1].content, "Nothing to show
     "empty table shows the empty text")
 expect(#liveRows(t), 0, "empty table builds no rows")
 
-local s = Table.new(newParent(), { columns = COLUMNS, width = 418, stretch = true })
+local s = Table.new(newParent(), { columns = COLUMNS, width = 400, stretch = true })
 
 expect(s.columnWidths[1], 175, "stretch: Name gets half the spare")
 expect(s.columnWidths[2], 50, "stretch: stretch=false column stays put")
 expect(s.columnWidths[3], 175, "stretch: Price gets half the spare")
 s:Destroy()
 
-s = Table.new(newParent(), { columns = COLUMNS, width = 419, stretch = true })
+s = Table.new(newParent(), { columns = COLUMNS, width = 401, stretch = true })
 expect(s.columnWidths[3], 176, "stretch: leftover pixel goes to the last stretchable column")
 s:Destroy()
 
@@ -204,6 +204,7 @@ s:Destroy()
 
 t:SetRows(makeRows(100))
 
+expect(t.root.width, 268, "scrollbar frame is columns + scrollbar gap")
 expect(t.scrollView.contentHeight, 4400, "scroll area is sized for ALL rows")
 expect(#liveRows(t), 11, "only 11 of 100 rows are built")
 expect(rowShowing(t, "Item 11") ~= nil, true, "row 11 (overscan) is built")
@@ -225,6 +226,20 @@ local row50 = rowShowing(t, "Item 50")
 t.scrollView:SetScrollPosition(49 * 44 + 1)
 expect(rowShowing(t, "Item 50"), row50, "tiny scroll does not rebuild rows")
 
+s = Table.new(newParent(), { columns = COLUMNS, width = 400, stretch = true })
+expect(s.hasScrollbar, false, "few rows: no scrollbar")
+expect(s.rowWidth, 400, "no scrollbar: rows use the full width")
+
+s:SetRows(makeRows(100))
+expect(s.hasScrollbar, true, "rows overflow scrollbar shows")
+expect(s.rowWidth, 382, "scrollbar rows leave room for the gap")
+expect(s.columnWidths[1], 166, "scrollbar stretch recalculated for the narrower space")
+expect(childrenOfKind(s.headerArea, "Text")[3].x, 166 + 50 + 8, "headers move when the scrollbar appears")
+
+s:SetRows(makeRows(2))
+expect(s.hasScrollbar, false, "rows fit again scrollbar gone")
+expect(s.rowWidth, 400, "rows go back to the full width")
+s:Destroy()
 
 local renderCalls = {}
 local cleaned = 0
@@ -319,10 +334,10 @@ local r = Table.new(newParent(), {
             return function() cleaned = cleaned + 1 end
         end },
     },
-    rows = makeRows(2), width = 218, stretch = true,
+    rows = makeRows(2), width = 200, stretch = true,
 })
 
-r:SetSize(318, 400)
+r:SetSize(300, 400)
 expect(renders, 4, "render column width changed -> rows re-rendered")
 expect(cleaned, 2, "old render handles are cleaned up first")
 expect(lastWidth, 113, "render gets the new width")
@@ -339,7 +354,7 @@ local fixed = Table.new(newParent(), {
 })
 local fixedRow = rowShowing(fixed, "Item 1")
 
-fixed:SetSize(318, 400)
+fixed:SetSize(300, 400)
 expect(renders, 2, "render width unchanged -> render not called again")
 expect(rowShowing(fixed, "Item 1"), fixedRow, "row is reused")
 expect(childrenOfKind(fixedRow, "Text")[1].width, 240 - 16, "text cell resized in place")
