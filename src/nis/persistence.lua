@@ -24,7 +24,9 @@ local function set(record, key, value)
 end
 
 local function geometry(record, root)
-    local changed = set(record, "x", root.x)
+    local changed = set(record, "pendingX", nil)
+    changed = set(record, "pendingY", nil) or changed
+    changed = set(record, "x", root.x) or changed
     changed = set(record, "y", root.y) or changed
     changed = set(record, "width", root.width) or changed
     return set(record, "height", root.height) or changed
@@ -55,9 +57,13 @@ function Persistence.prepare(options)
     if not record then return options end
     local restored = {}
     for key, value in pairs(options) do restored[key] = value end
-    restored.x, restored.y = record.x, record.y
-    restored.width, restored.height = record.width, record.height
-    restored.xAnchor, restored.yAnchor = nil, nil
+    if record.x ~= nil and not record.pendingX then
+        restored.x, restored.xAnchor = record.x, nil
+    end
+    if record.y ~= nil and not record.pendingY then
+        restored.y, restored.yAnchor = record.y, nil
+    end
+    restored.width, restored.height = record.width or options.width, record.height or options.height
     restored.active = record.active ~= false
     return restored
 end
@@ -169,6 +175,9 @@ function Persistence.register(panel, options, groups)
     if not state.panels[options.id] then
         local record = { dockTo = options.dockTo, active = not panel._nisHidden }
         geometry(record, panel.root)
+        -- A disabled shell has not yet chosen its ribbon-relative position.
+        record.pendingX = panel._nisAutoX or nil
+        record.pendingY = panel._nisAutoY or nil
         state.panels[options.id] = record
         changed = true
     end
@@ -213,7 +222,7 @@ end
 function Persistence.bounds(panel)
     local panelID = panel._nisPersistenceID
     if panel._nisClassic or WorldMap.isSuspended() or not panelID or restoring or not loaded(panel)
-        or panel._nisHidden or busy(panel) then return end
+        or panel._nisHidden or panel._nisAutoX or panel._nisAutoY or busy(panel) then return end
     local record = state.panels[panelID]
     local group = record.group and state.groups[record.group]
     local changed = false

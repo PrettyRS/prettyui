@@ -63,10 +63,10 @@ construction. Pass an explicit parent for a custom mount.
 
 `x`, `y`, `xAnchor`, `yAnchor`
 : Initial parent-relative position and optional proportional anchors.
-  Position defaults to **0, 0**.
+  Omitted coordinates place the panel beside the ribbon on first enable.
 
 `width`, `height`
-: Initial dimensions in interface units. Defaults to **300 × 160**.
+: Optional dimensions in interface units. Defaults to **300 × 400**.
 
 `minWidth`, `minHeight`, `maxWidth`, `maxHeight`
 : Limits for resizing and **SetSize**. Minimums default to **64 × 21**;

@@ -54,6 +54,26 @@ local function loaded(self)
     return self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
 end
 
+local function placeInitial(self)
+    if not (self._nisAutoX or self._nisAutoY) or self._nisClassic or self._nisHidden
+        or self._nisTopLevelHidden or WorldMap.isSuspended() then return end
+    local autoX, autoY = self._nisAutoX, self._nisAutoY
+    self._nisAutoX, self._nisAutoY = nil, nil
+    if self._nisGroup or self._nisNative or self._nisNativePending then return end
+    local root = self.root
+    local x, y = RibbonBar.panelPosition(self.parent, root.width, root.height)
+    local pos = root.position
+    root:SetPos(autoX and x or pos.x, autoY and y or pos.y,
+        autoX and 0 or pos.xParentPc, autoY and 0 or pos.yParentPc,
+        autoX and 0 or pos.xSelfPc, autoY and 0 or pos.ySelfPc)
+    if self.dragBounds then self.dragBounds:RememberPosition() end
+    if self._lastBounds then
+        self._lastBounds[1], self._lastBounds[2] = root.x, root.y
+    end
+    self:_SyncOverlays(root.hidden == true)
+    NisPersistence.bounds(self)
+end
+
 function NisPanel:OnCleanup(callback)
     assert(self._contentCleanups and not self._releasingContent,
         "PrettyUI: NisPanel OnCleanup requires mounted content")
@@ -187,8 +207,10 @@ function NisPanel:_SyncContent(visible)
             and ui.Interfaces:GetInterface(self._nisClassicHostInterfaceID) ~= nil
     end
     if not visible then self:_ReleaseContent(); return end
-    if not self._contentReady or self._destroyed or self._scroll or self._buildingContent
+    if not self._contentReady or self._destroyed or self._buildingContent
         or self._releasingContent or not loaded(self) then return end
+    placeInitial(self)
+    if self._scroll then return end
     self._buildingContent = true
     self._buildingOverlays = {}
     local scrollY = self.scrollY or 0
@@ -863,12 +885,14 @@ local function buildPanel(parent, options, policy)
     self.maxWidth = options.maxWidth and dimension(options.maxWidth, self.minWidth, self.minWidth)
     self.maxHeight = options.maxHeight and dimension(options.maxHeight, self.minHeight, self.minHeight)
     self.width = dimension(options.width, 300, self.minWidth, self.maxWidth)
-    self.height = dimension(options.height, 160, self.minHeight, self.maxHeight)
+    self.height = dimension(options.height, 400, self.minHeight, self.maxHeight)
     self.tabIcon = options.tabIcon or Sprites.NIS_PANEL.defaultIcon
     self.tabText = options.tabText
     self.transparencyScale = 1
     self.locked = true
     self._nisHidden = options.active == false
+    self._nisAutoX = options.x == nil and options.xAnchor == nil
+    self._nisAutoY = options.y == nil and options.yAnchor == nil
     self.onClose = options.onClose
     self.onBoundsChange = options.onBoundsChange
     self.destroyOnClose = options.destroyOnClose == true
@@ -1078,6 +1102,7 @@ local function buildPanel(parent, options, policy)
             self:_SyncOverlays(self.root.hidden == true)
         end
     end)
+    placeInitial(self)
     NisPersistence.register(self, options, NisGroup)
     if not self._nisHidden and not self._nisClassic then NisNative.register(self) end
     self._contentReady = true

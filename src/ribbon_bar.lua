@@ -771,6 +771,24 @@ function RibbonBar.GetPosition()
     return position
 end
 
+-- Use the expanded ribbon edge so auto-hide never puts a panel off-screen.
+function RibbonBar.panelPosition(parent, width, height)
+    local area = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA) or parent
+    local origin, parentOrigin = area.xyGlobal, parent.xyGlobal
+    local x = math.floor((area.width - width) / 2)
+    local y = math.floor((area.height - height) / 2)
+    if position == "top" then
+        y = RAIL_WIDTH + PADDING
+    elseif position == "right" then
+        x = area.width - RAIL_WIDTH - PADDING - width
+    else
+        x = RAIL_WIDTH + PADDING
+    end
+    x, y = x + origin.x - parentOrigin.x, y + origin.y - parentOrigin.y
+    return math.max(0, math.min(x, parent.width - width)),
+        math.max(0, math.min(y, parent.height - height))
+end
+
 function RibbonBar.SetAutoHide(value)
     autoHide = value == true
     PersistentDB:SetBool(AUTO_HIDE_STORAGE_KEY, autoHide)

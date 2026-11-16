@@ -87,3 +87,18 @@ Fixture.run("mode round trip preserves modern grouping, selection, bounds and ri
     f.expect(scene.ribbon.GetPosition(), "top", "modern edge preference")
     f.expect(scene.ribbon.GetAutoHide(), true, "modern auto-hide preference")
 end)
+
+Fixture.run("panels without geometry choose modern placement after leaving Classic", function(f)
+    local scene = sidebar(f)
+    f.classicMode.value = 1
+    local panel = f.NisPanel.new(f.parent, { id = "default", tabIcon = 830011 })
+    f.panels[#f.panels + 1] = panel
+    scene.click(panel)
+    assert(panel.content ~= nil and panel.root.hidden)
+    scene.ribbon.SetPosition("right")
+    f.classicMode.value = 0
+    f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
+    f:emit("Logic")
+    Fixture.rect(panel.root, 850, 200, 300, 400)
+    assert(panel.content ~= nil and not panel.root.hidden)
+end)
