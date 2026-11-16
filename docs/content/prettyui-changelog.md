@@ -22,7 +22,7 @@ hero:
 
 ## Unreleased {#unreleased}
 
-## 1.3.0 (published, awaiting approval) {#v1-3-0}
+## 1.3.0 - 2026-11-16 {#v1-3-0}
 
 ### Added
 
