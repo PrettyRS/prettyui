@@ -158,6 +158,8 @@ drag a tab out to detach it. Native docking requires a direct mount on
 `TOPLEVEL_V2__GAME_AREA` and a compatible native tab band or window header.
 Only the selected page builds content.
 
+If when enabled a standalone panel is covering more than half of another `NisPanel`, it will dock to it.
+
 Saved native membership restores when its host becomes available; until then,
 the panel remains standalone. Docked content can draw above overlapping native
 windows rather than following native window occlusion.

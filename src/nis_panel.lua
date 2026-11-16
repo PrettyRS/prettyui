@@ -610,7 +610,7 @@ function NisPanel:SetActive(active)
         self._nisHidden = false
         local restored = NisPersistence.setActive(self, true, NisGroup)
         if not restored and self._nisInactiveGroup then
-            NisGroup.resume(self, self._nisInactiveGroup)
+            restored = NisGroup.resume(self, self._nisInactiveGroup)
         end
         self._nisNativePending = self._nisNativePending or self._nisInactiveNative
         if self._nisNativePending then
@@ -619,6 +619,7 @@ function NisPanel:SetActive(active)
         self._nisInactiveGroup, self._nisInactiveNative = nil, nil
         RibbonBar.sync(self)
         self:Show()
+        if not restored then NisGroup.dockOverlapping(self) end
         NisPersistence.capture(self)
         return
     end

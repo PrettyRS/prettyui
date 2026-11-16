@@ -141,3 +141,97 @@ run("narrow groups navigate hidden tabs and recover direct input when widened", 
     f.fire(hit, ui.Hook.ONRELEASE, 10, 10)
     assert(not target.root.hidden, "widening restores direct tab access")
 end)
+
+for _, case in ipairs({
+    { name = "majority", x = 249, y = 100, docked = true },
+    { name = "exactly half", x = 250, y = 100, docked = false },
+    { name = "minority area despite majority width", x = 200, y = 180, docked = false },
+    { name = "edge contact", x = 400, y = 100, docked = false },
+}) do
+    run("activation overlap: " .. case.name, function(f)
+        local target = f:panel({ x = case.x, y = case.y })
+        local source = f:panel({ active = false })
+        source:SetActive(true)
+        assert(source:IsActive() and source.content ~= nil and not source.root.hidden)
+        assert((source._nisGroup ~= nil) == case.docked, "overlap uses the newly active panel's area")
+        if case.docked then
+            assert(source._nisGroup == target._nisGroup and source._nisGroup.active == source)
+            assert(target.content == nil and target.root.hidden, "only the newly selected page stays mounted")
+            rect(source.root, case.x, case.y, 300, 200)
+        else
+            assert(target.content ~= nil and not target.root.hidden)
+            rect(source.root, 100, 100, 300, 200)
+        end
+    end)
+end
+
+run("only reactivation groups overlapping standalone panels", function(f)
+    local source = f:panel()
+    local target = f:panel({ x = 180, width = 400, height = 240 })
+    source:SetActive(true)
+    assert(source._nisGroup == nil and target._nisGroup == nil, "already active panels do not regroup")
+    source:Hide()
+    source:Show()
+    assert(source._nisGroup == target._nisGroup and source._nisGroup.active == source)
+    rect(source.root, 180, 100, 400, 240)
+end)
+
+run("locked activation appends to the existing group and persists its selection", function(f)
+    local target = f:panel({ id = "target", x = 180, width = 400, height = 240 })
+    local peer = f:panel({ id = "peer" })
+    assert(peer:DockTo(target))
+    local group = peer._nisGroup
+    local source = f:panel({ id = "source", active = false })
+    f:lock(true)
+    source:SetActive(true)
+    assert(source._nisGroup == group and group.active == source, "activation keeps the existing group")
+    assert(group.members[1] == target and group.members[2] == peer and group.members[3] == source)
+    assert(target.content == nil and peer.content == nil and source.content ~= nil)
+    assert(not source.dragLayer.enabled, "automatic docking must not unlock the panel")
+    rect(source.root, 180, 100, 400, 240)
+    source:Destroy(); peer:Destroy(); target:Destroy(); f:restart()
+    source = f:panel({ id = "source" })
+    peer = f:panel({ id = "peer" })
+    target = f:panel({ id = "target" })
+    group = source._nisGroup
+    assert(group == target._nisGroup and group == peer._nisGroup and group.active == source)
+    assert(group.members[1] == target and group.members[2] == peer and group.members[3] == source)
+end)
+
+run("activation chooses greatest eligible overlap with deterministic ties", function(f)
+    local smaller = f:panel({ x = 200 })
+    local larger = f:panel({ x = 160 })
+    local tied = f:panel({ x = 160 })
+    local incompatible = f:panel({ width = 400 })
+    local source = f:panel({ active = false, maxWidth = 300 })
+    source:Show()
+    assert(source._nisGroup == tied._nisGroup, "equal areas prefer the latest registered panel")
+    assert(smaller._nisGroup == nil and larger._nisGroup == nil and incompatible._nisGroup == nil)
+    rect(source.root, 160, 100, 300, 200)
+end)
+
+run("activation ignores hidden, differently mounted and size-incompatible targets", function(f)
+    local hidden = f:panel({ active = false })
+    local incompatible = f:panel({ width = 400 })
+    local parent = f.parent
+    f.parent = f.component(nil, "other-parent")
+    f.parent:SetSize(1000, 700)
+    local other = f:panel()
+    f.parent = parent
+    local source = f:panel({ active = false, maxWidth = 300 })
+    source:Show()
+    assert(source._nisGroup == nil and source.content ~= nil and not source.root.hidden)
+    assert(hidden._nisGroup == nil and incompatible._nisGroup == nil and other._nisGroup == nil)
+    rect(source.root, 100, 100, 300, 200)
+end)
+
+run("restored membership takes precedence over a newly overlapping standalone panel", function(f)
+    local target = f:panel({ id = "target" })
+    local source = f:panel({ id = "source" })
+    assert(source:DockTo(target))
+    source:Hide()
+    local other = f:panel()
+    source:Show()
+    assert(source._nisGroup == target._nisGroup and other._nisGroup == nil)
+    assert(source._nisGroup.active == source)
+end)

@@ -16,9 +16,9 @@ local function loaded(panel)
         and ui.Interfaces:GetInterface(panel.interfaceID) ~= nil
 end
 
-local function visible(panel)
+local function visible(panel, allowLocked)
     local ghost = panel and panel.dragState and panel.dragState.previewHidden
-    return loaded(panel) and not panel._nisHidden and not panel.locked
+    return loaded(panel) and not panel._nisHidden and (allowLocked or not panel.locked)
         and (ghost and panel.parent.visibleGlobal ~= false
             or not panel.root.hidden and panel.root.visibleGlobal ~= false)
 end
@@ -152,9 +152,9 @@ function NisGroup.clearPanel(panel)
     end
 end
 
-local function eligible(source, target, includeMembers)
+local function eligible(source, target, includeMembers, allowLocked)
     if source._nisNative or target._nisNative
-        or not visible(source) or not visible(target) or source == target
+        or not visible(source, allowLocked) or not visible(target, allowLocked) or source == target
         or not sameComponent(source.parent, target.parent)
         or source._nisGroup == target._nisGroup and source._nisGroup then
         return false
@@ -169,7 +169,7 @@ local function eligible(source, target, includeMembers)
         local list = owner._nisGroup and owner._nisGroup.members
         for index = 1, list and #list or 1 do
             local panel = list and list[index] or owner
-            if not loaded(panel) or panel.locked or panel._nisHidden then return false end
+            if not loaded(panel) or not allowLocked and panel.locked or panel._nisHidden then return false end
             minWidth = math.max(minWidth, panel.minWidth)
             minHeight = math.max(minHeight, panel.minHeight)
             maxWidth = math.min(maxWidth, panel.maxWidth or math.huge)
@@ -252,8 +252,8 @@ function NisGroup.reorder(panel, pointerX)
     return true
 end
 
-function NisGroup.dock(source, target, notifyCallbacks)
-    local ok, combined = eligible(source, target, true)
+function NisGroup.dock(source, target, notifyCallbacks, allowLocked)
+    local ok, combined = eligible(source, target, true, allowLocked)
     if not ok then return false end
     NisGroup.clearPreview()
     local sourceGroup, targetGroup = source._nisGroup, target._nisGroup
@@ -278,6 +278,32 @@ function NisGroup.dock(source, target, notifyCallbacks)
     refresh(group)
     if notifyCallbacks ~= false then notify(group) end
     return true
+end
+
+-- Activation is not a layout gesture: it can group panels while locked.
+function NisGroup.dockOverlapping(source)
+    if source._nisClassic or source._nisGroup or source._nisNative or source._nisNativePending
+        or WorldMap.isSuspended() or not visible(source, true) then return false end
+    local root = source.root
+    local best, bestArea = nil, root.width * root.height / 2
+    for target in pairs(panels) do
+        if target ~= source and not target._nisClassic and visible(target, true)
+            and not target.dragState and not target._nisTabPress
+            and not (target.resize and target.resize.dragState) then
+            local other = target.root
+            local width = math.min(root.x + root.width, other.x + other.width) - math.max(root.x, other.x)
+            local height = math.min(root.y + root.height, other.y + other.height) - math.max(root.y, other.y)
+            if width > 0 and height > 0 then
+                local area = width * height
+                if (area > bestArea or best and area == bestArea and target._nisOrder > best._nisOrder)
+                    and eligible(source, target, false, true) then
+                    best, bestArea = target, area
+                end
+            end
+        end
+    end
+    if best then return NisGroup.dock(source, best, true, true) end
+    return false
 end
 
 function NisGroup.undock(panel)
