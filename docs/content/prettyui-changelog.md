@@ -37,7 +37,7 @@ hero:
 - Nested panels' content now resizes when the parent being resized causes the panel to be resized.
 - Nested Panels are linked to their parent again, which 1.3.0 had broken.
 
-## 1.3.0 (published, awaiting approval) {#v1-3-0}
+## 1.3.0 (Approved, awaiting release) {#v1-3-0}
 
 ### Added
 
