@@ -378,6 +378,23 @@ expect(isAbove(raisedPanel.dockDragLayer, raisedPanel.dock.root), true,
     "Show on a visible panel with Alt held keeps the drag layer on top")
 raisedPanel:Destroy()
 
+-- A scrollbar drag keeps the mouse while the pointer crosses a resize edge, so its capture stays above the edges.
+local scrolledWindow = Window.new(parent, {
+    title = "Scrolled", x = 60, y = 60, width = 300, height = 200, resizable = true, scrollable = true,
+})
+for index = 1, 12 do scrolledWindow:AddText({ text = "Row " .. index, height = 30 }) end
+local thumbCapture = scrolledWindow._scroll.thumbDrag
+expect(thumbCapture.parent, scrolledWindow.resize.handles.e.parent, "the thumb capture is beside the resize edges")
+fire(thumbCapture, ui.Hook.ONCLICK, 1, 1)
+fire(thumbCapture, ui.Hook.ONHOLD, 1, 1)
+fire(thumbCapture, ui.Hook.ONHOLD, 1, 41)
+expect(scrolledWindow.scrollY > 0, true, "the thumb drag scrolls")
+for key, handle in pairs(scrolledWindow.resize.handles) do
+    expect(isAbove(thumbCapture, handle), true, "scrolling keeps the thumb capture above the " .. key .. " edge")
+end
+fire(thumbCapture, ui.Hook.ONRELEASE)
+scrolledWindow:Destroy()
+
 local raisedPopout = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true,
     popout = true, poppedOut = true })
 raisedPopout:Show()
