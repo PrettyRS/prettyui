@@ -350,9 +350,16 @@ local function configureOwner(surface, options, context, overlayParent)
     return owner
 end
 
+-- Each surface fits its own height, keeping its width.
 function PanelContent:_FitContent()
     local panel = self._rowBackgroundPanel
-    panel:SetSize(panel.width, self.contentHeight + BORDER_SIZE * 2)
+    local height = self.contentHeight + BORDER_SIZE * 2
+    if self._rowBackgroundSurface == panel.overlay then
+        panel:_SetPopoutSize(panel.popoutWidth, height)
+    else
+        panel:_SetDockSize(panel.dock.root.width, height)
+    end
+    panel:_RefreshSize()
     panel:RefreshRowBackgrounds()
 end
 
@@ -422,6 +429,9 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
         backgroundAlpha = self.popoutBackgroundAlpha,
         clickthrough = self.popoutClickthrough,
     })
+    -- The popout keeps its own size, so docking and popping out again does not change either surface.
+    self.popoutWidth = self.overlay.root.width
+    self.popoutHeight = self.overlay.root.height
     local dockTooltipParent = parentContext and parentContext.parent or parent
     self.dockOwner = configureOwner(self.dock, options, parentContext, dockTooltipParent)
     self.overlayOwner = configureOwner(self.overlay, options, nil, overlayParent)
@@ -507,12 +517,19 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
                     surface.root:MoveToFront()
                 end,
                 setRect = function(x, y, width, height)
-                    if surface == self.dock and self.flowOwner then
-                        Layout.resizeRect(self.flowOwner, self, x, y, width, height)
-                    else
+                    if surface == self.overlay then
                         surface.root:SetPos(x, y)
+                        self:_SetPopoutSize(width, height)
+                    else
+                        local widthChanged = width ~= surface.root.width
+                        if self.flowOwner then
+                            Layout.resizeRect(self.flowOwner, self, x, y, width, height)
+                        else
+                            surface.root:SetPos(x, y)
+                        end
+                        self:_SetDockSize(widthChanged and width or surface.root.width, height)
                     end
-                    self:SetSize(width, height)
+                    self:_RefreshSize()
                 end,
             })
         end
@@ -837,16 +854,36 @@ function Panel:SetPopoutBackgroundAlpha(alpha)
 end
 
 function Panel:SetSize(width, height)
-    self.width = clamp(math.floor(width), self.minWidth or BORDER_SIZE * 2 + 1, self.maxWidth)
-    self.height = clamp(math.floor(height), self.minHeight or BORDER_SIZE * 2 + 1, self.maxHeight)
-    self.contentWidth = self.width - BORDER_SIZE * 2
-    self.dock.root:SetWidth(self.width)
-    self.overlay.root:SetSize(self.width, self.height)
+    width, height = self:_ClampSize(width, height)
+    self.dock.root:SetWidth(width) -- removes the widthAnchor.
+    self:_SetDockSize(width, height)
+    self:_SetPopoutSize(width, height)
+    self:_RefreshSize()
+end
+
+function Panel:_ClampSize(width, height)
+    return clamp(math.floor(width), self.minWidth or BORDER_SIZE * 2 + 1, self.maxWidth),
+        clamp(math.floor(height), self.minHeight or BORDER_SIZE * 2 + 1, self.maxHeight)
+end
+
+function Panel:_SetDockSize(width, height)
+    width, height = self:_ClampSize(width, height)
+    if width ~= self.dock.root.width then self.dock.root:SetWidth(width) end
+    self.width, self.height = width, height
+    self.contentWidth = width - BORDER_SIZE * 2
+    self.dockOwner.contentWidth = self.contentWidth
     self:_UpdateFlowHeight()
+end
+
+function Panel:_SetPopoutSize(width, height)
+    self.popoutWidth, self.popoutHeight = self:_ClampSize(width, height)
+    self.overlay.root:SetSize(self.popoutWidth, self.popoutHeight)
+    self.overlayOwner.contentWidth = self.popoutWidth - BORDER_SIZE * 2
+end
+
+function Panel:_RefreshSize()
     if self.dockBounds then self.dockBounds:RememberPosition() end
     if self.overlayBounds then self.overlayBounds:RememberPosition() end
-    self.dockOwner.contentWidth = self.contentWidth
-    self.overlayOwner.contentWidth = self.contentWidth
     self.dock.scroll:Refresh()
     self.overlay.scroll:Refresh()
     if self.dockBounds then self.dockBounds:Clamp() end
