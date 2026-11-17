@@ -11,6 +11,10 @@ local PrettyMiniMenu = require("src/minimenu")
 local OverheadBar = require("src/overhead_bar")
 local CategoryGroups = require("src/core/category_groups")
 local Components = require("src/core/components")
+local NisNative = require("src/nis/native")
+local WorldMap = require("src/core/world_map")
+local NativeInterfaceSettings = require("src/core/native_interface_settings")
+local RibbonBar = require("src/ribbon_bar")
 
 local resources = Plugin.resources
 TextField.SetDefaultSprite(resources and (resources.input_default or resources["input_default.png"]))
@@ -35,10 +39,12 @@ local PrettyUI = {
     Histogram = Histogram,
     TimeGraph = TimeGraph,
     ItemSlot = require("src/item_slot"),
+    IsClassicUI = NativeInterfaceSettings.isClassicUI,
     ItemGrid = require("src/item_grid"),
     KeybindField = KeybindField,
     List = require("src/list"),
     MiniMenu = PrettyMiniMenu,
+    NisPanel = require("src/nis_panel"),
     Panel = require("src/panel"),
     OverheadBar = OverheadBar,
     Sprites = require("src/core/sprites"),
@@ -62,8 +68,12 @@ local PrettyUI = {
 PrettyUI.version = "1.4.0"
 
 PrettyMiniMenu.Start()
+RibbonBar.Start()
+WorldMap.start(true)
 
 function PluginShutdown()
+    RibbonBar.Shutdown()
+    NisNative.shutdown()
     KeybindField.Shutdown()
     PrettyMiniMenu.Shutdown()
     Dialog.Shutdown()
@@ -72,6 +82,7 @@ function PluginShutdown()
     BarChart.Shutdown()
     Histogram.Shutdown()
     OverheadBar.Shutdown()
+    WorldMap.shutdown()
 end
 
 return PrettyUI

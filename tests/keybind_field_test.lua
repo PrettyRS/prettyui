@@ -35,7 +35,7 @@ local function component(parent, categoryID, dynamicID)
         for _, callback in pairs(self.subscriptions[hook] or {}) do callback(self, ...) end
     end
     function value:Setup() end
-    function value:MoveToFront() end
+    function value:MoveToFront() self.frontCount = (self.frontCount or 0) + 1 end
     function value:MoveToBack() end
     function value:Destroy() self.destroyed = true end
     return Interfaces.component(value, parent, categoryID, dynamicID)
@@ -152,6 +152,13 @@ release(GameKey.K)
 expect(KeybindField.FormatValue(field:GetValue()), "K", "single-key capture commits")
 field.input.root:Fire(ui.Hook.ONMOUSEREPEAT, 30, 10)
 expect(field.tooltip._parts.label.content, "change keybind", "moving off sprite updates tooltip without leaving field")
+local repeatRoot = field.tooltip._parts.root
+local repeatFrontCount = repeatRoot.frontCount
+local repeatX = repeatRoot.x
+field.input.root:Fire(ui.Hook.ONMOUSEREPEAT, 40, 10)
+expect(repeatRoot.frontCount, repeatFrontCount + 1,
+    "stable mouse repeat positions the keybind tooltip only once")
+expect(repeatRoot.x > repeatX, true, "stable mouse repeat still follows cursor movement")
 local entries = menu()
 local reset
 for _, entry in ipairs(entries) do if entry.label == "Reset to default" then reset = entry.callback end end

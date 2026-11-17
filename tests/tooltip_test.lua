@@ -121,6 +121,17 @@ expect(tooltip._parts, nil, "hiding drops the released root")
 expect(tooltip:SetText("Rebuilt"), true, "a released tooltip can still be updated")
 tooltip:Show()
 expect(tooltip._parts.label.content, "Rebuilt", "showing again rebuilds with the latest text")
+tooltip.options.placement = "left"
+tooltip.options.placementFallback = false
+tooltip:Show()
+expect(tooltip._parts.root.x, 6, "disabled fallback clamps the requested left placement")
+tooltip.options.placementFallback = true
+tooltip:Show()
+expect(tooltip._parts.root.x, 66, "enabled fallback selects a fitting placement")
+tooltip.options.placement = "above"
+tooltip.options.placementFallback = false
+tooltip:Show()
+expect(tooltip._parts.root.y, 6, "repeated show observes changed placement without fallback")
 
 tooltip:Destroy()
 expect(tooltip:SetText("Ignored"), false, "destroyed tooltips reject updates")

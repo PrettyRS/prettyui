@@ -5,10 +5,11 @@ local Snap = {}
 
 -- the games own windows snap from about this far away too
 local SNAP_DISTANCE = 12
+local NO_EDGE_OFFSETS = { left = 0, top = 0, right = 0, bottom = 0 }
 local windows = setmetatable({}, { __mode = "k" })
 
 function Snap.register(window)
-    windows[window] = true
+    windows[window] = window.edgeOffsets or NO_EDGE_OFFSETS
 end
 
 function Snap.unregister(window)
@@ -64,52 +65,75 @@ function Snap.apply(positions, x, y, width, height)
     return snappedX, snappedY
 end
 
-local function isSnapTarget(other, movingWindow)
+local function isSnapTarget(other, movingWindow, visibleOnly)
+    -- Check the cached interface ID before touching a potentially unloaded root.
     return other ~= movingWindow
-        and not other.root.hidden
+        and not (movingWindow._nisGroup ~= nil and other._nisGroup == movingWindow._nisGroup)
         and ui.Interfaces:GetInterface(other.interfaceID) ~= nil
+        and not other.root.hidden
+        and (visibleOnly ~= true or other.root.visibleGlobal ~= false)
 end
 
-local function addRegisteredWindows(rects, movingWindow)
+function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID, nativeCache)
+    rects = rects or {}
+    local count = 0
     local parentOrigin = movingWindow.parent.xyGlobal
-    for other in pairs(windows) do
-        if isSnapTarget(other, movingWindow) then
-            local root, offsets = other.root, other.edgeOffsets
-            local rootOrigin = root.xyGlobal
-            rects[#rects + 1] = {
-                x = rootOrigin.x - parentOrigin.x + offsets.left,
-                y = rootOrigin.y - parentOrigin.y + offsets.top,
-                width = root.width - offsets.left - offsets.right,
-                height = root.height - offsets.top - offsets.bottom,
-            }
+    local function add(x, y, width, height)
+        count = count + 1
+        local rect = rects[count]
+        if rect == nil then
+            rect = {}
+            rects[count] = rect
+        end
+        rect.x, rect.y, rect.width, rect.height = x, y, width, height
+    end
+    for other, offsets in pairs(windows) do
+        if isSnapTarget(other, movingWindow, visibleOnly) then
+            local root = other.root
+            local origin = root.xyGlobal
+            add(origin.x - parentOrigin.x + offsets.left, origin.y - parentOrigin.y + offsets.top,
+                root.width - offsets.left - offsets.right, root.height - offsets.top - offsets.bottom)
         end
     end
-end
-
-local function addLayoutWindows(rects, movingWindow)
-    -- theory: game windows only snap to the layout windows, which all sit on this layer
+    -- Enumeration failures propagate so placement cannot approve unknown geometry.
     local layoutLayer = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
-    if layoutLayer == nil then return end
-    local parentOrigin = movingWindow.parent.xyGlobal
-    layoutLayer:IterateStaticComponents(function(child)
-        if child.visibleGlobal then
-            local childOrigin = child.xyGlobal
-            rects[#rects + 1] = {
-                x = childOrigin.x - parentOrigin.x,
-                y = childOrigin.y - parentOrigin.y,
-                width = child.width,
-                height = child.height,
-            }
+    local excludedInterface = excludedNativeID and (excludedNativeID >> 16)
+    local excludedStatic = excludedNativeID and (excludedNativeID & 0xFFFF)
+    local function addNative(child)
+        if child and child.visibleGlobal and (excludedNativeID == nil or
+            child.interfaceID ~= excludedInterface or child.staticID ~= excludedStatic) then
+            local origin = child.xyGlobal
+            add(origin.x - parentOrigin.x, origin.y - parentOrigin.y, child.width, child.height)
         end
-    end)
+    end
+    if layoutLayer ~= nil then
+        if nativeCache and nativeCache.ids then
+            -- Keep identities, not native handles: rebuilds may replace a
+            -- component without changing its ID. Bounds/visibility stay live.
+            for _, packed in ipairs(nativeCache.ids) do
+                addNative(ui.Interfaces:GetComponent(packed))
+            end
+        else
+            local ids = nativeCache and {}
+            layoutLayer:IterateStaticComponents(function(child)
+                if ids then ids[#ids + 1] = (child.interfaceID << 16) | child.staticID end
+                addNative(child)
+                return false
+            end)
+            -- Publish only a complete enumeration, including hidden children.
+            if nativeCache then nativeCache.ids = ids end
+        end
+    elseif nativeCache then
+        nativeCache.ids = nil
+    end
+    for index = #rects, count + 1, -1 do rects[index] = nil end
+    return rects
 end
 
 function Snap.start(movingWindow)
     local root, parent = movingWindow.root, movingWindow.parent
-    local rects = {}
-    addRegisteredWindows(rects, movingWindow)
-    addLayoutWindows(rects, movingWindow)
-    return Snap.positions(rects, root.width, root.height, parent.width, parent.height, movingWindow.edgeOffsets)
+    return Snap.positions(Snap.collect(movingWindow), root.width, root.height,
+        parent.width, parent.height, windows[movingWindow] or movingWindow.edgeOffsets or NO_EDGE_OFFSETS)
 end
 
 return Snap

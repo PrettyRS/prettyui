@@ -177,6 +177,34 @@ forgottenWindow = nil
 collectgarbage()
 expect(#Snap.start(moving).across, 10, "a window nothing else holds drops out of the registry")
 
+-- Collection reuses rectangle storage and applies surface insets.
+-- Global visibility filtering is opt-in.
+Snap.unregister(crossParentWindow)
+other.root.hidden = false
+other.root.visibleGlobal = false
+other.edgeOffsets = nil
+Snap.register(other)
+local storage = { {}, {}, {} }
+local firstEntry = storage[1]
+expect(Snap.collect(moving, storage), storage, "collection returns supplied storage")
+expect(storage[1], firstEntry, "collection reuses rectangle entries")
+expect(#storage, 2, "collection trims unused entries")
+expect(storage[1].x, 500, "zero inset collects the full HUD left edge")
+expect(storage[1].width, 300, "zero inset collects the full HUD width")
+expect(#Snap.collect(moving, storage, true), 1, "visible-only excludes globally invisible roots")
+other.root.visibleGlobal = true
+expect(#Snap.collect(moving, storage, true), 2, "visible targets return")
+moving.edgeOffsets = nil
+Snap.register(moving)
+expectPosition(Snap.start(moving).across[4], 800, 100, 300, "moving zero inset meets the full target edge")
+other.edgeOffsets = TITLED
+Snap.register(other)
+expectPosition(Snap.start(moving).across[4], 798, 100, 298, "target titled offsets remain independent")
+unloadedWindow.root = setmetatable({}, { __index = function() error("unloaded root accessed") end })
+Snap.collect(moving, storage, true)
+
+moving.edgeOffsets = TITLED
+Snap.register(moving)
 -- Each target is inset by its own offsets: an untitled window's top has the strip too.
 local function hasPosition(list, at, from, to)
     for _, position in ipairs(list) do

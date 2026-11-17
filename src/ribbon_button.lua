@@ -39,7 +39,7 @@ function RibbonButton.new(parent, spriteID, action, options)
     self.icon = Components.new(ui.Sprite, self.root)
     self.icon:SetPos(ICON_OFFSET, ICON_OFFSET)
     self.icon:SetSize(ICON_SIZE, ICON_SIZE)
-    self.icon.spriteID = spriteID
+    self.icon.sprite = spriteID
     self.icon.clickthrough = true
 
     if not self.disabled then
@@ -85,7 +85,7 @@ end
 
 function RibbonButton:SetIcon(spriteID)
     if self.icon and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
-        self.icon.spriteID = spriteID
+        self.icon.sprite = spriteID
     end
 end
 

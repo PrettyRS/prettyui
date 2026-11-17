@@ -14,6 +14,7 @@ local Snap = require("src/core/snap")
 local Cursor = require("src/core/cursor")
 local Resize = require("src/core/resize")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
+local WorldMap = require("src/core/world_map")
 
 local Window = {}
 Window.__index = Window
@@ -383,6 +384,16 @@ local function buildWindow(parent, options)
     end
     self:_WatchNativeTransparency()
     self:_WatchNativeLock()
+    WorldMap.watch(self, function(suspended)
+        if suspended then
+            if self._stopDrag then self._stopDrag() end
+            if self.resize then self.resize:Cancel() end
+            if self.content then Tooltip.hideContextTooltips(self.content) end
+        elseif self.root and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
+            if self.dragBounds then self.dragBounds:Refresh() end
+            self:_SyncOverlays(self.root.hidden == true)
+        end
+    end)
 
     return self
 end
@@ -501,8 +512,8 @@ function Window:_SyncOverlays(hidden)
     for component, overlay in pairs(self.overlays) do
         if ui.Interfaces:GetInterface(overlay.interfaceID) ~= nil then
             if not hidden and overlay.layout then overlay.layout() end
-            component.hidden = hidden or
-                (overlay.isVisible and not overlay.isVisible() or false)
+            Components.setHidden(component, hidden or
+                (overlay.isVisible and not overlay.isVisible() or false))
             if not component.hidden then component:MoveToFront() end
         end
     end
@@ -511,10 +522,10 @@ end
 
 function Window:Show()
     if self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
-    self.root.hidden = false
+    Components.setHidden(self.root, false)
     self.root:MoveToFront()
     if self.titleDrag then
-        self.titleDrag.hidden = false
+        Components.setHidden(self.titleDrag, false)
         self.titleDrag:MoveToFront()
     end
     self:_SyncOverlays(false)
@@ -526,8 +537,8 @@ function Window:Hide()
     if self.resize then self.resize:Cancel() end
     if self.content then Tooltip.hideContextTooltips(self.content) end
     if self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
-    self.root.hidden = true
-    if self.titleDrag then self.titleDrag.hidden = true end
+    Components.setHidden(self.root, true)
+    if self.titleDrag then Components.setHidden(self.titleDrag, true) end
     self:_SyncOverlays(true)
 end
 
@@ -542,6 +553,7 @@ function Window:Close()
 end
 
 function Window:Destroy()
+    WorldMap.unwatch(self)
     NativeInterfaceSettings.unwatchTransparency(self)
     NativeInterfaceSettings.unwatchLock(self)
     if self.resize then
@@ -571,10 +583,12 @@ function Window:Destroy()
         self.content = nil
     end
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end
     if self.titleDrag then
+        WorldMap.untrack(self.titleDrag)
         InterfaceMouse.EndCapture(self.titleDrag)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.titleDrag:Destroy() end
         self.titleDrag = nil

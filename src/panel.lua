@@ -1,4 +1,5 @@
 local Components = require("src/core/components")
+local PanelSurface = require("src/core/panel_surface")
 local Sprites = require("src/core/sprites")
 local ColourPicker = require("src/colour_picker")
 local ComboBox = require("src/combo_box")
@@ -19,6 +20,7 @@ local DragFeedback = require("src/core/drag_feedback")
 local DragBounds = require("src/core/drag_bounds")
 local Resize = require("src/core/resize")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
+local WorldMap = require("src/core/world_map")
 
 local Panel = {}
 Panel.__index = Panel
@@ -91,78 +93,7 @@ local function copyOptions(value)
     return copy
 end
 
-local function sprite(parent, spriteID)
-    local component = Components.new(ui.Sprite, parent)
-    component.spriteID = spriteID
-    component.clickthrough = true
-    return component
-end
 
-local function createSurface(parent, options)
-    local surface = {}
-    local frame = Sprites.HUD_WINDOW
-    surface.root = Components.newContent(parent, options)
-    surface.interfaceID = surface.root.interfaceID
-    surface.root:SetPos(options.x, options.y, options.xAnchor or 0, options.yAnchor or 0)
-    surface.root:SetSize(options.width, options.height, options.widthAnchor or 0, options.heightAnchor or 0)
-    surface.root.clickthrough = options.clickthrough == true
-
-    surface.background = sprite(surface.root, frame.content)
-    surface.background:SetPos(BORDER_SIZE, BORDER_SIZE)
-    surface.background:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
-    surface.background.isTiling = true
-    surface.background.alpha = clampAlpha(options.backgroundAlpha)
-    surface.background.clickthrough = options.clickthrough == true
-
-    surface.top = sprite(surface.root, frame.top)
-    surface.top:SetPos(BORDER_SIZE, 0)
-    surface.top:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
-    surface.top.isTiling = true
-
-    surface.bottom = sprite(surface.root, frame.bottom)
-    surface.bottom:SetPos(BORDER_SIZE, -BORDER_SIZE, 0, 1.0)
-    surface.bottom:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
-    surface.bottom.isTiling = true
-
-    surface.right = sprite(surface.root, frame.side)
-    surface.right:SetPos(-BORDER_SIZE, BORDER_SIZE, 1.0)
-    surface.right:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
-    surface.right.isTiling = true
-
-    surface.left = sprite(surface.root, frame.side)
-    surface.left:SetPos(0, BORDER_SIZE)
-    surface.left:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
-    surface.left.isTiling = true
-    surface.right.isFlippedHorizontally = true
-
-    surface.topRight = sprite(surface.root, frame.cornerTop)
-    surface.topRight:SetPos(-BORDER_SIZE, 0, 1.0)
-    surface.topRight:SetSize(BORDER_SIZE, BORDER_SIZE)
-    surface.topRight.isFlippedHorizontally = true
-
-    surface.topLeft = sprite(surface.root, frame.cornerTop)
-    surface.topLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
-
-    surface.bottomRight = sprite(surface.root, frame.cornerBottom)
-    surface.bottomRight:SetPos(-BORDER_SIZE, -BORDER_SIZE, 1.0, 1.0)
-    surface.bottomRight:SetSize(BORDER_SIZE, BORDER_SIZE)
-    surface.bottomRight.isFlippedHorizontally = true
-
-    surface.bottomLeft = sprite(surface.root, frame.cornerBottom)
-    surface.bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
-    surface.bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
-
-    surface.container = Components.newContent(surface.root)
-    surface.container:SetPos(BORDER_SIZE, BORDER_SIZE)
-    surface.container:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
-    surface.container.clickthrough = options.clickthrough == true
-    surface.container.enabled = options.clickthrough ~= true
-
-    -- Category-zero content must stay above managed, nonzero-category artwork.
-    surface.background:MoveToBack()
-
-    return surface
-end
 
 local function createToggle(surface, panel, popoutMode)
     local button = Components.new(ui.Sprite, surface.root)
@@ -219,7 +150,7 @@ local function createDragLayer(parent, surface, panel)
     layer:SetSize(surface.root.width, surface.root.height)
     layer.clickthrough = true
     layer.enabled = false
-    layer.hidden = true
+    Components.setHidden(layer, true)
 
     layer:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
         if not isAltDown() then return true end
@@ -395,7 +326,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.poppedOut = self._canPopout and options.poppedOut == true
     self._hidden = false
 
-    self.dock = createSurface(parent, {
+    self.dock = PanelSurface.new(parent, {
         _categoryPolicy = policy,
         x = options.x or 0,
         y = options.y or 0,
@@ -411,7 +342,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.width = self.dock.root.width
     self.height = self.dock.root.height
     self.contentWidth = self.width - BORDER_SIZE * 2
-    self.overlay = createSurface(overlayParent, {
+    self.overlay = PanelSurface.new(overlayParent, {
         _categoryPolicy = policy,
         x = options.popoutX or DEFAULT_POPOUT_X,
         y = options.popoutY or DEFAULT_POPOUT_Y,
@@ -524,6 +455,17 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     end
     self:_WatchNativeTransparency()
     self:_WatchNativeLock()
+    WorldMap.watch(self, function(suspended)
+        if suspended then
+            self:_StopDrag()
+            if self.dockResize then self.dockResize:Cancel() end
+            if self.overlayResize then self.overlayResize:Cancel() end
+        elseif self.root and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil then
+            if self.dockBounds then self.dockBounds:Refresh() end
+            if self.overlayBounds then self.overlayBounds:Refresh() end
+            self:_UpdateVisibility()
+        end
+    end)
     return self
 end
 
@@ -624,7 +566,7 @@ function Panel:_SetAltDragActive(active, notify)
         local enabled = activeSurface == surface
         layer.enabled = enabled
         layer.clickthrough = not enabled
-        layer.hidden = not enabled
+        Components.setHidden(layer, not enabled)
         Cursor.apply(layer, config.Cursor.TOPLEVEL_V2_MOVE, enabled)
         if enabled then
             layer:SetPos(surface.root.x, surface.root.y)
@@ -746,8 +688,8 @@ end
 
 -- Ensures the visual state of the panel is consistent with its properties.
 function Panel:_UpdateVisibility()
-    self.dock.root.hidden = self._hidden or self.poppedOut
-    self.overlay.root.hidden = self._hidden or not self.poppedOut
+    Components.setHidden(self.dock.root, self._hidden or self.poppedOut)
+    Components.setHidden(self.overlay.root, self._hidden or not self.poppedOut)
     self:_UpdateFlowHeight()
     self.dock.scroll:Refresh()
     self.overlay.scroll:Refresh()
@@ -1182,6 +1124,7 @@ function Panel:AddSlider(options)
 end
 
 function Panel:Destroy()
+    WorldMap.unwatch(self)
     NativeInterfaceSettings.unwatchTransparency(self)
     NativeInterfaceSettings.unwatchLock(self)
     if self.dockResize then self.dockResize:Destroy(); self.dockResize = nil end
@@ -1211,18 +1154,22 @@ function Panel:Destroy()
     local dockLoaded = self.dock and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil
     local overlayLoaded = self.overlay and ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil
     if self.dockDragLayer then
+        WorldMap.untrack(self.dockDragLayer)
         if dockLoaded then self.dockDragLayer:Destroy() end
         self.dockDragLayer = nil
     end
     if self.overlayDragLayer then
+        WorldMap.untrack(self.overlayDragLayer)
         if overlayLoaded then self.overlayDragLayer:Destroy() end
         self.overlayDragLayer = nil
     end
     if self.dock and self.dock.root then
+        WorldMap.untrack(self.dock.root)
         if dockLoaded then self.dock.root:Destroy() end
         self.dock.root = nil
     end
     if self.overlay and self.overlay.root then
+        WorldMap.untrack(self.overlay.root)
         if overlayLoaded then self.overlay.root:Destroy() end
         self.overlay.root = nil
     end

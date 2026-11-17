@@ -274,7 +274,8 @@ end
 
 function Layout.destroyManaged(owner)
     local entries = owner._managedFlowEntries or {}
-    local loaded = ui.Interfaces:GetInterface(owner.interfaceID) ~= nil
+    local loaded = ui.Interfaces:GetInterface(owner._scroll and owner._scroll.interfaceID
+        or owner.interfaceID) ~= nil
     owner._destroyingManagedFlow = true
     for index = #entries, 1, -1 do
         local entry = entries[index]

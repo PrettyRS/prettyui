@@ -8,6 +8,7 @@ local EXHAUSTED = "PrettyUI: no free category ID block on this static parent; pa
 local cursors = setmetatable({}, { __mode = "k" })
 
 local function staticParentOf(component)
+    if component.categoryID == -1 then return component end
     return component.parentStatic or component
 end
 

@@ -1,5 +1,6 @@
 local Tooltip = require("src/tooltip")
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local BuffBar = {}
 
@@ -80,8 +81,8 @@ local function cancelPendingTooltip(entry)
 end
 
 local function setEntryHidden(entry, hidden)
-    forEachVisual(entry, function(component) component.hidden = hidden end)
-    if entry.tooltipTarget ~= nil then entry.tooltipTarget.hidden = hidden end
+    forEachVisual(entry, function(component) Components.setHidden(component, hidden) end)
+    if entry.tooltipTarget ~= nil then Components.setHidden(entry.tooltipTarget, hidden) end
     if hidden then
         cancelPendingTooltip(entry)
         if entry.tooltip ~= nil then entry.tooltip:Hide() end
@@ -328,6 +329,7 @@ local function destroyEntry(bar, entry)
     cancelPendingTooltip(entry)
     forEachVisual(entry, function(component)
         bar.ownComponents[component] = nil
+        WorldMap.untrack(component)
         component:Destroy()
     end)
     if entry.tooltip ~= nil then
@@ -336,6 +338,7 @@ local function destroyEntry(bar, entry)
     end
     if entry.tooltipTarget ~= nil then
         bar.ownComponents[entry.tooltipTarget] = nil
+        WorldMap.untrack(entry.tooltipTarget)
         entry.tooltipTarget:Destroy()
     end
     bar.entriesByID[entry.id] = nil
@@ -422,6 +425,7 @@ local function setTooltip(bar, entry, value, deferLayout)
     if value == nil then
         if entry.tooltipTarget ~= nil then
             bar.ownComponents[entry.tooltipTarget] = nil
+            WorldMap.untrack(entry.tooltipTarget)
             entry.tooltipTarget:Destroy()
             entry.tooltipTarget = nil
         end
@@ -446,7 +450,7 @@ local function setTooltip(bar, entry, value, deferLayout)
         end,
     })
     trackComponent(bar, entry.tooltip.root)
-    entry.tooltipTarget.hidden = not entry.visible
+    Components.setHidden(entry.tooltipTarget, not entry.visible)
     if deferLayout ~= true then layout(bar, true) end
     return true
 end

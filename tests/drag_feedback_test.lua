@@ -237,6 +237,26 @@ parent:SetSize(1000, 700)
 local overlayParent = component(nil, "overlayParent")
 overlayParent:SetSize(1200, 800)
 
+do
+    local DragFeedback = require("src/core/drag_feedback")
+    local source = component(parent, "source")
+    source:SetPos(100, 100)
+    source:SetSize(300, 200)
+    local feedback = DragFeedback.new(parent, source)
+    local original = rect(source)
+    feedback:SetTargetRect(400, 444, 120, 200)
+    expectRect(feedback.active, { x = 400, y = 444, width = 120, height = 200 },
+        "explicit destination independently resizes orange")
+    expectRect(feedback.origin, original, "explicit destination keeps white fixed")
+    expectRect(source, original, "explicit destination does not mutate source")
+    source:SetPos(50, 94)
+    feedback:Update()
+    expectRect(feedback.active, rect(source), "ordinary Update resumes root following")
+    expectRect(feedback.origin, original, "ordinary Update also preserves white")
+    feedback:Destroy()
+    source:Destroy()
+end
+
 local window = Window.new(parent, {
     title = "Drag feedback", x = 74, y = 53, width = 340, height = 230,
 })

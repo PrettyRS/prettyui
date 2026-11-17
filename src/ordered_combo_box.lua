@@ -4,6 +4,7 @@ local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local clamp = require("src/core/math").clamp
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local OrderedComboBox = {}
 OrderedComboBox.__index = OrderedComboBox
@@ -150,7 +151,7 @@ local function buildOrderedComboBox(parent, options, overlayParent, policy)
             self:_Close()
         end,
     })
-    self.dropdown.root.hidden = true
+    Components.setHidden(self.dropdown.root, true)
 
     self.input:Subscribe(ui.Hook.ONCLICK, function()
         if not self.disabled then self:_Open() end
@@ -274,13 +275,13 @@ function OrderedComboBox:_Open(clearInput)
     self.open = true
     if clearInput ~= false then self:_SetInput("") end
     self:_Filter(self.input.content)
-    self.dropdown.root.hidden = false
+    Components.setHidden(self.dropdown.root, false)
     self.dropdown.root:MoveToFront()
 end
 
 function OrderedComboBox:_Close()
     self.open = false
-    self.dropdown.root.hidden = true
+    Components.setHidden(self.dropdown.root, true)
     self:_SetInput(self.selectedLabel or "")
 end
 
@@ -388,6 +389,7 @@ function OrderedComboBox:Destroy()
     end
     if self.dropdown then self.dropdown:Destroy() self.dropdown = nil end
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end
