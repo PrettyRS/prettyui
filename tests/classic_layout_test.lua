@@ -367,6 +367,175 @@ local function viewportResizeRecapturesBaselineButRepeatedResetSuspends()
     assertRestored(view, "reset baseline remains client-owned")
 end
 
+local function combatScene()
+    local view = scene()
+    view.viewport:SetSize(1920, 1080, 0, 0)
+    view.top:SetSize(1920, 1080, 0, 0)
+    view.chat = component(4202, 110, view.area, pos(0, 0, 0, 1, 0, 1), size(550, 188, 0, 0))
+    view.strip = component(4202, 111, view.area, pos(0, 0, 1, 1, 1, 1), size(544, 34, 0, 0))
+    view.chat.visibleGlobal, view.strip.visibleGlobal = true, true
+    id.Component.TOPLEVEL_V2__CHAT_WINDOW = (4202 << 16) | 110
+    id.Component.TOPLEVEL_V2__BUTTONS_WINDOW = (4202 << 16) | 111
+    view.privateChat = component(4202, 118, view.hud,
+        pos(0, -188, 0, 1, 0, 1), size(550, 275, 0, 0))
+    view.privateChat.visibleGlobal = false
+    view.privatePosition = copy(view.privateChat.position, positionFields)
+    id.Component.TOPLEVEL_V2__SPLITPM_WINDOW = (4202 << 16) | 118
+    view.actions, view.actionPositions = {}, {}
+    for index = 1, 5 do
+        local suffix = index == 1 and "" or "_" .. index
+        local offset = index == 1 and -76 or index == 2 and -38 or 0
+        local action = component(4202, 111 + index, view.area,
+            pos(0, offset, .5, 1, .5, 1), size(550, index == 1 and 76 or 38, 0, 0))
+        action.visibleGlobal = index <= 3
+        view.actions[index] = action
+        view.actionPositions[index] = copy(action.position, positionFields)
+        id.Component["TOPLEVEL_V2__ACTION_WINDOW" .. suffix] = (4202 << 16) | (111 + index)
+    end
+    return view
+end
+
+local function combatStacksAndRestoresWithoutOscillating()
+    local view = combatScene()
+    expect(ClassicLayout.update(404), true, "chat collision uses compact layout")
+    local main, second, third = table.unpack(view.actions)
+    expect(main.x, view.chat.x, "combat cluster aligns with chat")
+    expect(second.y, main.y + main.height, "second bar retains its row")
+    expect(third.y, second.y + second.height, "third bar retains its row")
+    expect(third.y + third.height, view.chat.y, "cluster joins chat without a gap")
+    local written = main.posWrites
+    expect(ClassicLayout.update(404), true, "compact layout remains stable")
+    expect(main.posWrites, written, "idle compact layout does not rewrite bars")
+    expect(ClassicLayout.update(44), true, "collapse has enough horizontal space")
+    for index, action in ipairs(view.actions) do
+        assertDescriptor(action.position, view.actionPositions[index], positionFields, "restored bar")
+    end
+    expect(ClassicLayout.update(404), true, "reopening stacks again")
+    view.actions[4]:SetPos(0, -152, .5, 1, .5, 1)
+    view.actions[5]:SetPos(0, -190, .5, 1, .5, 1)
+    view.actionPositions[4] = copy(view.actions[4].position, positionFields)
+    view.actionPositions[5] = copy(view.actions[5].position, positionFields)
+    view.actions[4].visibleGlobal, view.actions[5].visibleGlobal = true, true
+    expect(ClassicLayout.update(404), true, "all five visible bars join the compact cluster")
+    expect(view.actions[4].y + view.actions[4].height, main.y, "fourth bar keeps its relative row")
+    expect(view.actions[5].y + view.actions[5].height, view.actions[4].y, "fifth bar keeps its row")
+    classicValue = 0
+    expect(ClassicLayout.update(404), false, "mode exit restores compact bars")
+    classicValue = 1
+    for index, action in ipairs(view.actions) do
+        assertDescriptor(action.position, view.actionPositions[index], positionFields, "mode exit bar")
+    end
+    ClassicLayout.restore()
+end
+
+local function additionalButtonTriggersCompactLayout()
+    local view = combatScene()
+    expect(ClassicLayout.update(262), true, "current strip fits the horizontal lane")
+    expect(view.actions[1].posWrites, 0, "clear bars remain native")
+    view.strip:SetSize(576, 34, 0, 0)
+    expect(ClassicLayout.update(262), true, "one more native button triggers stacking")
+    expect(view.actions[1].x, view.chat.x, "button collision moves whole cluster")
+    expect(view.actions[3].y + view.actions[3].height, view.chat.y, "stack joins chat")
+    view.actions[3].visibleGlobal = false
+    expect(ClassicLayout.update(262), true, "hiding the bottom bar frees the horizontal lane")
+    assertDescriptor(view.actions[2].position, view.actionPositions[2], positionFields,
+        "remaining bars return to native placement when clear")
+    assertDescriptor(view.actions[3].position, view.actionPositions[3], positionFields, "hidden bar restored")
+    view.actions[3].visibleGlobal = true
+    expect(ClassicLayout.update(262), true, "showing the colliding bar stacks the cluster again")
+    expect(view.actions[3].y + view.actions[3].height, view.chat.y, "reshown bar joins chat")
+    view.strip:SetSize(544, 34, 0, 0)
+    expect(ClassicLayout.update(262), true, "native strip contraction restores horizontal layout")
+    assertDescriptor(view.actions[1].position, view.actionPositions[1], positionFields, "strip contraction")
+    ClassicLayout.restore()
+end
+
+local function combatOwnershipAndFailuresAreSafe()
+    local view = combatScene()
+    ClassicLayout.update(404)
+    view.actions[1]:SetPos(12, 16, 0, 0, 0, 0)
+    local writesBefore = view.actions[1].posWrites
+    expect(ClassicLayout.update(404), false, "native position changes suspend reservation")
+    expect(view.actions[1].posWrites, writesBefore, "native position is never fought")
+    expect(view.area.width, 1920, "unsafe combat layout releases sidebar reservation")
+    ClassicLayout.restore()
+    expect(view.actions[1].position.x, 12, "teardown preserves native position")
+
+    view = combatScene()
+    view.actions[2].failPos = "after"
+    local ok = pcall(ClassicLayout.update, 404)
+    expect(ok, false, "combat setter error propagates")
+    for index, action in ipairs(view.actions) do
+        assertDescriptor(action.position, view.actionPositions[index], positionFields, "partial rollback")
+    end
+    expect(view.area.width, 1920, "partial failure releases reservation")
+    ClassicLayout.restore()
+
+    view = combatScene()
+    -- A native compact baseline must not be shifted a second time.
+    for index, action in ipairs(view.actions) do
+        local original = view.actionPositions[index]
+        action:SetPos(0, original.y - 192, 0, 1, 0, 1)
+        action.posWrites = 0
+    end
+    expect(ClassicLayout.update(404), true, "native compact baseline is already safe")
+    expect(view.actions[1].posWrites, 0, "native compact placement is left alone")
+    ClassicLayout.restore()
+
+    local retired = combatScene()
+    ClassicLayout.update(404)
+    local fresh = combatScene()
+    for _, action in ipairs(retired.actions) do poison(action) end
+    expect(ClassicLayout.update(404), true, "remount resolves fresh combat handles")
+    expect(fresh.actions[1].x, fresh.chat.x, "remounted combat bars stack")
+    ClassicLayout.restore()
+end
+
+local function privateChatFollowsCompactClusterAndRestores()
+    local view = combatScene()
+    view.privateChat.visibleGlobal = true
+    expect(ClassicLayout.update(404), true, "compact cluster makes room for private chat")
+    local main, _, third = table.unpack(view.actions)
+    expect(third.y + third.height, view.chat.y, "chat and combat frames meet exactly")
+    expect(view.privateChat.y + view.privateChat.height, main.y, "private chat clears the whole cluster")
+    local pmWrites = view.privateChat.posWrites
+    ClassicLayout.update(404)
+    expect(view.privateChat.posWrites, pmWrites, "private chat does not drift on idle updates")
+    view.chat:SetSize(550, 230, 0, 0)
+    expect(ClassicLayout.update(404), true, "chat resize repositions combat and private chat")
+    expect(third.y + third.height, view.chat.y, "resized chat still joins combat")
+    expect(view.privateChat.y + view.privateChat.height, main.y, "PMs clear resized chat and combat")
+    view.privateChat.visibleGlobal = false
+    expect(ClassicLayout.update(404), true, "hidden private chat releases its offset")
+    assertDescriptor(view.privateChat.position, view.privatePosition, positionFields, "hidden PM position")
+    view.privateChat.visibleGlobal = true
+    expect(ClassicLayout.update(404), true, "reappearing PMs clear combat")
+    expect(view.privateChat.y + view.privateChat.height, main.y, "reappearing PMs stay above combat")
+    expect(ClassicLayout.update(44), true, "sidebar collapse restores private chat")
+    assertDescriptor(view.privateChat.position, view.privatePosition, positionFields, "collapsed PM position")
+    ClassicLayout.update(404)
+    ClassicLayout.restore()
+    assertDescriptor(view.privateChat.position, view.privatePosition, positionFields, "shutdown PM position")
+
+    view = combatScene()
+    view.privateChat.visibleGlobal = true
+    view.privateChat:SetPos(800, -188, 0, 1, 0, 1)
+    expect(ClassicLayout.update(404), true, "floating PMs outside combat are left alone")
+    expect(view.privateChat.position.x, 800, "floating PM horizontal placement survives")
+    expect(view.privateChat.position.y, -188, "floating PM vertical placement survives")
+    ClassicLayout.restore()
+
+    view = combatScene()
+    view.privateChat.visibleGlobal = true
+    ClassicLayout.update(404)
+    view.privateChat:SetPos(10, 20, 0, 0, 0, 0)
+    local writesBefore = view.privateChat.posWrites
+    expect(ClassicLayout.update(404), false, "native PM changes suspend compact ownership")
+    expect(view.privateChat.posWrites, writesBefore, "native PM changes are not overwritten")
+    ClassicLayout.restore()
+    expect(view.privateChat.position.y, 20, "shutdown preserves native PM changes")
+end
+
 reservationFollowsRailAndRestoresOriginalLayout()
 modeExitRestoresNativeOwnership()
 slayerPositionIsOptionalAndNeverShiftedTwice()
@@ -375,4 +544,8 @@ unsafeNativeLayoutsDoNotClaimReservation()
 foreignDescriptorsRemainClientOwned()
 remountNeverTouchesRetiredNativeHandles()
 viewportResizeRecapturesBaselineButRepeatedResetSuspends()
+combatStacksAndRestoresWithoutOscillating()
+additionalButtonTriggersCompactLayout()
+combatOwnershipAndFailuresAreSafe()
+privateChatFollowsCompactClusterAndRestores()
 print("classic_layout_test: native reservation and lifecycle passed")

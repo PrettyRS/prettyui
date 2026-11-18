@@ -10,10 +10,12 @@ local function sidebar(f)
     area:SetSize(0, 0, 1, 1); area:SetPos(0, 0, .5, .5, .5, .5)
     local view = scene.node(4089, 54, viewport, 0, 0, 1200, 800)
     view:SetSize(0, 0, 1, 1)
+    scene.node(4089, 55, area, 988, 488, 212, 312)
     id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP = (4088 << 16) | 51
     id.Component.TOPLEVEL_V2__VIEWPORT = (4089 << 16) | 52
     id.Component.TOPLEVEL_V2__GAME_AREA = (4089 << 16) | 53
     id.Component.TOPLEVEL_V2__GAMEVIEW_WINDOW = (4089 << 16) | 54
+    id.Component.TOPLEVEL_V2__INVENTORY_WINDOW = (4089 << 16) | 55
     f.parent = area
     local function find(node, icon)
         if node.spriteID == icon then return node.parent end
@@ -46,7 +48,7 @@ Fixture.run("Classic sidebar clicks mount one page, collapse without disabling, 
     assert(a.content == nil and b.content == nil and builds == 0)
     f.expect(scene.area.width, 1156, "collapsed rail reserves native space")
     scene.click(a)
-    f.expect(scene.area.width, 796, "expanded page reserves native space")
+    f.expect(scene.area.width, 856, "expanded page reserves native space")
     assert(a.content.interfaceID == scene.top.interfaceID and a.root.hidden)
     a:SetScrollPosition(64)
     scene.click(b)

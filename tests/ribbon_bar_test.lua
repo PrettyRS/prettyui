@@ -4,7 +4,7 @@ local function expect(actual, expected, message)
 end
 
 local loaded = {}
-local area, top, viewport, gameview
+local area, top, viewport, gameview, inventory, chat, action
 local staticComponents = {}
 local classicMode = 0
 local nextDynamic = 0
@@ -106,11 +106,24 @@ local function gameArea(interfaceID, width, height)
     gameview = native(interfaceID, 87, viewport,
         { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
         { width = 0, height = 0, widthParentPc = 1, heightParentPc = 1 })
+    inventory = native(interfaceID, 91, result,
+        { x = 0, y = 0, xParentPc = 1, yParentPc = 1, xSelfPc = 1, ySelfPc = 1 },
+        { width = 212, height = 312, widthParentPc = 0, heightParentPc = 0 })
+    chat = native(interfaceID, 92, result,
+        { x = 0, y = 0, xParentPc = 0, yParentPc = 1, xSelfPc = 0, ySelfPc = 1 },
+        { width = 550, height = 188, widthParentPc = 0, heightParentPc = 0 })
+    action = native(interfaceID, 93, result,
+        { x = 0, y = 0, xParentPc = .5, yParentPc = 1, xSelfPc = .5, ySelfPc = 1 },
+        { width = 550, height = 150, widthParentPc = 0, heightParentPc = 0 })
+    inventory.visibleGlobal, chat.visibleGlobal, action.visibleGlobal = true, false, false
     if id then
         id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP = ((interfaceID + 1000) << 16) | 71
         id.Component.TOPLEVEL_V2__VIEWPORT = (interfaceID << 16) | 75
         id.Component.TOPLEVEL_V2__GAME_AREA = (interfaceID << 16) | 81
         id.Component.TOPLEVEL_V2__GAMEVIEW_WINDOW = (interfaceID << 16) | 87
+        id.Component.TOPLEVEL_V2__INVENTORY_WINDOW = (interfaceID << 16) | 91
+        id.Component.TOPLEVEL_V2__CHAT_WINDOW = (interfaceID << 16) | 92
+        id.Component.TOPLEVEL_V2__ACTION_WINDOW = (interfaceID << 16) | 93
     end
     return result
 end
@@ -601,10 +614,10 @@ local function classicSelectionAndModeTransitions()
         "Classic button renders resource icon")
 
     clickRoot(buttonNamed("A"))
-    rail(404, "selected content")
-    expect(gameview.width, 3036, "expanded rail reserves body and gameview")
+    rail(344, "selected content")
+    expect(gameview.width, 3096, "expanded rail reserves body and gameview")
     expect(a.classicHost.parent, surface, "selected content belongs to full-screen rail")
-    expect(a.classicHost.width, 360, "selected content width")
+    expect(a.classicHost.width, 300, "selected content width")
     expect(a.builds, 1, "selected content builds on first click")
     expect(b.builds, 0, "unselected content remains unbuilt")
     local aButton = buttonNamed("A")
@@ -621,7 +634,7 @@ local function classicSelectionAndModeTransitions()
     expect(b.releases, 1, "collapse releases content")
     expect(b:IsActive(), true, "collapse keeps panel enabled")
     expect(RibbonBar.selectClassic(a, false), true, "API selects enabled panel")
-    rail(404, "programmatic selection")
+    rail(344, "programmatic selection")
     expect(RibbonBar.selectClassic(a, true), true, "API toggles selected panel closed")
     top:SetSize(45, 120, 0, 0)
     viewport:SetSize(45, 120, 0, 0)
@@ -661,12 +674,15 @@ local function classicSelectionAndModeTransitions()
     top:SetSize(200, 220, 0, 0)
     viewport:SetSize(200, 220, 0, 0)
     tick()
-    rail(199, "narrow viewport clamps expanded rail")
-    expect(settings.width, 147, "narrow viewport resizes the settings view")
+    rail(44, "insufficient space collapses settings")
+    expect(settings.destroyed, true, "settings never shrink below inventory width")
     top:SetSize(3440, 1440, 0, 0)
     viewport:SetSize(3440, 1440, 0, 0)
     tick()
-    rail(404, "resized viewport restores expanded rail")
+    rail(44, "growing viewport leaves sidebar collapsed")
+    clickRoot(buttonNamed("PrettyUI settings"))
+    settings = views[#views]
+    rail(344, "settings reopen at full width")
 
     mode(0)
     expect(settings.destroyed, true, "mode exit destroys Classic settings")
@@ -684,12 +700,52 @@ local function classicSelectionAndModeTransitions()
     expect(next(map.watches), nil, "shutdown removes map observers")
 end
 
+local function classicWidthProtectsChatAndInventory()
+    start(45, 1)
+    local owner = classicPanel("Responsive", true)
+    RibbonBar.register(owner)
+    chat.visibleGlobal, action.visibleGlobal = true, true
+    top:SetSize(1920, 1080, 0, 0)
+    viewport:SetSize(1920, 1080, 0, 0)
+    tick()
+    clickRoot(buttonNamed("Responsive"))
+    rail(344, "1080p sidebar retains preferred width")
+    local host = owner.classicHost
+    expect(host.width, 300, "compact combat placement preserves sidebar space")
+    assert(host.width >= inventory.width, "sidebar must be at least inventory width")
+    expect(action.x, chat.x, "compact bars align with chat")
+    expect(chat.y - (action.y + action.height), 0, "compact bars join the chat frame")
+
+    top:SetSize(2560, 1440, 0, 0)
+    viewport:SetSize(2560, 1440, 0, 0)
+    tick()
+    rail(344, "larger display restores preferred width")
+    expect(owner.classicHost, host, "resize retains mounted content")
+    expect(owner.builds, 1, "resize does not rebuild content")
+
+    top:SetSize(1920, 1080, 0, 0)
+    viewport:SetSize(1920, 1080, 0, 0)
+    tick()
+    inventory:SetSize(380, 312, 0, 0)
+    tick()
+    rail(424, "sidebar grows to fit a wider inventory")
+    expect(owner.classicHost.width, 380, "inventory floor uses live native width")
+    expect(chat.y - (action.y + action.height), 0, "resized bars remain flush with chat")
+    expect(owner.releases, 0, "inventory changes retain content")
+    clickRoot(buttonNamed("Responsive"))
+    rail(44, "collapse releases sidebar space")
+    expect(action.position.xParentPc, .5, "collapse restores centred native anchor")
+    expect(action.position.x, 0, "collapse removes compact offset")
+    expect(action.y + action.height, viewport.height, "collapse restores bottom-aligned bars")
+    RibbonBar.Shutdown()
+end
+
 local function classicOverflowKeepsButtonsReachable()
     start(50, 1)
     local selected = classicPanel("Selected", true)
     RibbonBar.register(selected)
     clickRoot(buttonNamed("Selected"))
-    local surface = rail(404, "selected page before overflow")
+    local surface = rail(344, "selected page before overflow")
     top:SetSize(3440, 180, 0, 0)
     viewport:SetSize(3440, 180, 0, 0)
     local overflow = {}
@@ -805,7 +861,7 @@ local function classicUnavailableNativeLayoutAndRemount()
     RibbonBar.register(optional)
     rail(44, "gameview failure still allows reservation")
     clickRoot(buttonNamed("Optional"))
-    rail(404, "gameview failure still allows selection")
+    rail(344, "gameview failure still allows selection")
     expect(gameview.width, 3440, "failed optional gameview remains client-owned")
     RibbonBar.unregister(optional)
     expect(area.width, 3440, "last unregister restores mandatory reservation")
@@ -840,7 +896,7 @@ local function classicUnavailableNativeLayoutAndRemount()
     tick()
     rail(44, "replacement top layer remounts collapsed")
     clickRoot(buttonNamed("Incompatible"))
-    rail(404, "replacement top layer supports selection")
+    rail(344, "replacement top layer supports selection")
     loaded[area.interfaceID] = nil
     tick()
     expect(incompatible.releases, 1, "interface unload releases selected content")
@@ -849,7 +905,7 @@ local function classicUnavailableNativeLayoutAndRemount()
     RibbonBar.register(newPanel)
     rail(44, "fresh viewport starts collapsed")
     clickRoot(buttonNamed("New"))
-    rail(404, "fresh viewport supports selection")
+    rail(344, "fresh viewport supports selection")
     RibbonBar.Shutdown()
     expect(newPanel.releases, 1, "shutdown releases selected content")
     expect(area.width, 3440, "shutdown restores current native geometry")
@@ -891,7 +947,7 @@ local function sharedNativeSettingsLifecycle()
     expect(native.controls.cap.value, 6, "Classic changes synchronize to native settings")
     native.controls.position.options.onChange(nil, 2)
     expect(sidebar.controls.position.selected, 2, "native changes synchronize to Classic settings")
-    rail(404, "editing Modern preferences leaves Classic sidebar fixed")
+    rail(344, "editing Modern preferences leaves Classic sidebar fixed")
     RibbonBar.unregister(owner)
     expect(sidebar.destroyed, true, "last panel unregister destroys sidebar settings")
     expect(native.destroyed, nil, "last panel unregister preserves native settings")
@@ -912,6 +968,7 @@ local function sharedNativeSettingsLifecycle()
 end
 
 classicSelectionAndModeTransitions()
+classicWidthProtectsChatAndInventory()
 classicOverflowKeepsButtonsReachable()
 classicUnavailableNativeLayoutAndRemount()
 modernOverflowAndCap()

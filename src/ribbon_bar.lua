@@ -34,7 +34,7 @@ local BUTTON_GAP = 2
 local AUTO_HIDE_SLIDE_STEP = 8
 local SETTINGS_WIDTH = 340
 local SETTINGS_HEIGHT = 320
-local CLASSIC_CONTENT_WIDTH = 360
+local CLASSIC_CONTENT_WIDTH = 300
 local MODERN_NATIVE_RESTORE_TICKS = 10 -- 200 ms at the client's fixed 50 Hz.
 local RAIL_WIDTH = BUTTON_SIZE + PADDING * 2
 local PITCH = BUTTON_SIZE + BUTTON_GAP
@@ -63,10 +63,21 @@ local function identity(component)
         .. component.categoryID .. ":" .. component.dynamicID
 end
 
+local function nativeComponent(name)
+    local packed = id.Component[name]
+    return packed and ui.Interfaces:GetComponent(packed) or nil
+end
+
 local function classicWidths(expanded)
     local width = gameArea and gameArea.width or 0
     local rail = math.min(RAIL_WIDTH, math.max(0, width - 1))
-    local body = expanded and math.min(CLASSIC_CONTENT_WIDTH, math.max(0, width - 1 - rail)) or 0
+    if not expanded then return rail, 0 end
+    local inventory = nativeComponent("TOPLEVEL_V2__INVENTORY_WINDOW")
+    if not inventory or inventory.width <= 0 then return rail, 0 end
+    local minimum = math.ceil(inventory.width)
+    local available = width - 1 - rail
+    if available < minimum then return rail, 0 end
+    local body = math.min(math.max(CLASSIC_CONTENT_WIDTH, minimum), available)
     return rail, body
 end
 
@@ -586,6 +597,9 @@ ensureMounted = function()
     mountKey, mountGeneration = currentKey, generation
     if classic then
         local rail, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
+        if body == 0 and (classicSelectedPanel ~= nil or settingsOpen) then
+            collapseClassic(false)
+        end
         local ok, reserved = pcall(reserveClassic, rail + body)
         if not ok or not reserved then
             pcall(destroySurface, true)

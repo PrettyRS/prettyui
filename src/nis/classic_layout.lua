@@ -1,5 +1,5 @@
--- Reserves space for the Classic sidebar in GAME_AREA and adjusts the external
--- Slayer HUD. Saves scalar layouts for restoration across native UI rebuilds.
+-- Reserves Classic sidebar space and keeps the native combat bars clear of
+-- chat and buttons. Saves scalar layouts for restoration across UI rebuilds.
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
 
 local ClassicLayout = {}
@@ -13,7 +13,17 @@ local names = {
     gameview = "TOPLEVEL_V2__GAMEVIEW_WINDOW",
     hud = "TOPLEVEL_V2__GAMEPLAY_HUDS",
     slayer = "TOPLEVEL_V2__SLAYER_COUNTER_WINDOW",
+    chat = "TOPLEVEL_V2__CHAT_WINDOW",
+    privateChat = "TOPLEVEL_V2__SPLITPM_WINDOW",
+    buttons = "TOPLEVEL_V2__BUTTONS_WINDOW",
+    action = "TOPLEVEL_V2__ACTION_WINDOW",
+    action2 = "TOPLEVEL_V2__ACTION_WINDOW_2",
+    action3 = "TOPLEVEL_V2__ACTION_WINDOW_3",
+    action4 = "TOPLEVEL_V2__ACTION_WINDOW_4",
+    action5 = "TOPLEVEL_V2__ACTION_WINDOW_5",
 }
+local actionNames = { "action", "action2", "action3", "action4", "action5" }
+local HUD_GAP = 4
 local SUSPENDED = "PrettyUI: classic sidebar suspended; native layout is unavailable"
 local NO_GAMEVIEW = "PrettyUI: classic sidebar cannot resize the gameview"
 local NO_SLAYER = "PrettyUI: classic sidebar cannot move the Slayer counter"
@@ -148,10 +158,17 @@ end
 local function restoreState()
     if not state then return true end
     local saved = state
+    local actionsOK = true
+    for _, action in pairs(saved.actions or {}) do
+        local called, restored = pcall(restoreRecord, action, saved.interfaceObject)
+        actionsOK = called and restored and actionsOK
+    end
     local viewCall, gameviewOK = pcall(restoreRecord, saved.gameview, saved.interfaceObject)
     local areaCall, areaOK = pcall(restoreRecord, saved.area, saved.interfaceObject)
     local slayerCall, slayerOK = pcall(restoreRecord, saved.slayer, saved.interfaceObject)
-    local complete = viewCall and gameviewOK and areaCall and areaOK and slayerCall and slayerOK
+    local privateCall, privateOK = pcall(restoreRecord, saved.privateChat, saved.interfaceObject)
+    local complete = actionsOK and viewCall and gameviewOK and areaCall and areaOK
+        and slayerCall and slayerOK and privateCall and privateOK
     if complete then state = nil end
     return complete
 end
@@ -302,6 +319,133 @@ local function updateSlayer(current, width)
     warn(NO_SLAYER)
 end
 
+local function overlaps(x, y, width, height, obstacle)
+    return obstacle and obstacle.visibleGlobal and x < obstacle.x + obstacle.width + HUD_GAP
+        and x + width + HUD_GAP > obstacle.x
+        and y < obstacle.y + obstacle.height + HUD_GAP
+        and y + height + HUD_GAP > obstacle.y
+end
+
+local function updatePrivateChat(current, area, chat, clusterWidth, clusterHeight)
+    local saved = current.privateChat
+    local target
+    if saved then
+        target = resolve(saved, current.interfaceObject)
+        if not target or not layout(target, saved.written) then return false end
+    elseif clusterHeight > 0 then
+        target = component("privateChat")
+    end
+    local shift = 0
+    if clusterHeight > 0 and target and target.visibleGlobal
+        and target.width > 0 and target.height > 0 then
+        local parent = target.parent
+        local parentKey = identity(parent)
+        if parentKey ~= identity(area) then
+            -- Split PMs normally live under the full-viewport gameplay HUD.
+            local hud = component("hud")
+            local hx, hy, hw, hh = origin(hud)
+            local hudLayout = layout(hud)
+            if not hud or parentKey ~= identity(hud) or identity(hud.parent) ~= current.viewportKey
+                or not hudLayout or not fullSize(hudLayout) or hx ~= 0 or hy ~= 0
+                or hw ~= current.width or hh ~= current.height then return false end
+        end
+        local x, y = target.x, target.y
+        if saved then
+            local original = saved.original
+            x = original[1] + parent.width * original[3] - target.width * original[5]
+            y = original[2] + parent.height * original[4] - target.height * original[6]
+        end
+        local bottom = y + target.height
+        if x < chat.x + clusterWidth and x + target.width > chat.x
+            and y < chat.y and bottom > chat.y - clusterHeight then
+            -- Retain the native PM-to-chat clearance above the inserted bars.
+            shift = math.floor(math.min(0, chat.y - bottom) - clusterHeight)
+        end
+        if shift ~= 0 and not saved then
+            if target.isRestricted then return false end
+            saved = record(target, parentKey, layout(target))
+            if not saved then return false end
+            current.privateChat = saved
+        end
+    end
+    if shift == 0 then
+        if not restoreRecord(saved, current.interfaceObject) then return false end
+        current.privateChat = nil
+        return true
+    end
+    local desired = { table.unpack(saved.original) }
+    desired[2] = desired[2] + shift
+    return set(saved, target, desired, "position")
+end
+
+local function updateCombat(current, area)
+    local areaKey = identity(area)
+    local chat, buttons = component("chat"), component("buttons")
+    if chat and identity(chat.parent) ~= areaKey then chat = nil end
+    if buttons and identity(buttons.parent) ~= areaKey then buttons = nil end
+    local targets = {}
+    local left, top, right, bottom = math.huge, math.huge, -math.huge, -math.huge
+    local collision = false
+    for index, name in ipairs(actionNames) do
+        local saved = current.actions and current.actions[index]
+        local target
+        if saved then target = resolve(saved, current.interfaceObject)
+        else target = component(name) end
+        if saved and (not target or not layout(target, saved.written)) then return false end
+        if target and target.visibleGlobal and identity(target.parent) == areaKey then
+            local x, y = target.x, target.y
+            if saved then
+                local original = saved.original
+                x = original[1] + area.width * original[3] - target.width * original[5]
+                y = original[2] + area.height * original[4] - target.height * original[6]
+            end
+            local width, height = target.width, target.height
+            if width > 0 and height > 0 then
+                targets[index] = target
+                left, top = math.min(left, x), math.min(top, y)
+                right, bottom = math.max(right, x + width), math.max(bottom, y + height)
+                collision = collision or overlaps(x, y, width, height, chat)
+                    or overlaps(x, y, width, height, buttons)
+            end
+        end
+    end
+    if not collision then
+        if not updatePrivateChat(current, area, nil, 0, 0) then return false end
+        for index, saved in pairs(current.actions or {}) do
+            if not restoreRecord(saved, current.interfaceObject) then return false end
+            current.actions[index] = nil
+        end
+        return true
+    end
+    -- Keep every bar's relative offset, placing the entire cluster above chat.
+    -- Evaluate the original anchors, not our last write, to avoid oscillation.
+    if not chat or not chat.visibleGlobal or chat.x < 0
+        or chat.x + right - left > area.width
+        or chat.y - (bottom - top) < 0 then return false end
+    local dx, dy = math.floor(chat.x - left), math.floor(chat.y - bottom)
+    if not updatePrivateChat(current, area, chat, right - left, bottom - top) then return false end
+    current.actions = current.actions or {}
+    for index, target in pairs(targets) do
+        if not current.actions[index] then
+            local saved = record(target, areaKey, layout(target))
+            if not saved or target.isRestricted then return false end
+            current.actions[index] = saved
+        end
+    end
+    for index, saved in pairs(current.actions) do
+        local target = targets[index]
+        if target then
+            local desired = { table.unpack(saved.original) }
+            desired[1], desired[2] = desired[1] + dx, desired[2] + dy
+            if not set(saved, target, desired, "position") then return false end
+        else
+            if not restoreRecord(saved, current.interfaceObject) then return false end
+            current.actions[index] = nil
+        end
+    end
+    return true
+end
+
 function ClassicLayout.update(reservedWidth)
     if not NativeInterfaceSettings.isClassicUI() then
         ClassicLayout.restore()
@@ -372,6 +516,15 @@ function ClassicLayout.update(reservedWidth)
             if not ok then error(applied, 0) end
             return false
         end
+    end
+    local combatOK, combatApplied = pcall(updateCombat, previous, fresh)
+    if not combatOK or not combatApplied then
+        restoreState()
+        previous.blocked, previous.blockedEnvironment = true, signature
+        state = previous
+        suspend(signature)
+        if not combatOK then error(combatApplied, 0) end
+        return false
     end
     previous.reservedWidth = reservedWidth
     suspendedEnvironment = nil
