@@ -44,6 +44,9 @@ hero:
 - [Slider](index.html#slider-api) markers now move with the track when the window or panel holding them is resized.
 - Nested panels' content now resizes when the parent being resized causes the panel to be resized.
 - Nested Panels are linked to their parent again, which 1.3.0 had broken.
+- Nested [panels](index.html#panel-api) that follow their parent's width keep following it after a height-only resize by the end user or a fit to their content. Only resizing their width or calling setSize() stops it.
+- A [panel's](index.html#panel-api) popped-out size and docked size are now independent of each other.
+- Dragging a scrollbar no longer stops while the mouse passes over a resizable window's edge.
 
 ## 1.3.0 (Approved, awaiting release) {#v1-3-0}
 

@@ -137,8 +137,7 @@ Panel.new(parent, options)
 : Initial position of the pop-out in its overlay parent.
 
 `popoutWidth`, `popoutHeight`
-: Optional initial dimensions for the pop-out. Interactive and programmatic
-  resizing subsequently synchronize both panel surfaces.
+: Optional initial dimensions for the pop-out.
 
 {{% /api-card %}}
 

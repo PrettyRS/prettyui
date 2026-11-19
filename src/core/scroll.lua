@@ -436,7 +436,10 @@ function Scroll:_UpdateDrag(component, x, y)
                 self.dragStart.scrollY +
                 (mouse.y - self.dragStart.mouseY) * maxScroll / thumbTravel
             ), 0, maxScroll)
-            if nextPosition ~= self.scrollY then self:SetScrollPosition(nextPosition) end
+            if nextPosition ~= self.scrollY then
+                self:SetScrollPosition(nextPosition)
+                self.thumbDrag:MoveToFront()
+            end
         end
     end
     return false
