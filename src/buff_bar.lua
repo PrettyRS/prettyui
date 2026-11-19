@@ -459,7 +459,6 @@ local function setTooltip(bar, entry, value, deferLayout)
         end,
     })
     setComponentOwned(bar, entry.tooltip.root, true)
-    trackComponent(bar, entry.tooltip.root)
     Components.setHidden(entry.tooltipTarget, not entry.visible)
     if deferLayout ~= true then layout(bar, true) end
     return true
