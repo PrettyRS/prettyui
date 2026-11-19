@@ -35,9 +35,9 @@ local function newBar(name, componentID, borderRGBA, allowBorderOverride)
         layer = nil,
         entries = {},
         entriesByID = {},
-        -- The render layer is shared with the game and other plugins. Only
-        -- exact components created by this bar should be excluded from scans.
-        ownComponents = {},
+        -- Direct children share this bar's static namespace. Track category and
+        -- dynamic IDs because iteration may return a different Lua handle.
+        ownComponentIDs = {},
         lastIconSize = nil,
         lastRowsSignature = nil,
         lastUsableWidth = nil,
@@ -65,8 +65,18 @@ local function getLayer(bar)
     return bar.layer
 end
 
-local function trackComponent(bar, component)
-    bar.ownComponents[component] = true
+local function setComponentOwned(bar, component, owned)
+    if component == nil then return nil end
+    local layer = bar.layer
+    if component.interfaceID == layer.interfaceID and component.staticID == layer.staticID then
+        local categoryID = component.categoryID
+        local ids = bar.ownComponentIDs[categoryID]
+        if ids == nil then
+            ids = {}
+            bar.ownComponentIDs[categoryID] = ids
+        end
+        ids[component.dynamicID] = owned
+    end
     return component
 end
 
@@ -208,7 +218,8 @@ local function scanRows(bar, layer)
     table.sort(rows, function(left, right) return left.y < right.y end)
 
     layer:IterateDynamicComponents(function(component, visible)
-        if not bar.ownComponents[component] and isRendered(component, visible) then
+        local ownedIDs = bar.ownComponentIDs[component.categoryID]
+        if not (ownedIDs and ownedIDs[component.dynamicID]) and isRendered(component, visible) then
             local row = nearestRow(rows, iconSize, component)
             row.occupiedRight = math.max(row.occupiedRight, component.x + component.width)
         end
@@ -327,15 +338,15 @@ local function destroyEntry(bar, entry)
 
     cancelPendingTooltip(entry)
     forEachVisual(entry, function(component)
-        bar.ownComponents[component] = nil
+        setComponentOwned(bar, component, nil)
         component:Destroy()
     end)
     if entry.tooltip ~= nil then
-        bar.ownComponents[entry.tooltip.root] = nil
+        setComponentOwned(bar, entry.tooltip.root, nil)
         entry.tooltip:Destroy()
     end
     if entry.tooltipTarget ~= nil then
-        bar.ownComponents[entry.tooltipTarget] = nil
+        setComponentOwned(bar, entry.tooltipTarget, nil)
         entry.tooltipTarget:Destroy()
     end
     bar.entriesByID[entry.id] = nil
@@ -413,15 +424,13 @@ local function setTooltip(bar, entry, value, deferLayout)
     end
     cancelPendingTooltip(entry)
     if entry.tooltip ~= nil then
-        if entry.tooltip.root ~= nil then
-            bar.ownComponents[entry.tooltip.root] = nil
-        end
+        setComponentOwned(bar, entry.tooltip.root, nil)
         entry.tooltip:Destroy()
         entry.tooltip = nil
     end
     if value == nil then
         if entry.tooltipTarget ~= nil then
-            bar.ownComponents[entry.tooltipTarget] = nil
+            setComponentOwned(bar, entry.tooltipTarget, nil)
             entry.tooltipTarget:Destroy()
             entry.tooltipTarget = nil
         end
@@ -429,9 +438,9 @@ local function setTooltip(bar, entry, value, deferLayout)
     end
 
     if entry.tooltipTarget == nil then
-        entry.tooltipTarget = trackComponent(bar, Components.new(ui.Layer, entry.layer, {
+        entry.tooltipTarget = setComponentOwned(bar, Components.new(ui.Layer, entry.layer, {
             _categoryPolicy = entry.categoryPolicy,
-        }))
+        }), true)
     end
     entry.tooltip = Tooltip.attach(entry.tooltipTarget, entry.layer, value, {
         onMouseOver = function(tooltip)
@@ -445,7 +454,7 @@ local function setTooltip(bar, entry, value, deferLayout)
             tooltip:Hide()
         end,
     })
-    trackComponent(bar, entry.tooltip.root)
+    setComponentOwned(bar, entry.tooltip.root, true)
     entry.tooltipTarget.hidden = not entry.visible
     if deferLayout ~= true then layout(bar, true) end
     return true
@@ -528,12 +537,12 @@ local function add(bar, options)
     nextEntryID = nextEntryID + 1
     local policyOptions = { _categoryPolicy = Components.policyOf(layer, options) }
 
-    local background = trackComponent(bar, Components.new(ui.Rectangle, layer, policyOptions))
+    local background = setComponentOwned(bar, Components.new(ui.Rectangle, layer, policyOptions), true)
     background.fill = true
     background.rgba = options.backgroundRgba or BACKGROUND_RGBA
     background.clickthrough = true
 
-    local sprite = trackComponent(bar, Components.new(ui.Sprite, layer, policyOptions))
+    local sprite = setComponentOwned(bar, Components.new(ui.Sprite, layer, policyOptions), true)
     sprite.outlineWidth = 1
     sprite.clickthrough = true
     if options.objId ~= nil then
@@ -543,7 +552,7 @@ local function add(bar, options)
         sprite.spriteID = options.spriteID
     end
 
-    local border = trackComponent(bar, Components.new(ui.Rectangle, layer, policyOptions))
+    local border = setComponentOwned(bar, Components.new(ui.Rectangle, layer, policyOptions), true)
     border.fill = false
     border.outlineThickness = BORDER_THICKNESS
     border.rgba = bar.allowBorderOverride and (options.borderRgba or bar.borderRGBA)
@@ -553,7 +562,7 @@ local function add(bar, options)
     local remainingTicks = options.duration ~= nil
         and math.ceil(options.duration * TICKS_PER_SECOND)
         or nil
-    local label = trackComponent(bar, Components.new(ui.Text, layer, policyOptions))
+    local label = setComponentOwned(bar, Components.new(ui.Text, layer, policyOptions), true)
     label.font = options.font or id.Font.NOTOSANS_BOLD_12
     label.isShadowed = true
     label.alignHorizontal = ui.AlignMode.CENTRE
