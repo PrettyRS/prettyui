@@ -22,7 +22,11 @@ hero:
 
 ## Unreleased {#unreleased}
 
-## 1.3.0 (Approved, awaiting release) {#v1-3-0}
+### Fixed
+
+- Fixed custom buffs and debuffs flickering between rows near the native bar's wrap threshold.
+
+## 1.3.0 2026-11-19 {#v1-3-0}
 
 ### Added
 

@@ -71,7 +71,10 @@ local function newLayer(nativeY, height)
     end
     function layer:IterateDynamicComponents(callback)
         for _, item in ipairs(self.dynamicComponents) do
-            if not item.destroyed and callback(item, not item.hidden) then return end
+            if not item.destroyed then
+                local handle = self.freshHandles and setmetatable({}, { __index = item }) or item
+                if callback(handle, not item.hidden) then return end
+            end
         end
     end
     return layer
@@ -279,6 +282,7 @@ logicHandler({ logicTick = 3 })
 expect(first.sprite.x, 32, "an expired native buff releases space on the next tick")
 
 local foreignComponent = component(buffLayer, "sprite", 1, first.sprite.dynamicID)
+buffLayer.freshHandles = true
 foreignComponent:SetSize(28, 28)
 foreignComponent:SetPos(70, 0)
 foreignComponent.hidden = true
@@ -296,6 +300,7 @@ foreignComponent.visible = false
 logicHandler({ logicTick = 6 })
 expect(first.sprite.x, 32, "hidden foreign components release their space")
 foreignComponent:Destroy()
+buffLayer.freshHandles = false
 
 local secondHandle, second = captureEntry(buffLayer, function()
     return BuffBar.addBuff({ spriteID = 7 })
@@ -393,6 +398,49 @@ expect(firstHandle:SetLabel("removed"), false, "removed buff handles reject labe
 expect(firstHandle:SetObject(42), false, "removed buff handles reject object changes")
 expect(firstHandle:SetSprite(42), false, "removed buff handles reject sprite changes")
 expect(logicHandler, nil, "removing the final entry stops the logic subscription")
+
+-- Iteration can return fresh handles for the same native components. If those
+-- handles count as foreign occupancy, a full row moves on every logic tick.
+for _, scenario in ipairs({
+    { name = "buff", layer = buffLayer, add = BuffBar.addBuff, remove = BuffBar.removeBuff },
+    { name = "debuff", layer = debuffLayer, add = BuffBar.addDebuff, remove = BuffBar.removeDebuff },
+}) do
+    local layer = scenario.layer
+    layer.slots.leading.graphic.spriteID = -1
+    layer.slots.trailing.graphic.spriteID = -1
+    layer.width = 169 -- Five icons fit exactly.
+    local handles, sprites = {}, {}
+    for index = 1, 5 do
+        local handle, entry = captureEntry(layer, function()
+            return scenario.add({ spriteID = index })
+        end)
+        handles[index], sprites[index] = handle, entry.sprite
+    end
+
+    local function expectPositions(firstRowCount)
+        for index, sprite in ipairs(sprites) do
+            local firstRow = index <= firstRowCount
+            local column = firstRow and index or (index - firstRowCount)
+            local row = firstRow and layer.slots.leading or layer.slots.secondRow
+            expect(sprite.x, 1 + (column - 1) * 31, scenario.name .. " column on each logic tick")
+            expect(sprite.y, row.y + 1, scenario.name .. " row on each logic tick")
+        end
+    end
+
+    layer.freshHandles = true
+    for tick = 1, 4 do
+        logicHandler({ logicTick = tick })
+        expectPositions(5)
+    end
+
+    layer.width = 138 -- Four icons fit, so the fifth must wrap.
+    for tick = 5, 8 do
+        logicHandler({ logicTick = tick })
+        expectPositions(4)
+    end
+
+    for _, handle in ipairs(handles) do scenario.remove(handle) end
+end
 
 local invalid = BuffBar.addDebuff({ spriteID = 10, duration = 0 })
 expect(invalid, nil, "non-positive durations are rejected")
