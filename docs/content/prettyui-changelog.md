@@ -47,8 +47,9 @@ hero:
 - Nested [panels](index.html#panel-api) that follow their parent's width keep following it after a height-only resize by the end user or a fit to their content. Only resizing their width or calling setSize() stops it.
 - A [panel's](index.html#panel-api) popped-out size and docked size are now independent of each other.
 - Dragging a scrollbar no longer stops while the mouse passes over a resizable window's edge.
+- Fixed custom buffs and debuffs flickering between rows near the native bar's wrap threshold.
 
-## 1.3.0 (Approved, awaiting release) {#v1-3-0}
+## 1.3.0 2026-11-19 {#v1-3-0}
 
 ### Added
 
