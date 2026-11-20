@@ -83,8 +83,10 @@ function Renderer.init(self, parent, options)
     for _, key in ipairs({ "x", "y", "xAnchor", "yAnchor", "widthAnchor", "heightAnchor" }) do
         assert(options[key] == nil or Data.finite(options[key]), "chart positions and anchors must be finite numbers")
     end
-    assert(options._onScrollWheel == nil or type(options._onScrollWheel) == "function",
-        "chart scroll handler must be a function")
+    assert(
+        options._onScrollWheel == nil or type(options._onScrollWheel) == "function",
+        "chart scroll handler must be a function"
+    )
     self.label = options.label or ""
     self.barRGBA = options.rgba
     self.widthAnchor, self.heightAnchor = options.widthAnchor or 0, options.heightAnchor or 0
@@ -117,20 +119,30 @@ function Renderer.init(self, parent, options)
     -- A sibling overlay stays above dynamically created bars in the plot layer.
     self.highlight = rectangle(self.body, 0xF2C66D33)
     Components.setHidden(self.highlight, true)
-    self.axisLabels = { label(self.body),
-        label(self.body, self.orientation == "horizontal" and ui.AlignMode.BOTTOMRIGHT or ui.AlignMode.TOPLEFT) }
+    self.axisLabels = {
+        label(self.body),
+        label(self.body, self.orientation == "horizontal" and ui.AlignMode.BOTTOMRIGHT or ui.AlignMode.TOPLEFT),
+    }
     if self.kind == "histogram" then
         self.rangeLabels = { label(self.body), label(self.body, ui.AlignMode.BOTTOMRIGHT) }
     end
     self.empty = label(self.plot, ui.AlignMode.CENTRE)
     self.empty.content = self.kind == "histogram" and "No samples" or "No data"
     local parentContext = Tooltip.getContext(parent)
-    self.tooltipContext = Tooltip.registerContext(self.root, parentContext and parentContext.parent or parent, function(target)
-        local x, y
-        if parentContext then x, y = parentContext.position(self.root)
-        else x, y = self.root.x, self.root.y end
-        return x + target.x, y + target.y
-    end, parentContext)
+    self.tooltipContext = Tooltip.registerContext(
+        self.root,
+        parentContext and parentContext.parent or parent,
+        function(target)
+            local x, y
+            if parentContext then
+                x, y = parentContext.position(self.root)
+            else
+                x, y = self.root.x, self.root.y
+            end
+            return x + target.x, y + target.y
+        end,
+        parentContext
+    )
     local function hover(_, x, y)
         if self.root == nil then return true end
         self.hoverX, self.hoverY = x, y
@@ -235,8 +247,11 @@ function Renderer:_RenderHover()
         return
     end
     local start, finish = self.edges[slot], self.edges[slot + 1]
-    if horizontal then place(self.highlight, self.plotX, self.plotY + start, pw, finish - start)
-    else place(self.highlight, self.plotX + start, self.plotY, finish - start, ph) end
+    if horizontal then
+        place(self.highlight, self.plotX, self.plotY + start, pw, finish - start)
+    else
+        place(self.highlight, self.plotX + start, self.plotY, finish - start, ph)
+    end
     if not self.tooltip then
         self.tooltip = Tooltip.attach(self.plot, self.root, "", {
             onMouseOver = function() self:_RenderHover() end,
@@ -245,8 +260,12 @@ function Renderer:_RenderHover()
     end
     local text
     if self.kind == "histogram" then
-        text = "[" .. string.format("%.14g", row.lower) .. ", " .. string.format("%.14g", row.upper)
-            .. ")<br>Count: " .. string.format("%.0f", row.count)
+        text = "["
+            .. string.format("%.14g", row.lower)
+            .. ", "
+            .. string.format("%.14g", row.upper)
+            .. ")<br>Count: "
+            .. string.format("%.0f", row.count)
     else
         text = nativeText(row.label) .. "<br>" .. string.format("%.14g", row.value)
     end
@@ -260,18 +279,7 @@ function Renderer:_RenderHover()
     self.tooltip:Show()
 end
 
-function Renderer:_Render()
-    if self.root.hidden or self.root.visibleGlobal == false then
-        self:_ClearHover()
-        return
-    end
-    local width, height = math.max(0, self.root.width), math.max(0, self.root.height)
-    if self.width ~= width or self.height ~= height then self:_Layout(width, height)
-    elseif not self.dirty then return end
-    self.dirty = false
-    local rows, count = self.rows, #self.rows
-    local histogram = self.kind == "histogram"
-    local horizontal = self.orientation == "horizontal"
+local function valueRange(rows, histogram)
     local minimum, maximum = 0, 0
     for _, row in ipairs(rows) do
         local value = histogram and row.count or row.value
@@ -281,31 +289,42 @@ function Renderer:_Render()
     if scale == 0 then scale = 1 end
     local low, high = minimum / scale, maximum / scale
     if low == high then high = 1 end
-    local span = high - low
+    return minimum, maximum, scale, low, high - low
+end
+
+local function coordinate(value, scale, low, span, valueExtent, horizontal)
+    local unit = (value / scale - low) / span
+    return math.floor((horizontal and unit or 1 - unit) * valueExtent + 0.5)
+end
+
+local function renderAxes(self, count, histogram, horizontal, minimum, maximum, zero, valueExtent)
     local pw, ph = self.plotWidth, self.plotHeight
-    local valueExtent = math.max(0, (horizontal and pw or ph) - 1)
-    local function coordinate(value)
-        local unit = (value / scale - low) / span
-        return math.floor((horizontal and unit or 1 - unit) * valueExtent + 0.5)
+    if horizontal then
+        place(self.baseline, zero, 0, math.min(1, pw), ph)
+    else
+        place(self.baseline, 0, zero, pw, math.min(1, ph))
     end
-    local zero = coordinate(0)
-    if horizontal then place(self.baseline, zero, 0, math.min(1, pw), ph)
-    else place(self.baseline, 0, zero, pw, math.min(1, ph)) end
     for index = 1, 2 do
         local edge = (index - 1) * valueExtent
-        if horizontal then place(self.grid[index], edge, 0, math.min(1, pw), ph)
-        else place(self.grid[index], 0, edge, pw, math.min(1, ph)) end
+        if horizontal then
+            place(self.grid[index], edge, 0, math.min(1, pw), ph)
+        else
+            place(self.grid[index], 0, edge, pw, math.min(1, ph))
+        end
         local value = ((horizontal and index == 1) or (not horizontal and index == 2)) and minimum or maximum
         setText(self.axisLabels[index], compact(value))
         Components.setHidden(self.axisLabels[index], count == 0)
         if self.rangeLabels then Components.setHidden(self.rangeLabels[index], count == 0) end
     end
     if histogram and count > 0 then
-        setText(self.rangeLabels[1], compact(rows[1].lower))
-        setText(self.rangeLabels[2], compact(rows[count].upper))
+        setText(self.rangeLabels[1], compact(self.rows[1].lower))
+        setText(self.rangeLabels[2], compact(self.rows[count].upper))
     end
     Components.setHidden(self.empty, count > 0 and (not histogram or self.sampleCount > 0))
-    local categoryExtent = horizontal and ph or pw
+end
+
+local function renderEdges(self, rows, count, histogram, horizontal)
+    local categoryExtent = horizontal and self.plotHeight or self.plotWidth
     for index = 1, count + 1 do
         local unit
         if histogram and count > 0 then
@@ -316,6 +335,10 @@ function Renderer:_Render()
         end
         self.edges[index] = math.floor(unit * categoryExtent + 0.5)
     end
+end
+
+local function renderBars(self, rows, histogram, horizontal, zero, scale, low, span, valueExtent)
+    local pw, ph = self.plotWidth, self.plotHeight
     for index, row in ipairs(rows) do
         local bar = self.bars[index]
         if not bar then
@@ -324,21 +347,56 @@ function Renderer:_Render()
         end
         local start, finish = self.edges[index], self.edges[index + 1]
         local value = histogram and row.count or row.value
-        local endpoint = coordinate(value)
+        local endpoint = coordinate(value, scale, low, span, valueExtent, horizontal)
         local gap = histogram and 0 or clamp(finish - start - 1, 0, 4)
         Components.setHidden(bar, value == 0 or finish <= start or endpoint == zero or pw == 0 or ph == 0)
         if not bar.hidden then
             if horizontal then
-                place(bar, math.min(zero, endpoint), start + math.floor(gap / 2), math.abs(endpoint - zero), finish - start - gap)
+                place(
+                    bar,
+                    math.min(zero, endpoint),
+                    start + math.floor(gap / 2),
+                    math.abs(endpoint - zero),
+                    finish - start - gap
+                )
             else
-                place(bar, start + math.floor(gap / 2), math.min(zero, endpoint), finish - start - gap, math.abs(endpoint - zero))
+                place(
+                    bar,
+                    start + math.floor(gap / 2),
+                    math.min(zero, endpoint),
+                    finish - start - gap,
+                    math.abs(endpoint - zero)
+                )
             end
             bar.rgba = row.rgba or self.barRGBA or BAR_RGBA
         end
     end
-    for index = count + 1, #self.bars do
+    for index = #rows + 1, #self.bars do
         Components.setHidden(self.bars[index], true)
     end
+end
+
+function Renderer:_Render()
+    if self.root.hidden or self.root.visibleGlobal == false then
+        self:_ClearHover()
+        return
+    end
+    local width, height = math.max(0, self.root.width), math.max(0, self.root.height)
+    if self.width ~= width or self.height ~= height then
+        self:_Layout(width, height)
+    elseif not self.dirty then
+        return
+    end
+    self.dirty = false
+    local rows, count = self.rows, #self.rows
+    local histogram = self.kind == "histogram"
+    local horizontal = self.orientation == "horizontal"
+    local minimum, maximum, scale, low, span = valueRange(rows, histogram)
+    local valueExtent = math.max(0, (horizontal and self.plotWidth or self.plotHeight) - 1)
+    local zero = coordinate(0, scale, low, span, valueExtent, horizontal)
+    renderAxes(self, count, histogram, horizontal, minimum, maximum, zero, valueExtent)
+    renderEdges(self, rows, count, histogram, horizontal)
+    renderBars(self, rows, histogram, horizontal, zero, scale, low, span, valueExtent)
     self.baseline:MoveToFront()
     self.empty:MoveToFront()
     self:_RenderHover()
