@@ -12,7 +12,9 @@ for name, callbacks in pairs(events) do
     }
 end
 local function emit(name, payload)
-    for _, callback in pairs(events[name]) do callback(payload) end
+    for _, callback in pairs(events[name]) do
+        callback(payload)
+    end
 end
 local focus = { configName = "WORLDMAP_FOCUS", value = 0 }
 var = { VarClient = { WORLDMAP_FOCUS = focus } }
@@ -21,13 +23,21 @@ ui = { Interfaces = {}, Layer = {} }
 function ui.Layer.new(parent, category, dynamic)
     local root = Interfaces.component({ parent = parent, children = {}, hidden = false }, parent, category, dynamic)
     function root:Destroy()
-        for _, child in ipairs(self.children) do child:Destroy() end
+        for _, child in ipairs(self.children) do
+            child:Destroy()
+        end
         self.destroyed = true
     end
     return root
 end
-local area = Interfaces.component({ interfaceID = 1477, staticID = 61,
-    width = 1000, height = 700, visibleGlobal = true, children = {} })
+local area = Interfaces.component({
+    interfaceID = 1477,
+    staticID = 61,
+    width = 1000,
+    height = 700,
+    visibleGlobal = true,
+    children = {},
+})
 local Components = require("src/core/components")
 local WorldMap = require("src/core/world_map")
 local root = Components.new(ui.Layer, area, { categoryID = "auto" })
@@ -67,8 +77,10 @@ Components.setHidden(replacement, false)
 do
     -- Native UI outlives temporary Lua handles to it. The suspension registry
     -- must retain identity metadata, not depend on one handle remaining alive.
-    local alias = setmetatable({}, { __index = replacement,
-        __newindex = function(_, key, value) replacement[key] = value end })
+    local alias = setmetatable(
+        {},
+        { __index = replacement, __newindex = function(_, key, value) replacement[key] = value end }
+    )
     WorldMap.track(alias)
 end
 WorldMap.untrack(replacement)
@@ -86,8 +98,12 @@ transient:Destroy()
 local getComponent = ui.Interfaces.GetComponent
 local staleLookups = 0
 ui.Interfaces.GetComponent = function(interfaces, interfaceID, staticID, category, dynamic)
-    if interfaceID == area.interfaceID and staticID == area.staticID
-        and category == categoryID and dynamic == dynamicID then
+    if
+        interfaceID == area.interfaceID
+        and staticID == area.staticID
+        and category == categoryID
+        and dynamic == dynamicID
+    then
         staleLookups = staleLookups + 1
     end
     return getComponent(interfaces, interfaceID, staticID, category, dynamic)
