@@ -9,36 +9,61 @@ local rootInterfaceID
 
 -- Resolve native size anchors on access, including after an ancestor changes size.
 local function component(parent)
-    local value = { parent = parent, interfaceID = parent == nil and rootInterfaceID or nil,
-        x = 0, y = 0, hidden = false, subscriptions = {},
-        opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end }, cursorConfig = {} }
-    setmetatable(value, { __index = function(self, key)
-        if key == "width" then return (self.w or 0) + (parent and parent.width or 0) * (self.wa or 0) end
-        if key == "height" then return (self.h or 0) + (parent and parent.height or 0) * (self.ha or 0) end
-    end })
-    function value:SetPos(x, y) self.x, self.y = x, y end
+    local value = {
+        parent = parent,
+        interfaceID = parent == nil and rootInterfaceID or nil,
+        x = 0,
+        y = 0,
+        hidden = false,
+        subscriptions = {},
+        opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
+        cursorConfig = {},
+    }
+    setmetatable(value, {
+        __index = function(self, key)
+            if key == "width" then return (self.w or 0) + (parent and parent.width or 0) * (self.wa or 0) end
+            if key == "height" then return (self.h or 0) + (parent and parent.height or 0) * (self.ha or 0) end
+        end,
+    })
+    function value:SetPos(x, y)
+        self.x, self.y = x, y
+    end
     function value:SetY(y) self.y = y end
-    function value:SetSize(w, h, wa, ha) self.w, self.h, self.wa, self.ha = w, h, wa, ha end
-    function value:SetWidth(w, wa) self.w, self.wa = w, wa end
-    function value:SetHeight(h, ha) self.h, self.ha = h, ha end
-    function value:SetScrollSize(w, h) self.scrollWidth, self.scrollHeight = w, h end
-    function value:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
+    function value:SetSize(w, h, wa, ha)
+        self.w, self.h, self.wa, self.ha = w, h, wa, ha
+    end
+    function value:SetWidth(w, wa)
+        self.w, self.wa = w, wa
+    end
+    function value:SetHeight(h, ha)
+        self.h, self.ha = h, ha
+    end
+    function value:SetScrollSize(w, h)
+        self.scrollWidth, self.scrollHeight = w, h
+    end
+    function value:SetScrollPos(x, y)
+        self.scrollX, self.scrollY = x, y
+    end
     function value:Subscribe(hook, name, callback) self.subscriptions[hook] = callback or name end
     function value:Unsubscribe(hook) self.subscriptions[hook] = nil end
     function value:MoveToFront() self.raised = (self.raised or 0) + 1 end
-    function value:MoveToBack() end
+    function value.MoveToBack() end
     function value:Destroy() self.destroyed = true end
     return Interfaces.component(value, parent)
 end
 
 local enum = setmetatable({}, { __index = function(_, key) return key end })
 ui = {
-    Layer = { new = component }, Sprite = { new = component },
-    Text = { new = component }, Rectangle = { new = component },
-    Hook = enum, AlignMode = enum,
+    Layer = { new = component },
+    Sprite = { new = component },
+    Text = { new = component },
+    Rectangle = { new = component },
+    Hook = enum,
+    AlignMode = enum,
 }
 id = {
-    Sprite = enum, Font = enum,
+    Sprite = enum,
+    Font = enum,
     VarPlayer = { TOPLEVEL_V2_CUSTOMIZATION_LOCK = 11, TOPLEVEL_V2_SKINS_VARP = 12, TOPLEVEL_V2_TRANSPARENCY = 13 },
 }
 local font = {
@@ -63,20 +88,28 @@ Event = {
 }
 local lockValue, transparencyValue = 0, 0
 local classicValue = 0
-var = { VarPlayer = {
-    TOPLEVEL_V2_CUSTOMIZATION_LOCK = setmetatable({}, { __index = function() return lockValue end }),
-    TOPLEVEL_V2_TRANSPARENCY = setmetatable({}, { __index = function() return transparencyValue end }),
-    TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, { __index = function(_, key)
-        if key == "value" then return classicValue end
-    end }),
-} }
+var = {
+    VarPlayer = {
+        TOPLEVEL_V2_CUSTOMIZATION_LOCK = setmetatable({}, { __index = function() return lockValue end }),
+        TOPLEVEL_V2_TRANSPARENCY = setmetatable({}, { __index = function() return transparencyValue end }),
+        TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, {
+            __index = function(_, key)
+                if key == "value" then return classicValue end
+            end,
+        }),
+    },
+}
 local function listening()
     local count = 0
-    for _ in pairs(varCallbacks) do count = count + 1 end
+    for _ in pairs(varCallbacks) do
+        count = count + 1
+    end
     return count
 end
 local function transmit(varID)
-    for _, callback in pairs(varCallbacks) do callback({ var = { id = varID } }) end
+    for _, callback in pairs(varCallbacks) do
+        callback({ var = { id = varID } })
+    end
 end
 
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
@@ -101,7 +134,9 @@ parent:SetSize(1000, 800)
 local seenLock, seenTransparency, lockCalls, transparencyCalls = nil, nil, 0, 0
 expect(listening(), 0, "nothing listens before the first watcher")
 lockValue, transparencyValue = 1, 51
-NativeInterfaceSettings.watchLock("a", function(locked) seenLock, lockCalls = locked, lockCalls + 1 end)
+NativeInterfaceSettings.watchLock("a", function(locked)
+    seenLock, lockCalls = locked, lockCalls + 1
+end)
 expect(listening(), 1, "the first watcher subscribes to variable updates")
 expect(seenLock, true, "watching reports the current lock at once")
 NativeInterfaceSettings.watchTransparency("b", function(transparency)
@@ -130,7 +165,10 @@ lockValue, transparencyValue = 0, 0
 -- A window following both settings fades its background and freezes its frame. The lock
 -- is followed by default.
 local window = Window.new(parent, {
-    title = "Settings", width = 400, height = 300, resizable = true,
+    title = "Settings",
+    width = 400,
+    height = 300,
+    resizable = true,
     useNativeTransparency = true,
 })
 expect(window.background.alpha, 1, "opaque while the slider is at zero")
@@ -171,7 +209,11 @@ expect(listening(), 0, "destroying a plain window stops listening")
 
 -- A window that opts out of the lock ignores both settings entirely.
 local unlocked = Window.new(parent, {
-    title = "Unlocked", width = 300, height = 200, resizable = true, respectInterfaceLock = false,
+    title = "Unlocked",
+    width = 300,
+    height = 200,
+    resizable = true,
+    respectInterfaceLock = false,
 })
 expect(listening(), 0, "an opted-out window does not listen")
 expect(unlocked.background.alpha, nil, "an opted-out window never touches its background alpha")
@@ -190,8 +232,13 @@ expect(listening(), 0, "destroying the window releases its nested panel")
 -- A panel scales both surfaces' own alpha by the slider and refuses Alt dragging
 -- and resizing while locked.
 local panel = Panel.new(parent, {
-    width = 300, height = 200, resizable = true, backgroundAlpha = 0.5,
-    popout = true, popoutBackgroundAlpha = 0.8, overlayParent = parent,
+    width = 300,
+    height = 200,
+    resizable = true,
+    backgroundAlpha = 0.5,
+    popout = true,
+    popoutBackgroundAlpha = 0.8,
+    overlayParent = parent,
     useNativeTransparency = true,
 })
 expect(panel.dock.background.alpha, 0.5, "dock keeps its own alpha at zero transparency")
@@ -224,7 +271,10 @@ expect(listening(), 0, "destroying the panel stops listening")
 -- A panel that opts out of the lock can still be moved and resized.
 lockValue = 1
 local unlockedPanel = Panel.new(parent, {
-    width = 300, height = 200, resizable = true, respectInterfaceLock = false,
+    width = 300,
+    height = 200,
+    resizable = true,
+    respectInterfaceLock = false,
 })
 expect(listening(), 0, "an opted-out panel does not listen")
 expect(unlockedPanel.dockResize.enabled, true, "an opted-out panel stays resizable")
@@ -240,10 +290,13 @@ lockValue = 0
 local transparencyVar = var.VarPlayer.TOPLEVEL_V2_TRANSPARENCY
 id.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = -13
 var.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = setmetatable({
-    isVarBit = true, baseVar = { id = 12 },
-}, { __index = function(_, key)
-    if key == "value" then return transparencyValue end
-end })
+    isVarBit = true,
+    baseVar = { id = 12 },
+}, {
+    __index = function(_, key)
+        if key == "value" then return transparencyValue end
+    end,
+})
 package.loaded["src/core/native_interface_settings"] = nil
 package.loaded["src/window"] = nil
 local BitSettings = require("src/core/native_interface_settings")
@@ -252,8 +305,11 @@ lockValue, transparencyValue = 0, 51
 local bitCalls = 0
 BitSettings.watchTransparency("bit", function() bitCalls = bitCalls + 1 end)
 local bitWindow = BitWindow.new(parent, {
-    title = "Varbit", width = 300, height = 200,
-    resizable = true, useNativeTransparency = true,
+    title = "Varbit",
+    width = 300,
+    height = 200,
+    resizable = true,
+    useNativeTransparency = true,
 })
 expect(bitCalls, 1, "a varbit watcher reads the current transparency")
 expect(bitWindow.background.alpha, 0.8, "native-following window reads the transparency varbit")
@@ -282,14 +338,16 @@ for _, name in ipairs({ "src/core/native_interface_settings", "src/window", "src
 end
 local MissingSettings = require("src/core/native_interface_settings")
 local MissingWindow = require("src/window")
-local MissingPanel = require("src/panel")
 local called = false
 MissingSettings.watchTransparency("c", function() called = true end)
 expect(listening(), 0, "an unknown variable is not listened for")
 expect(called, false, "an unknown variable never calls back")
 transparencyValue, lockValue = 255, 1
 local unaffected = MissingWindow.new(parent, {
-    title = "Missing", width = 300, height = 200, resizable = true,
+    title = "Missing",
+    width = 300,
+    height = 200,
+    resizable = true,
     useNativeTransparency = true,
 })
 expect(unaffected.background.alpha, nil, "without the transparency variable the background alpha is untouched")
@@ -311,16 +369,31 @@ local otherInterface = component()
 rootInterfaceID = nil
 otherInterface:SetSize(1000, 800)
 local orphanWindow = LiveWindow.new(parent, {
-    title = "Orphan", width = 300, height = 200, resizable = true, useNativeTransparency = true,
+    title = "Orphan",
+    width = 300,
+    height = 200,
+    resizable = true,
+    useNativeTransparency = true,
 })
 local orphanPanel = LivePanel.new(parent, {
-    width = 300, height = 200, resizable = true, useNativeTransparency = true,
+    width = 300,
+    height = 200,
+    resizable = true,
+    useNativeTransparency = true,
 })
 local splitPanel = LivePanel.new(parent, {
-    width = 300, height = 200, popout = true, overlayParent = otherInterface, useNativeTransparency = true,
+    width = 300,
+    height = 200,
+    popout = true,
+    overlayParent = otherInterface,
+    useNativeTransparency = true,
 })
 local splitOverlay = LivePanel.new(otherInterface, {
-    width = 300, height = 200, popout = true, overlayParent = parent, useNativeTransparency = true,
+    width = 300,
+    height = 200,
+    popout = true,
+    overlayParent = parent,
+    useNativeTransparency = true,
 })
 Interfaces.unload(parent.interfaceID)
 transparencyValue = 102

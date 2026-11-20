@@ -59,7 +59,9 @@ local function refresh(setting)
     local value = setting.read()
     if value == setting.value then return end
     setting.value = value
-    for _, callback in pairs(setting.watchers) do callback(value) end
+    for _, callback in pairs(setting.watchers) do
+        callback(value)
+    end
 end
 
 local function onVarTransmit(event)
