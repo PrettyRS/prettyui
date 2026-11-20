@@ -206,8 +206,7 @@ function AchievementPopup.new(parent, options)
         elseif self.elapsedTicks <= FADE_IN_TICKS + HOLD_TICKS then
             Components.setHidden(self.flash, true)
         elseif self.elapsedTicks <= TOTAL_TICKS then
-            self:_SetVisualAlpha(1 -
-                (self.elapsedTicks - FADE_IN_TICKS - HOLD_TICKS) / FADE_OUT_TICKS)
+            self:_SetVisualAlpha(1 - (self.elapsedTicks - FADE_IN_TICKS - HOLD_TICKS) / FADE_OUT_TICKS)
         else
             local onComplete = self.onComplete
             self:Destroy()
@@ -220,8 +219,7 @@ end
 
 function AchievementPopup.show(options)
     options = options or {}
-    local parent = options.parent or
-        ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
+    local parent = options.parent or ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
     if parent == nil then return nil end
     return AchievementPopup.new(parent, options)
 end
