@@ -48,7 +48,6 @@ function ItemSlot:_UpdateDisabled()
     if visible then self.disabledOverlay:MoveToFront() end
 end
 
-
 function ItemSlot:_CreateItemSprite()
     if self.item then self.item:Destroy() end
     self.item = nil
@@ -131,12 +130,7 @@ function ItemSlot.new(parent, object, options)
 
     self.interfaceID = parent.interfaceID
     self.root = Components.new(ui.Layer, parent, options)
-    self.root:SetPos(
-        options.x or 0,
-        options.y or 0,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
+    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(SLOT_SIZE, SLOT_SIZE)
     self.root.clickthrough = options.clickthrough ~= false
     Wheel.bind(self.root, options)
