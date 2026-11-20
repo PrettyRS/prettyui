@@ -165,7 +165,9 @@ local COMPONENTS = {
 local function copyTable(value)
     local copied = {}
     if type(value) == "table" then
-        for key, entry in pairs(value) do copied[key] = entry end
+        for key, entry in pairs(value) do
+            copied[key] = entry
+        end
     end
     return copied
 end
@@ -214,8 +216,12 @@ local function addSingle(owner, spec, args)
     local component = loadComponent(spec)
     local placed = place(owner, component, spec, args, args[spec.optionsIndex])
     local result = Layout.manage(owner, construct(component, spec, owner.content, args, placed), placed)
-    if spec.refreshRowBackgrounds and owner.rowBackgroundColours
-        and #owner.rowBackgroundColours > 0 and owner.RefreshRowBackgrounds then
+    if
+        spec.refreshRowBackgrounds
+        and owner.rowBackgroundColours
+        and #owner.rowBackgroundColours > 0
+        and owner.RefreshRowBackgrounds
+    then
         owner:RefreshRowBackgrounds()
     end
     if spec.bindFlow then return result:BindFlow(owner) end
@@ -264,31 +270,21 @@ local function addPaired(container, spec, args, getSides, pair)
     local results = {}
     for index, side in ipairs(sides) do
         local sideArgs = pairedArgs(spec, args, function() return proxy end)
-        sideArgs[spec.optionsIndex] = pairedOptions(
-            spec,
-            args[spec.optionsIndex],
-            function() return proxy end
-        )
+        sideArgs[spec.optionsIndex] = pairedOptions(spec, args[spec.optionsIndex], function() return proxy end)
         results[index] = Components.withBatch(side.content, function()
-            local placed = place(
-                side.owner,
-                component,
-                spec,
-                sideArgs,
-                sideArgs[spec.optionsIndex]
-            )
-            local result = Layout.manage(
-                side.owner,
-                construct(component, spec, side.content, sideArgs, placed),
-                placed
-            )
+            local placed = place(side.owner, component, spec, sideArgs, sideArgs[spec.optionsIndex])
+            local result = Layout.manage(side.owner, construct(component, spec, side.content, sideArgs, placed), placed)
             if spec.bindFlow then result:BindFlow(side.owner) end
             return result
         end)
     end
     proxy = pair(container, results[1], results[2])
-    if spec.refreshRowBackgrounds and container.rowBackgroundColours
-        and #container.rowBackgroundColours > 0 and container.RefreshRowBackgrounds then
+    if
+        spec.refreshRowBackgrounds
+        and container.rowBackgroundColours
+        and #container.rowBackgroundColours > 0
+        and container.RefreshRowBackgrounds
+    then
         container:RefreshRowBackgrounds()
     end
     return proxy
@@ -306,9 +302,12 @@ function ContentMethods.installSingle(class, options)
         if isIncluded(spec, options, false) then
             class[spec.method] = function(self, ...)
                 local args = { ... }
-                return Components.withBatch(self.content, function()
-                    return addSingle(self, spec, args)
-                end)
+                return Components.withBatch(
+                    self.content,
+                    function()
+                        return addSingle(self, spec, args)
+                    end
+                )
             end
         end
     end

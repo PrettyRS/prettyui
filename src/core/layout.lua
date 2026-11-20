@@ -8,7 +8,9 @@ local DEFAULT_ROW_GAP = 8
 local function copyOptions(value)
     local copy = {}
     if type(value) == "table" then
-        for key, option in pairs(value) do copy[key] = option end
+        for key, option in pairs(value) do
+            copy[key] = option
+        end
     end
     return copy
 end
@@ -44,20 +46,7 @@ function Layout.configure(owner, options)
     owner._managedFlowEntries = {}
 end
 
-function Layout.place(owner, value, defaults)
-    defaults = defaults or {}
-    if owner._flowLayout == nil then Layout.configure(owner) end
-
-    local layout = owner._flowLayout
-    local options = copyOptions(value)
-    if options._onScrollWheel == nil then options._onScrollWheel = owner._onScrollWheel end
-    if options._scrollController == nil then options._scrollController = owner._scroll end
-    local width = options._flowWidth or options.width or options.size or defaults.width or 0
-    local height = options.height or options.size or defaults.height or 0
-    local gap = options.marginBottom
-    if gap == nil then gap = defaults.gap or layout.rowGap end
-    options._flowGap = gap
-
+local function placePosition(layout, options, width, height, gap, defaults)
     local absolute = options.absolute == true or options.y ~= nil
     options._flowAbsolute = absolute
     options._flowExplicitX = options.x ~= nil
@@ -87,23 +76,44 @@ function Layout.place(owner, value, defaults)
         }
         layout.hasItems = true
     end
+    return absolute
+end
 
-    if options.width == nil then
-        if defaults.fillWidth == true then
-            options.width = -(layout.paddingLeft + layout.paddingRight)
-            options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
-            options._flowFillWidth = options.inline == true and options.widthAnchor == 1.0
-            if options._flowFillWidth then
-                options.width = -(options.x + layout.paddingRight)
-                if not absolute and owner.contentWidth ~= nil then
-                    layout.row.nextX = options.x + math.max(0, owner.contentWidth + options.width) +
-                        (options.columnGap or layout.columnGap)
-                end
-            end
-        else
-            options.width = width
-        end
+local function placeWidth(owner, options, defaults, layout, absolute, width)
+    if options.width ~= nil then return end
+    if defaults.fillWidth ~= true then
+        options.width = width
+        return
     end
+    options.width = -(layout.paddingLeft + layout.paddingRight)
+    options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
+    options._flowFillWidth = options.inline == true and options.widthAnchor == 1.0
+    if options._flowFillWidth then
+        options.width = -(options.x + layout.paddingRight)
+    end
+    if options._flowFillWidth and not absolute and owner.contentWidth ~= nil then
+        layout.row.nextX = options.x
+            + math.max(0, owner.contentWidth + options.width)
+            + (options.columnGap or layout.columnGap)
+    end
+end
+
+function Layout.place(owner, value, defaults)
+    defaults = defaults or {}
+    if owner._flowLayout == nil then Layout.configure(owner) end
+
+    local layout = owner._flowLayout
+    local options = copyOptions(value)
+    if options._onScrollWheel == nil then options._onScrollWheel = owner._onScrollWheel end
+    if options._scrollController == nil then options._scrollController = owner._scroll end
+    local width = options._flowWidth or options.width or options.size or defaults.width or 0
+    local height = options.height or options.size or defaults.height or 0
+    local gap = options.marginBottom
+    if gap == nil then gap = defaults.gap or layout.rowGap end
+    options._flowGap = gap
+
+    local absolute = placePosition(layout, options, width, height, gap, defaults)
+    placeWidth(owner, options, defaults, layout, absolute, width)
     if options.height == nil then options.height = height end
 
     if options._flowBreakAfter and not absolute then finalizeRow(layout) end
@@ -172,8 +182,7 @@ local function reflow(owner)
                 local width = setFlowPosition(owner, root, placement, x, y)
                 layout.row.height = math.max(layout.row.height, (placement.offsetY or 0) + height)
                 layout.row.gap = math.max(layout.row.gap, gap)
-                layout.row.nextX = x + math.max(0, width) +
-                    (placement.columnGap or layout.columnGap)
+                layout.row.nextX = x + math.max(0, width) + (placement.columnGap or layout.columnGap)
                 contentBottom = math.max(contentBottom, y + height)
             else
                 finalizeRow(layout)
@@ -185,8 +194,7 @@ local function reflow(owner)
                     y = y,
                     height = height,
                     gap = gap,
-                    nextX = x + math.max(0, width) +
-                        (placement.columnGap or layout.columnGap),
+                    nextX = x + math.max(0, width) + (placement.columnGap or layout.columnGap),
                 }
                 layout.hasItems = true
                 contentBottom = math.max(contentBottom, y + height)
@@ -198,10 +206,7 @@ local function reflow(owner)
     end
 
     if owner.SetContentHeight then
-        owner:SetContentHeight(math.max(
-            layout.minimumContentHeight,
-            contentBottom + layout.paddingBottom
-        ))
+        owner:SetContentHeight(math.max(layout.minimumContentHeight, contentBottom + layout.paddingBottom))
     end
 end
 
@@ -247,12 +252,10 @@ function Layout.resizeRect(owner, component, x, y, width, height)
     for _, entry in ipairs(owner._managedFlowEntries or {}) do
         if entry.component == component then
             local placement = entry.placement
-            if not placement._flowAbsolute then
-                if placement.inline and hasRow then
-                    placement.offsetY = (placement.offsetY or 0) + dy
-                else
-                    placement._flowMarginTop = (placement._flowMarginTop or 0) + dy
-                end
+            if not placement._flowAbsolute and placement.inline and hasRow then
+                placement.offsetY = (placement.offsetY or 0) + dy
+            elseif not placement._flowAbsolute then
+                placement._flowMarginTop = (placement._flowMarginTop or 0) + dy
             end
             placement.x, placement.y = x, y
             placement.xAnchor, placement.yAnchor = 0, 0
@@ -270,15 +273,18 @@ function Layout.resizeRect(owner, component, x, y, width, height)
         end
     end
     root:SetPos(x, y)
-    if widthChanged then root:SetSize(width, height) else root:SetHeight(height) end
+    if widthChanged then
+        root:SetSize(width, height)
+    else
+        root:SetHeight(height)
+    end
     reflow(owner)
     refreshRowBackgrounds(owner)
 end
 
 function Layout.destroyManaged(owner)
     local entries = owner._managedFlowEntries or {}
-    local loaded = ui.Interfaces:GetInterface(owner._scroll and owner._scroll.interfaceID
-        or owner.interfaceID) ~= nil
+    local loaded = ui.Interfaces:GetInterface(owner._scroll and owner._scroll.interfaceID or owner.interfaceID) ~= nil
     owner._destroyingManagedFlow = true
     for index = #entries, 1, -1 do
         local entry = entries[index]
