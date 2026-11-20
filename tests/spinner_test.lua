@@ -6,8 +6,12 @@ end
 
 local function component(parent, categoryID, dynamicID)
     local value = {}
-    function value:SetPos(x, y) self.x, self.y = x, y end
-    function value:SetSize(width, height) self.width, self.height = width, height end
+    function value:SetPos(x, y)
+        self.x, self.y = x, y
+    end
+    function value:SetSize(width, height)
+        self.width, self.height = width, height
+    end
     function value:Destroy() self.destroyed = true end
     return Interfaces.component(value, parent, categoryID, dynamicID)
 end
@@ -15,16 +19,20 @@ end
 ui = { Sprite = { new = component }, Layer = { new = component } }
 id = { Sprite = setmetatable({}, { __index = function(_, name) return name end }) }
 local subscribers = {}
-Event = { Logic = {
-    Subscribe = function(name, callback) subscribers[name] = callback end,
-    Unsubscribe = function(name) subscribers[name] = nil end,
-} }
+Event = {
+    Logic = {
+        Subscribe = function(name, callback) subscribers[name] = callback end,
+        Unsubscribe = function(name) subscribers[name] = nil end,
+    },
+}
 package.loaded["src/tooltip"] = { bind = function() end, unbind = function() end }
 package.loaded["src/core/wheel"] = { bind = function() end }
 
 local function advance(updates)
     for _ = 1, updates do
-        for _, callback in pairs(subscribers) do callback() end
+        for _, callback in pairs(subscribers) do
+            callback()
+        end
     end
 end
 
