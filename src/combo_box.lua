@@ -58,6 +58,20 @@ function ComboBox.getSize(options)
     return options.width or DEFAULT_WIDTH, options.height or DEFAULT_HEIGHT
 end
 
+local function applyEntryStyle(root, options)
+    root.entryText.font = options.font or id.Font.MUSEO_SANS_15PT_REGULAR
+    root.entryText.rgba = options.colour or options.color or DEFAULT_TEXT_COLOUR
+    root.entryText.isShadowed = options.shadowed ~= false
+    root.mouseoverForegroundRGBA = options.hoverTextColour or options.hoverTextColor or root.entryText.rgba
+    root.mouseoverBackgroundRGBA = options.hoverColour or options.hoverColor or Palette.HOVER
+    root.selectedForegroundRGBA = options.selectedTextColour or options.selectedTextColor or root.entryText.rgba
+    root.selectedBackgroundRGBA = options.selectedColour or options.selectedColor or Palette.SELECTED
+    root.disabledForegroundRGBA = options.disabledTextColour or options.disabledTextColor or Palette.DISABLED_TEXT
+    root.selectionHighlightRGBA = options.selectionColour or options.selectionColor or Palette.SELECTED
+    root.caretRGBA = options.caretColour or options.caretColor or Palette.CARET
+    root.errorCaretRGBA = options.errorCaretColour or options.errorCaretColor or root.caretRGBA
+end
+
 function ComboBox.new(parent, options)
     options = options or {}
     local _, hasOrder = orderedEntries(options.entries or options.choices or {})
@@ -84,27 +98,7 @@ function ComboBox.new(parent, options)
     self.root.dropdownMaxVisibleEntries = options.maxVisibleEntries or options.dropdownMaxVisibleEntries or 8
     self.root.contentMargin = options.contentMargin or ui.Margin.new(8, 0, 8, 0)
     self.root.headerMargin = options.headerMargin or ui.Margin.new(8, 0, 8, 0)
-    self.root.entryText.font = options.font or id.Font.MUSEO_SANS_15PT_REGULAR
-    self.root.entryText.rgba = options.colour or options.color or DEFAULT_TEXT_COLOUR
-    self.root.entryText.isShadowed = options.shadowed ~= false
-    self.root.mouseoverForegroundRGBA = options.hoverTextColour
-        or options.hoverTextColor
-        or self.root.entryText.rgba
-    self.root.mouseoverBackgroundRGBA = options.hoverColour or options.hoverColor or Palette.HOVER
-    self.root.selectedForegroundRGBA = options.selectedTextColour
-        or options.selectedTextColor
-        or self.root.entryText.rgba
-    self.root.selectedBackgroundRGBA = options.selectedColour or options.selectedColor or Palette.SELECTED
-    self.root.disabledForegroundRGBA = options.disabledTextColour
-        or options.disabledTextColor
-        or Palette.DISABLED_TEXT
-    self.root.selectionHighlightRGBA = options.selectionColour
-        or options.selectionColor
-        or Palette.SELECTED
-    self.root.caretRGBA = options.caretColour or options.caretColor or Palette.CARET
-    self.root.errorCaretRGBA = options.errorCaretColour
-        or options.errorCaretColor
-        or self.root.caretRGBA
+    applyEntryStyle(self.root, options)
     self.root.enabled = not self.disabled
     self.root.clickthrough = self.disabled
     Wheel.bind(self.root, options)
@@ -176,14 +170,15 @@ function ComboBox:SetEntries(entries, selectedID)
         -- Some client builds interpret selectedID as the one-based position
         -- of the label after sorting instead of as the map's explicit ID.
         table.sort(labels)
+        local fallbackResult
         for position, label in ipairs(labels) do
             if label == selectedLabel then
-                local fallbackResult = self.root:SetEntries(entriesMap, position)
-                if self.root.hasSelection and self.root.selectedID == selectedID then
-                    return fallbackResult
-                end
+                fallbackResult = self.root:SetEntries(entriesMap, position)
                 break
             end
+        end
+        if self.root.hasSelection and self.root.selectedID == selectedID then
+            return fallbackResult
         end
     end
 

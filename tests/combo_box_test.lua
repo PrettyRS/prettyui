@@ -2,8 +2,7 @@ local Interfaces = require("tests/interface_fixture")
 
 local function expect(actual, expected, message)
     if actual ~= expected then
-        error(message .. ": expected " .. tostring(expected)
-            .. ", got " .. tostring(actual))
+        error(message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
     end
 end
 
@@ -16,9 +15,9 @@ local function comboField(parent, categoryID, dynamicID)
         selectedID = -1,
         selectedLabel = "",
     }
-    function result:SetPos() end
-    function result:SetSize() end
-    function result:Subscribe() end
+    function result.SetPos() end
+    function result.SetSize() end
+    function result.Subscribe() end
     function result:Clear()
         self.entries = {}
         self.entryLabels = {}
@@ -76,7 +75,10 @@ local function comboField(parent, categoryID, dynamicID)
     function result:Select(entryID, triggerEvents)
         local selectedEntry
         for _, entry in ipairs(self.entries) do
-            if entry.id == entryID then selectedEntry = entry break end
+            if entry.id == entryID then
+                selectedEntry = entry
+                break
+            end
         end
         if selectedEntry == nil then return false end
         self.hasSelection = true
@@ -85,7 +87,7 @@ local function comboField(parent, categoryID, dynamicID)
         self.lastSelectTriggerEvents = triggerEvents
         return true
     end
-    function result:Destroy() end
+    function result.Destroy() end
     return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
@@ -162,11 +164,12 @@ local orderedCombo = ComboBox.new(Interfaces.component({}), {
 expect(orderedCombo.ordered, true, "ordered entries use the custom combobox")
 expect(orderedCombo.options.selectedID, 20, "custom combobox receives constructor options")
 
-local validOrder, orderError = pcall(function()
-    ComboBox.new(Interfaces.component({}), { entries = { { label = "Invalid", order = 1.5 } } })
-end)
+local validOrder, orderError = pcall(
+    function()
+        ComboBox.new(Interfaces.component({}), { entries = { { label = "Invalid", order = 1.5 } } })
+    end
+)
 expect(validOrder, false, "fractional entry order is rejected")
-expect(orderError:find("must be an integer", 1, true) ~= nil, true,
-    "invalid entry order explains the requirement")
+expect(orderError:find("must be an integer", 1, true) ~= nil, true, "invalid entry order explains the requirement")
 
 print("combo_box_test: ok")
