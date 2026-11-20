@@ -92,7 +92,8 @@ expect(panel.dockRowBackgrounds[2].height, 44, "button backdrop fills bottom hal
 expect(
     panel.dockRowBackgrounds[1].height + panel.dockRowBackgrounds[2].height,
     88,
-    "edge-to-edge row backdrops cover the full panel content height")
+    "edge-to-edge row backdrops cover the full panel content height"
+)
 expect(panel.dockRowBackgrounds[1].widthAnchor, 1.0, "backdrop fills panel width")
 expect(panel.dockRowBackgrounds[1].movedToBack, true, "backdrop stays behind controls")
 
