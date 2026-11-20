@@ -265,11 +265,10 @@ function Dialog.new(parent, options)
     })
 
     self.window = window
-    local dialog = self
     local innerDestroy = window.Destroy
-    function window:Destroy()
-        pop(dialog, true)
-        innerDestroy(self)
+    function window.Destroy(windowSelf)
+        pop(self, true)
+        innerDestroy(windowSelf)
     end
 
     local stack = stackOf(parent)
