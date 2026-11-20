@@ -87,8 +87,8 @@ def main() -> int:
 
     failed = False
     for command in (
-        ["stylua", "--config-path", "stylua.toml", "--check", "--verify"],
-        ["luacheck", "--config", ".luacheckrc", "--codes"],
+        ["stylua", "--config-path", "stylua.toml", "--check", "--verify", "--color", "Never"],
+        ["luacheck", "--config", ".luacheckrc", "--codes", "--no-color"],
     ):
         try:
             result = subprocess.run([*command, "--", *files], cwd=ROOT, check=False)
