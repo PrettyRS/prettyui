@@ -4,18 +4,73 @@ local rect = Fixture.rect
 
 -- One case per layout shape, not every native window using that shape.
 local hosts = {
-    { label = "single root", name = "ABILITY_WINDOW_MELEE", frame = 147, owner = 1460, static = 11,
-        rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_MELEE__MAIN_LAYER", width = 112, height = 292 },
-    { label = "centered root", name = "LORE_WINDOW", frame = 125, owner = 662, static = 0,
-        rootName = "LORE_STATS_SIDE__CONTENT_LAYER", width = 286, height = 292, centered = true, icon = 18787 },
-    { label = "compact frame", name = "TELEMETRY_WINDOW", frame = 343, owner = 1588, static = 0,
-        rootName = "TELEMETRY__TELEMETRY_WINDOW_CONTENT", width = 129, height = 276, top = 4 },
-    { label = "existing tab row", name = "GROUP_LIST_WINDOW", frame = 523, owner = 1519, static = 11,
-        rootName = "GROUP_CHILD__BASE", width = 238, height = 264, row = true },
-    { label = "listener sibling", name = "PLUGIN_CONTENT_WINDOW", frame = 567, owner = 1604, static = 3,
-        rootName = "TOPLEVEL_V2_PLUGIN_CONTENT__MAIN_LAYER", width = 371, height = 337, listener = true },
-    { label = "multiple content roots", name = "QUESTLIST_WINDOW", frame = 376, owner = 190, static = 0,
-        rootName = "QUESTLIST_V4__LIST_MAIN", width = 371, height = 337, quest = true, icon = 32077 },
+    {
+        label = "single root",
+        name = "ABILITY_WINDOW_MELEE",
+        frame = 147,
+        owner = 1460,
+        static = 11,
+        rootName = "TOPLEVEL_V2_WINDOW_ABILITY_BOOK_MELEE__MAIN_LAYER",
+        width = 112,
+        height = 292,
+    },
+    {
+        label = "centered root",
+        name = "LORE_WINDOW",
+        frame = 125,
+        owner = 662,
+        static = 0,
+        rootName = "LORE_STATS_SIDE__CONTENT_LAYER",
+        width = 286,
+        height = 292,
+        centered = true,
+        icon = 18787,
+    },
+    {
+        label = "compact frame",
+        name = "TELEMETRY_WINDOW",
+        frame = 343,
+        owner = 1588,
+        static = 0,
+        rootName = "TELEMETRY__TELEMETRY_WINDOW_CONTENT",
+        width = 129,
+        height = 276,
+        top = 4,
+    },
+    {
+        label = "existing tab row",
+        name = "GROUP_LIST_WINDOW",
+        frame = 523,
+        owner = 1519,
+        static = 11,
+        rootName = "GROUP_CHILD__BASE",
+        width = 238,
+        height = 264,
+        row = true,
+    },
+    {
+        label = "listener sibling",
+        name = "PLUGIN_CONTENT_WINDOW",
+        frame = 567,
+        owner = 1604,
+        static = 3,
+        rootName = "TOPLEVEL_V2_PLUGIN_CONTENT__MAIN_LAYER",
+        width = 371,
+        height = 337,
+        listener = true,
+    },
+    {
+        label = "multiple content roots",
+        name = "QUESTLIST_WINDOW",
+        frame = 376,
+        owner = 190,
+        static = 0,
+        rootName = "QUESTLIST_V4__LIST_MAIN",
+        width = 371,
+        height = 337,
+        quest = true,
+        icon = 32077,
+    },
 }
 
 for index, spec in ipairs(hosts) do
@@ -26,14 +81,21 @@ for index, spec in ipairs(hosts) do
         local tabTop = spec.top or 16
         local bodyTop = spec.row and tabTop + 28 or tabTop
         host.frame:SetSize(spec.width + 8, spec.height + bodyTop + 4)
-        host.tabs:SetPos(4, tabTop); host.tabs:SetSize(spec.width, 28)
+        host.tabs:SetPos(4, tabTop)
+        host.tabs:SetSize(spec.width, 28)
         host.tabs.visible = spec.row == true
         scene.nodes[(1477 << 16) | (spec.frame + 7)]:SetPos(0, tabTop)
-        host.body:SetPos(4, bodyTop); host.body:SetSize(spec.width, spec.height)
-        host.scroll:SetPos(4, bodyTop); host.scroll:SetSize(spec.width, spec.height)
-        if spec.top then host.scroll:SetPos(0, 0); host.scroll:SetSize(host.frame.width, host.frame.height) end
+        host.body:SetPos(4, bodyTop)
+        host.body:SetSize(spec.width, spec.height)
+        host.scroll:SetPos(4, bodyTop)
+        host.scroll:SetSize(spec.width, spec.height)
+        if spec.top then
+            host.scroll:SetPos(0, 0)
+            host.scroll:SetSize(host.frame.width, host.frame.height)
+        end
         local edit = scene.nodes[(1477 << 16) | (spec.frame + 3)]
-        edit:SetPos(4, bodyTop); edit:SetSize(spec.width, spec.height)
+        edit:SetPos(4, bodyTop)
+        edit:SetSize(spec.width, spec.height)
         local rootY = spec.quest and 30 or 0
         local root = scene.node(spec.owner, spec.static, host.body, 0, rootY, spec.width, spec.height - rootY)
         root:SetSize(0, -rootY, 1, 1)
@@ -59,7 +121,10 @@ for index, spec in ipairs(hosts) do
             local setSize, fail = controls.SetSize, true
             controls.SetSize = function(self, ...)
                 setSize(self, ...)
-                if fail then fail = false; error("second-root setter failure") end
+                if fail then
+                    fail = false
+                    error("second-root setter failure")
+                end
             end
             assert(not panel:DockTo(host.frame), "partial native writes must roll back")
             controls.SetSize = setSize
