@@ -18,7 +18,9 @@ local started = false
 
 local function copy(value)
     local result = {}
-    for i, key in ipairs(value or {}) do result[i] = key end
+    for i, key in ipairs(value or {}) do
+        result[i] = key
+    end
     return result
 end
 
@@ -26,15 +28,16 @@ local function binding(value)
     local result = copy(value)
     assert(#result <= 2, "A keybind supports at most two keys")
     for i, key in ipairs(result) do
-        assert(type(key) == "number" and GameKey.FromID(key) ~= nil,
-            "A keybind must contain GameKey values")
+        assert(type(key) == "number" and GameKey.FromID(key) ~= nil, "A keybind must contain GameKey values")
         assert(i == 1 or key ~= result[1], "A keybind cannot repeat a key")
     end
     return result
 end
 
 local function available(field)
-    return field and field.root and not field.disabled
+    return field
+        and field.root
+        and not field.disabled
         and ui.Interfaces:GetInterface(field.interfaceID) ~= nil
         and field.root.visibleGlobal
 end
@@ -43,10 +46,15 @@ function KeybindField.FormatValue(value)
     local labels = {}
     for i, key in ipairs(value or {}) do
         local name = GameKey.FromID(key)
-        if name == "CONTROL" then name = "Ctrl"
-        elseif name == "SHIFT" then name = "Shift"
-        elseif name == "ALT" then name = "Alt"
-        else name = name:gsub("^_", ""):gsub("_", " ") end
+        if name == "CONTROL" then
+            name = "Ctrl"
+        elseif name == "SHIFT" then
+            name = "Shift"
+        elseif name == "ALT" then
+            name = "Alt"
+        else
+            name = name:gsub("^_", ""):gsub("_", " ")
+        end
         labels[i] = name
     end
     return table.concat(labels, " + ")
@@ -60,8 +68,9 @@ function KeybindField.IsCapturing()
 end
 
 function KeybindField.IsDown(value)
-    if KeybindField.IsCapturing() or not value or #value == 0
-            or not Keyboard.IsAvailable() or Keyboard.IsBlocked() then return false end
+    if KeybindField.IsCapturing() or not value or #value == 0 or not Keyboard.IsAvailable() or Keyboard.IsBlocked() then
+        return false
+    end
     for _, key in ipairs(value) do
         if not Keyboard.IsGameKeyDown(key) then return false end
     end
@@ -151,9 +160,16 @@ function KeybindField.new(parent, options)
     self.root.clickthrough = true
 
     self.input = TextField.new(self.root, {
-        width = 0, height = 0, widthAnchor = 1, heightAnchor = 1,
-        stylesheetID = options.stylesheetID, inputSprite = options.inputSprite,
-        disabled = self.disabled, maxLength = 1, colour = 0, caretColour = 0,
+        width = 0,
+        height = 0,
+        widthAnchor = 1,
+        heightAnchor = 1,
+        stylesheetID = options.stylesheetID,
+        inputSprite = options.inputSprite,
+        disabled = self.disabled,
+        maxLength = 1,
+        colour = 0,
+        caretColour = 0,
         selectionColour = 0,
         onChange = function(_, reason)
             self.input:SetText("")
@@ -189,12 +205,20 @@ function KeybindField.new(parent, options)
     self.clearSprite:MoveToFront()
 
     local parentContext = Tooltip.getContext(parent)
-    self.tooltipContext = Tooltip.registerContext(self.root, parentContext and parentContext.parent or parent, function(target)
-        local x, y
-        if parentContext then x, y = parentContext.position(self.root)
-        else x, y = self.root.x, self.root.y end
-        return x + target.x, y + target.y
-    end, parentContext)
+    self.tooltipContext = Tooltip.registerContext(
+        self.root,
+        parentContext and parentContext.parent or parent,
+        function(target)
+            local x, y
+            if parentContext then
+                x, y = parentContext.position(self.root)
+            else
+                x, y = self.root.x, self.root.y
+            end
+            return x + target.x, y + target.y
+        end,
+        parentContext
+    )
     self.tooltip = Tooltip.attach(self.input.root, self.root, "change keybind", {
         followCursor = true,
         onMouseOver = function(tooltip)
@@ -205,8 +229,7 @@ function KeybindField.new(parent, options)
 
     local function overClear(x, y)
         local left, top = self.clearSprite.x, self.clearSprite.y
-        return x >= left and x < left + CLEAR_SIZE
-            and y >= top and y < top + CLEAR_SIZE
+        return x >= left and x < left + CLEAR_SIZE and y >= top and y < top + CLEAR_SIZE
     end
 
     local function hover(_, x, y, repeated)
@@ -226,9 +249,12 @@ function KeybindField.new(parent, options)
         return true
     end
     self.input.root:Subscribe(ui.Hook.ONMOUSEOVER, hover)
-    self.input.root:Subscribe(ui.Hook.ONMOUSEREPEAT, function(component, x, y)
-        return hover(component, x, y, true)
-    end)
+    self.input.root:Subscribe(
+        ui.Hook.ONMOUSEREPEAT,
+        function(component, x, y)
+            return hover(component, x, y, true)
+        end
+    )
     self.input.root:Subscribe(ui.Hook.ONMOUSELEAVE, function()
         if hovered == self then hovered = nil end
         self.hovered, self.clearHovered = false, false
@@ -269,7 +295,9 @@ function KeybindField:StartListening()
     if active == self then return end
     if active then active:CancelListening() end
     self.pending, self.held, self.ignored = {}, {}, {}
-    for _, key in ipairs(Keyboard.GetGameKeysDown()) do self.ignored[key] = true end
+    for _, key in ipairs(Keyboard.GetGameKeysDown()) do
+        self.ignored[key] = true
+    end
     self.releasing = false
     active = self
     self:_UpdateState()

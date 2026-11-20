@@ -4,26 +4,52 @@ local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 
+local function anchoredValue(value, parentSize, anchor)
+    return (value or 0) + (parentSize or 0) * (anchor or 0)
+end
+
 local function component(parent, categoryID, dynamicID)
-    local value = { parent = parent, hidden = false, subscriptions = {},
-        text = {}, containerSprite = {},
-        opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end }, cursorConfig = {} }
-    setmetatable(value, { __index = function(self, key)
-        if key == "width" then return (self.w or 0) + (parent and parent.width or 0) * (self.wa or 0) end
-        if key == "height" then return (self.h or 0) + (parent and parent.height or 0) * (self.ha or 0) end
-        if key == "x" then return (self._x or 0) + (parent and parent.width or 0) * (self.xa or 0) - self.width * (self.sxa or 0) end
-        if key == "y" then return (self._y or 0) + (parent and parent.height or 0) * (self.ya or 0) - self.height * (self.sya or 0) end
-        if key == "visibleGlobal" then return not self.hidden and (not parent or parent.visibleGlobal) end
-    end })
+    local value = {
+        parent = parent,
+        hidden = false,
+        subscriptions = {},
+        text = {},
+        containerSprite = {},
+        opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
+        cursorConfig = {},
+    }
+    setmetatable(value, {
+        __index = function(self, key)
+            if key == "width" then return anchoredValue(self.w, parent and parent.width, self.wa) end
+            if key == "height" then return anchoredValue(self.h, parent and parent.height, self.ha) end
+            if key == "x" then
+                return anchoredValue(self._x, parent and parent.width, self.xa) - self.width * (self.sxa or 0)
+            end
+            if key == "y" then
+                return anchoredValue(self._y, parent and parent.height, self.ya) - self.height * (self.sya or 0)
+            end
+            if key == "visibleGlobal" then return not self.hidden and (not parent or parent.visibleGlobal) end
+        end,
+    })
     function value:SetPos(x, y, xa, ya, sxa, sya)
         self._x, self._y, self.xa, self.ya, self.sxa, self.sya = x, y, xa, ya, sxa, sya
     end
     function value:SetY(y) self._y = y end
-    function value:SetSize(w, h, wa, ha) self.w, self.h, self.wa, self.ha = w, h, wa, ha end
-    function value:SetWidth(w, wa) self.w, self.wa = w, wa end
-    function value:SetHeight(h, ha) self.h, self.ha = h, ha end
-    function value:SetScrollSize(w, h) self.scrollWidth, self.scrollHeight = w, h end
-    function value:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
+    function value:SetSize(w, h, wa, ha)
+        self.w, self.h, self.wa, self.ha = w, h, wa, ha
+    end
+    function value:SetWidth(w, wa)
+        self.w, self.wa = w, wa
+    end
+    function value:SetHeight(h, ha)
+        self.h, self.ha = h, ha
+    end
+    function value:SetScrollSize(w, h)
+        self.scrollWidth, self.scrollHeight = w, h
+    end
+    function value:SetScrollPos(x, y)
+        self.scrollX, self.scrollY = x, y
+    end
     function value:Subscribe(hook, name, callback)
         self.subscriptions[hook] = self.subscriptions[hook] or {}
         self.subscriptions[hook][callback and name or "default"] = callback or name
@@ -32,32 +58,44 @@ local function component(parent, categoryID, dynamicID)
         if self.subscriptions[hook] then self.subscriptions[hook][name or "default"] = nil end
     end
     function value:Fire(hook, ...)
-        for _, callback in pairs(self.subscriptions[hook] or {}) do callback(self, ...) end
+        for _, callback in pairs(self.subscriptions[hook] or {}) do
+            callback(self, ...)
+        end
     end
-    function value:Setup() end
+    function value.Setup() end
     function value:MoveToFront() self.frontCount = (self.frontCount or 0) + 1 end
-    function value:MoveToBack() end
+    function value.MoveToBack() end
     function value:Destroy() self.destroyed = true end
     return Interfaces.component(value, parent, categoryID, dynamicID)
 end
 
 local enum = setmetatable({}, { __index = function(_, key) return key end })
 ui = {
-    Layer = { new = component }, Sprite = { new = component }, InputField = { new = component },
-    Text = { new = component }, Rectangle = { new = component },
-    Hook = enum, AlignMode = enum, TextContentVisibilityMode = enum, InputFieldFilterMode = enum,
-    InputFieldKeyHandlingMode = enum, InputFieldActionResult = enum,
+    Layer = { new = component },
+    Sprite = { new = component },
+    InputField = { new = component },
+    Text = { new = component },
+    Rectangle = { new = component },
+    Hook = enum,
+    AlignMode = enum,
+    TextContentVisibilityMode = enum,
+    InputFieldFilterMode = enum,
+    InputFieldKeyHandlingMode = enum,
+    InputFieldActionResult = enum,
     Margin = { new = function(...) return { ... } end },
 }
 id = { Sprite = enum, Font = enum, StyleSheet = enum }
 local font = {
-    baseline = 18, GetStringLineCount = function() return 1 end,
+    baseline = 18,
+    GetStringLineCount = function() return 1 end,
     GetStringWidth = function(_, text) return #text * 7 end,
 }
 config = { Cursor = enum, Font = { MUSEO_SANS_15PT_REGULAR = font, CINZEL_13PT_BOLD = font } }
 GameKey = { CONTROL = 82, SHIFT = 81, ALT = 86, K = 55, L = 56, ESCAPE = 13 }
 function GameKey.FromID(key)
-    for name, value in pairs(GameKey) do if value == key then return name end end
+    for name, value in pairs(GameKey) do
+        if value == key then return name end
+    end
 end
 local down, blocked = {}, false
 Keyboard = {
@@ -67,7 +105,9 @@ Keyboard = {
     IsAltDown = function() return down[GameKey.ALT] == true end,
     GetGameKeysDown = function()
         local result = {}
-        for key in pairs(down) do table.insert(result, key) end
+        for key in pairs(down) do
+            table.insert(result, key)
+        end
         return result
     end,
 }
@@ -81,7 +121,9 @@ for _, name in ipairs({ "Logic", "KeyDown", "KeyUp", "WindowFocusChanged", "Mini
     }
 end
 local function emit(name, event)
-    for _, callback in pairs(handlers[name]) do callback(event or {}) end
+    for _, callback in pairs(handlers[name]) do
+        callback(event or {})
+    end
 end
 local function press(key, isRepeat)
     down[key] = true
@@ -97,7 +139,9 @@ local function menu()
         table.insert(self.entries, { label = label, callback = callback })
         self.entryCount = #self.entries
     end
-    function result:Swap(a, b) self.entries[a], self.entries[b] = self.entries[b], self.entries[a] end
+    function result:Swap(a, b)
+        self.entries[a], self.entries[b] = self.entries[b], self.entries[a]
+    end
     emit("MiniMenuReady", { miniMenu = result })
     return result.entries
 end
@@ -111,12 +155,18 @@ local field = KeybindField.new(parent, {
     onChange = function(_, value) changes[#changes + 1] = value end,
 })
 expect(field.root.height, 24, "keybind field matches native field height")
-for _, size in ipairs({ {240, 24}, {576, 46}, {360, 64} }) do
+for _, size in ipairs({ { 240, 24 }, { 576, 46 }, { 360, 64 } }) do
     field.root:SetSize(size[1], size[2])
-    expect(field.root.width - field.clearSprite.x - field.clearSprite.width, 4,
-        "clear sprite remains inside the right edge after resize")
-    expect(field.clearSprite.y, (field.root.height - field.clearSprite.height) / 2,
-        "clear sprite remains vertically centered after resize")
+    expect(
+        field.root.width - field.clearSprite.x - field.clearSprite.width,
+        4,
+        "clear sprite remains inside the right edge after resize"
+    )
+    expect(
+        field.clearSprite.y,
+        (field.root.height - field.clearSprite.height) / 2,
+        "clear sprite remains vertically centered after resize"
+    )
 end
 field.root:SetSize(240, 24)
 field.input.root:Fire(ui.Hook.ONCLICK, 30, 10)
@@ -156,12 +206,13 @@ local repeatRoot = field.tooltip._parts.root
 local repeatFrontCount = repeatRoot.frontCount
 local repeatX = repeatRoot.x
 field.input.root:Fire(ui.Hook.ONMOUSEREPEAT, 40, 10)
-expect(repeatRoot.frontCount, repeatFrontCount + 1,
-    "stable mouse repeat positions the keybind tooltip only once")
+expect(repeatRoot.frontCount, repeatFrontCount + 1, "stable mouse repeat positions the keybind tooltip only once")
 expect(repeatRoot.x > repeatX, true, "stable mouse repeat still follows cursor movement")
 local entries = menu()
 local reset
-for _, entry in ipairs(entries) do if entry.label == "Reset to default" then reset = entry.callback end end
+for _, entry in ipairs(entries) do
+    if entry.label == "Reset to default" then reset = entry.callback end
+end
 assert(reset, "right-click exposes provided default")
 reset()
 expect(KeybindField.FormatValue(field:GetValue()), "Ctrl + Shift", "reset restores default")
@@ -223,7 +274,11 @@ for _, point in ipairs({
     { field.root.width - 10, field.clearSprite.y + field.clearSprite.height }, -- below sprite
 }) do
     field.input.root:Fire(ui.Hook.ONMOUSEOVER, point[1], point[2])
-    expect(field.tooltip._parts.label.content, "change keybind", "sprite edge exclusions retain the change action tooltip")
+    expect(
+        field.tooltip._parts.label.content,
+        "change keybind",
+        "sprite edge exclusions retain the change action tooltip"
+    )
     field.input.root:Fire(ui.Hook.ONCLICK, point[1], point[2])
     expect(field:IsListening(), true, "outside sprite starts capture instead of resetting")
     expect(KeybindField.FormatValue(field:GetValue()), "Ctrl + K", "outside sprite preserves binding")
