@@ -37,15 +37,10 @@ function SimpleView.new(parent, options)
         end,
     })
     local self = setmetatable(controller, SimpleView)
-    self.tooltipContext = Tooltip.registerContext(
-        self.content,
-        tooltipParent,
-        function(target)
-            local rootX, rootY = self:_AbsolutePosition()
-            return rootX + (target.x or 0), rootY + (target.y or 0) - self.scrollY
-        end,
-        parentContext
-    )
+    self.tooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
+        local rootX, rootY = self:_AbsolutePosition()
+        return rootX + (target.x or 0), rootY + (target.y or 0) - self.scrollY
+    end, parentContext)
     Layout.configure(self, options.layout or options.textLayout)
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
