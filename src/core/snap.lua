@@ -91,8 +91,12 @@ function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID, native
         if isSnapTarget(other, movingWindow, visibleOnly) then
             local root = other.root
             local origin = root.xyGlobal
-            add(origin.x - parentOrigin.x + offsets.left, origin.y - parentOrigin.y + offsets.top,
-                root.width - offsets.left - offsets.right, root.height - offsets.top - offsets.bottom)
+            add(
+                origin.x - parentOrigin.x + offsets.left,
+                origin.y - parentOrigin.y + offsets.top,
+                root.width - offsets.left - offsets.right,
+                root.height - offsets.top - offsets.bottom
+            )
         end
     end
     -- Enumeration failures propagate so placement cannot approve unknown geometry.
@@ -100,8 +104,11 @@ function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID, native
     local excludedInterface = excludedNativeID and (excludedNativeID >> 16)
     local excludedStatic = excludedNativeID and (excludedNativeID & 0xFFFF)
     local function addNative(child)
-        if child and child.visibleGlobal and (excludedNativeID == nil or
-            child.interfaceID ~= excludedInterface or child.staticID ~= excludedStatic) then
+        if
+            child
+            and child.visibleGlobal
+            and (excludedNativeID == nil or child.interfaceID ~= excludedInterface or child.staticID ~= excludedStatic)
+        then
             local origin = child.xyGlobal
             add(origin.x - parentOrigin.x, origin.y - parentOrigin.y, child.width, child.height)
         end
@@ -126,14 +133,22 @@ function Snap.collect(movingWindow, rects, visibleOnly, excludedNativeID, native
     elseif nativeCache then
         nativeCache.ids = nil
     end
-    for index = #rects, count + 1, -1 do rects[index] = nil end
+    for index = #rects, count + 1, -1 do
+        rects[index] = nil
+    end
     return rects
 end
 
 function Snap.start(movingWindow)
     local root, parent = movingWindow.root, movingWindow.parent
-    return Snap.positions(Snap.collect(movingWindow), root.width, root.height,
-        parent.width, parent.height, windows[movingWindow] or movingWindow.edgeOffsets or NO_EDGE_OFFSETS)
+    return Snap.positions(
+        Snap.collect(movingWindow),
+        root.width,
+        root.height,
+        parent.width,
+        parent.height,
+        windows[movingWindow] or movingWindow.edgeOffsets or NO_EDGE_OFFSETS
+    )
 end
 
 return Snap
