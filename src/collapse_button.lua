@@ -45,15 +45,19 @@ end
 local function copyOptions(value)
     local copy = {}
     if type(value) == "table" then
-        for key, option in pairs(value) do copy[key] = option end
+        for key, option in pairs(value) do
+            copy[key] = option
+        end
     end
     return copy
 end
 
 local function measureText(text)
-    local succeeded, width = pcall(function()
-        return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(text, false)
-    end)
+    local succeeded, width = pcall(
+        function()
+            return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(text, false)
+        end
+    )
     return succeeded and width or #text * 7
 end
 
@@ -135,9 +139,10 @@ local function buildCollapseButton(parent, text, options)
     self.contentTooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
         local rootX = self.root.x or 0
         local rootY = self.root.y or 0
-        if parentContext then rootX, rootY = parentContext.position(self.root) end
-        return rootX + (self.content.x or 0) + (target.x or 0),
-            rootY + (self.content.y or 0) + (target.y or 0)
+        if parentContext then
+            rootX, rootY = parentContext.position(self.root)
+        end
+        return rootX + (self.content.x or 0) + (target.x or 0), rootY + (self.content.y or 0) + (target.y or 0)
     end, parentContext)
 
     self.root:Subscribe(ui.Hook.ONMOUSEOVER, function()
@@ -257,7 +262,6 @@ function CollapseButton:AddFancyButton(text, action, options)
     return button
 end
 
-
 function CollapseButton:AddSlider(options)
     options = copyOptions(options)
     if options._onScrollWheel == nil then options._onScrollWheel = self._onScrollWheel end
@@ -314,11 +318,11 @@ function CollapseButton:AddText(value)
     local availableWidth = math.max(1, (self.root.width or MIN_WIDTH) - self.indent)
     if options.height == nil then
         local font = bodyFont(options)
-        local succeeded, lines = pcall(function()
-            return font:GetStringLineCount(
-                options.text, availableWidth, false, false, false
-            )
-        end)
+        local succeeded, lines = pcall(
+            function()
+                return font:GetStringLineCount(options.text, availableWidth, false, false, false)
+            end
+        )
         options.height = math.max(24, (succeeded and lines or 1) * bodyLineHeight(font, options) + 6)
     end
     options.width = options.width or 0
