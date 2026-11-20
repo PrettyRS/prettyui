@@ -10,74 +10,95 @@ local classicMode = 0
 local nextDynamic = 0
 local function component(parent, kind)
     nextDynamic = nextDynamic + 1
-    local self = {
-        kind = kind, parent = parent, children = {}, subscriptions = {},
+    local result = {
+        kind = kind,
+        parent = parent,
+        children = {},
+        subscriptions = {},
         interfaceID = parent and parent.interfaceID or 10,
         staticID = parent and parent.staticID or 61,
-        categoryID = 1, dynamicID = nextDynamic,
-        width = 0, height = 0, x = 0, y = 0,
-        cursorConfig = {}, opConfig = { SetOpCursor = function() end, ClearOpCursors = function() end },
+        categoryID = 1,
+        dynamicID = nextDynamic,
+        width = 0,
+        height = 0,
+        x = 0,
+        y = 0,
+        cursorConfig = {},
+        opConfig = { SetOpCursor = function() end, ClearOpCursors = function() end },
     }
-    function self:SetPos(x, y, xAnchor, yAnchor, xSelf, ySelf)
+    function result:SetPos(x, y, xAnchor, yAnchor, xSelf, ySelf)
         self.posWrites = (self.posWrites or 0) + 1
         self.x, self.y = x, y
         self.xAnchor, self.yAnchor = xAnchor, yAnchor
         self.xSelf, self.ySelf = xSelf, ySelf
     end
-    function self:SetSize(width, height, widthParentPc, heightParentPc)
+    function result:SetSize(width, height, widthParentPc, heightParentPc)
         self.sizeWrites = (self.sizeWrites or 0) + 1
         self.width, self.height = width, height
         self.widthParentPc, self.heightParentPc = widthParentPc, heightParentPc
     end
-    function self:SetScrollSize(width, height, widthParentPc, heightParentPc)
+    function result:SetScrollSize(width, height, widthParentPc, heightParentPc)
         self.scrollWidth, self.scrollHeight = width, height
         self.scrollWidthParentPc, self.scrollHeightParentPc = widthParentPc, heightParentPc
     end
-    function self:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
-    function self:Subscribe(hook, keyOrAction, action)
-        self.subscriptions[hook] = action or keyOrAction
+    function result:SetScrollPos(x, y)
+        self.scrollX, self.scrollY = x, y
     end
-    function self:MoveToFront() self.frontMoves = (self.frontMoves or 0) + 1 end
-    function self:MoveToBack()
+    function result:Subscribe(hook, keyOrAction, callback)
+        self.subscriptions[hook] = callback or keyOrAction
+    end
+    function result:MoveToFront() self.frontMoves = (self.frontMoves or 0) + 1 end
+    function result:MoveToBack()
         if parent then
             for index, child in ipairs(parent.children) do
-                if child == self then table.remove(parent.children, index); break end
+                if child == self then
+                    table.remove(parent.children, index)
+                    break
+                end
             end
             table.insert(parent.children, 1, self)
         end
     end
-    function self:Destroy()
-        while #self.children > 0 do self.children[#self.children]:Destroy() end
+    function result:Destroy()
+        while #self.children > 0 do
+            self.children[#self.children]:Destroy()
+        end
         self.destroyed = true
         if parent then
             for index, child in ipairs(parent.children) do
-                if child == self then table.remove(parent.children, index); break end
+                if child == self then
+                    table.remove(parent.children, index)
+                    break
+                end
             end
         end
     end
-    if parent then parent.children[#parent.children + 1] = self end
-    return self
+    if parent then parent.children[#parent.children + 1] = result end
+    return result
 end
 local function native(interfaceID, staticID, parent, position, dimensions)
     local result = component(parent, "native")
-    result.interfaceID, result.staticID, result.categoryID, result.dynamicID =
-        interfaceID, staticID, -1, -1
+    result.interfaceID, result.staticID, result.categoryID, result.dynamicID = interfaceID, staticID, -1, -1
     result.x, result.y, result.width, result.height = nil, nil, nil, nil
     result.position, result.size = position, dimensions
     result.posWrites, result.sizeWrites = 0, 0
-    setmetatable(result, { __index = function(self, field)
-        if field == "width" then
-            return self.size.width + (parent and parent.width or 0) * self.size.widthParentPc
-        elseif field == "height" then
-            return self.size.height + (parent and parent.height or 0) * self.size.heightParentPc
-        elseif field == "x" then
-            return self.position.x + (parent and parent.width or 0) * self.position.xParentPc
-                - self.width * self.position.xSelfPc
-        elseif field == "y" then
-            return self.position.y + (parent and parent.height or 0) * self.position.yParentPc
-                - self.height * self.position.ySelfPc
-        end
-    end })
+    setmetatable(result, {
+        __index = function(self, field)
+            if field == "width" then
+                return self.size.width + (parent and parent.width or 0) * self.size.widthParentPc
+            elseif field == "height" then
+                return self.size.height + (parent and parent.height or 0) * self.size.heightParentPc
+            elseif field == "x" then
+                return self.position.x
+                    + (parent and parent.width or 0) * self.position.xParentPc
+                    - self.width * self.position.xSelfPc
+            elseif field == "y" then
+                return self.position.y
+                    + (parent and parent.height or 0) * self.position.yParentPc
+                    - self.height * self.position.ySelfPc
+            end
+        end,
+    })
     function result:SetPos(x, y, xp, yp, xs, ys)
         if self.isRestricted then error("native position restricted") end
         self.posWrites = self.posWrites + 1
@@ -94,27 +115,55 @@ local function native(interfaceID, staticID, parent, position, dimensions)
 end
 local function gameArea(interfaceID, width, height)
     width, height = width or 800, height or 600
-    top = native(interfaceID + 1000, 71, nil,
+    top = native(
+        interfaceID + 1000,
+        71,
+        nil,
         { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
-        { width = width, height = height, widthParentPc = 0, heightParentPc = 0 })
-    viewport = native(interfaceID, 75, nil,
+        { width = width, height = height, widthParentPc = 0, heightParentPc = 0 }
+    )
+    viewport = native(
+        interfaceID,
+        75,
+        nil,
         { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
-        { width = width, height = height, widthParentPc = 0, heightParentPc = 0 })
-    local result = native(interfaceID, 81, viewport,
-        { x = 0, y = 0, xParentPc = .5, yParentPc = .5, xSelfPc = .5, ySelfPc = .5 },
-        { width = 0, height = 0, widthParentPc = 1, heightParentPc = 1 })
-    gameview = native(interfaceID, 87, viewport,
+        { width = width, height = height, widthParentPc = 0, heightParentPc = 0 }
+    )
+    local result = native(
+        interfaceID,
+        81,
+        viewport,
+        { x = 0, y = 0, xParentPc = 0.5, yParentPc = 0.5, xSelfPc = 0.5, ySelfPc = 0.5 },
+        { width = 0, height = 0, widthParentPc = 1, heightParentPc = 1 }
+    )
+    gameview = native(
+        interfaceID,
+        87,
+        viewport,
         { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
-        { width = 0, height = 0, widthParentPc = 1, heightParentPc = 1 })
-    inventory = native(interfaceID, 91, result,
+        { width = 0, height = 0, widthParentPc = 1, heightParentPc = 1 }
+    )
+    inventory = native(
+        interfaceID,
+        91,
+        result,
         { x = 0, y = 0, xParentPc = 1, yParentPc = 1, xSelfPc = 1, ySelfPc = 1 },
-        { width = 212, height = 312, widthParentPc = 0, heightParentPc = 0 })
-    chat = native(interfaceID, 92, result,
+        { width = 212, height = 312, widthParentPc = 0, heightParentPc = 0 }
+    )
+    chat = native(
+        interfaceID,
+        92,
+        result,
         { x = 0, y = 0, xParentPc = 0, yParentPc = 1, xSelfPc = 0, ySelfPc = 1 },
-        { width = 550, height = 188, widthParentPc = 0, heightParentPc = 0 })
-    action = native(interfaceID, 93, result,
-        { x = 0, y = 0, xParentPc = .5, yParentPc = 1, xSelfPc = .5, ySelfPc = 1 },
-        { width = 550, height = 150, widthParentPc = 0, heightParentPc = 0 })
+        { width = 550, height = 188, widthParentPc = 0, heightParentPc = 0 }
+    )
+    action = native(
+        interfaceID,
+        93,
+        result,
+        { x = 0, y = 0, xParentPc = 0.5, yParentPc = 1, xSelfPc = 0.5, ySelfPc = 1 },
+        { width = 550, height = 150, widthParentPc = 0, heightParentPc = 0 }
+    )
     inventory.visibleGlobal, chat.visibleGlobal, action.visibleGlobal = true, false, false
     if id then
         id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP = ((interfaceID + 1000) << 16) | 71
@@ -128,15 +177,22 @@ local function gameArea(interfaceID, width, height)
     return result
 end
 ui = {
-    Layer = {}, Sprite = {},
+    Layer = {},
+    Sprite = {},
     Hook = { ONCLICK = 1, ONMOUSEOVER = 2, ONMOUSELEAVE = 3, ONSCROLLWHEEL = 4, ONRELEASE = 5, ONRESIZE = 6 },
     Interfaces = {
         GetComponent = function(_, a, b, c, d)
             if d ~= nil then
                 if not loaded[a] then return nil end
                 local function search(node)
-                    if node.interfaceID == a and node.staticID == b
-                        and node.categoryID == c and node.dynamicID == d then return node end
+                    if
+                        node.interfaceID == a
+                        and node.staticID == b
+                        and node.categoryID == c
+                        and node.dynamicID == d
+                    then
+                        return node
+                    end
                     for _, child in ipairs(node.children or {}) do
                         local found = search(child)
                         if found then return found end
@@ -169,9 +225,10 @@ ui.Sprite.new = function(parent)
                 rawset(self, "_spriteID", value)
                 rawset(self, "_sprite", value)
             elseif key == "sprite" then
-                assert(type(value) == "number" or
-                    (type(value) == "table" and value.runtimeSprite),
-                    "sprite accepts numeric IDs or loaded image resources")
+                assert(
+                    type(value) == "number" or (type(value) == "table" and value.runtimeSprite),
+                    "sprite accepts numeric IDs or loaded image resources"
+                )
                 rawset(self, "_spriteID", type(value) == "number" and value or nil)
                 rawset(self, "_sprite", type(value) == "number" and value or value.runtimeSprite)
                 rawset(self, "spriteWrites", (self.spriteWrites or 0) + 1)
@@ -190,23 +247,31 @@ id = {
         TOPLEVEL_V2__GAMEVIEW_WINDOW = (10 << 16) | 87,
     },
     VarPlayer = {
-        TOPLEVEL_V2_GENERAL_VARP = 101, TOPLEVEL_V2_CUSTOMIZATION_LOCK = 102,
-        TOPLEVEL_V2_SKINS_VARP = 103, TOPLEVEL_V2_TRANSPARENCY = 104,
+        TOPLEVEL_V2_GENERAL_VARP = 101,
+        TOPLEVEL_V2_CUSTOMIZATION_LOCK = 102,
+        TOPLEVEL_V2_SKINS_VARP = 103,
+        TOPLEVEL_V2_TRANSPARENCY = 104,
     },
-    Sprite = setmetatable({}, { __index = function(self, key)
-        local spriteID = nextSpriteID
-        nextSpriteID = nextSpriteID + 1
-        rawset(self, key, spriteID)
-        return spriteID
-    end }),
+    Sprite = setmetatable({}, {
+        __index = function(self, key)
+            local spriteID = nextSpriteID
+            nextSpriteID = nextSpriteID + 1
+            rawset(self, key, spriteID)
+            return spriteID
+        end,
+    }),
 }
-var = { VarPlayer = {
-    TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, { __index = function(_, key)
-        if key == "value" then return classicMode end
-    end }),
-    TOPLEVEL_V2_CUSTOMIZATION_LOCK = { value = 0 },
-    TOPLEVEL_V2_TRANSPARENCY = { value = 0 },
-} }
+var = {
+    VarPlayer = {
+        TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, {
+            __index = function(_, key)
+                if key == "value" then return classicMode end
+            end,
+        }),
+        TOPLEVEL_V2_CUSTOMIZATION_LOCK = { value = 0 },
+        TOPLEVEL_V2_TRANSPARENCY = { value = 0 },
+    },
+}
 config = { Cursor = { CURSOR_OPEN = { id = 7 } } }
 local events, varEvents = {}, {}
 local settingsEvents = {}
@@ -235,9 +300,13 @@ PersistentDB = {
 }
 local components = { roots = {} }
 function components.sameComponent(first, second)
-    return first == second or first ~= nil and second ~= nil
-        and first.interfaceID == second.interfaceID and first.staticID == second.staticID
-        and first.categoryID == second.categoryID and first.dynamicID == second.dynamicID
+    return first == second
+        or first ~= nil
+            and second ~= nil
+            and first.interfaceID == second.interfaceID
+            and first.staticID == second.staticID
+            and first.categoryID == second.categoryID
+            and first.dynamicID == second.dynamicID
 end
 function components.new(nativeType, parent, options)
     local result = nativeType.new(parent)
@@ -254,8 +323,15 @@ function components.newContent(parent)
     return result
 end
 function components.setHidden(target, hidden) target.hidden = hidden == true end
-local tooltips = { contexts = 0, unregistered = 0, unbound = 0, hidden = 0, forTarget = {},
-    contextOrigins = {}, contextParents = {} }
+local tooltips = {
+    contexts = 0,
+    unregistered = 0,
+    unbound = 0,
+    hidden = 0,
+    forTarget = {},
+    contextOrigins = {},
+    contextParents = {},
+}
 function tooltips.registerContext(owner, parent, origin)
     tooltips.contexts = tooltips.contexts + 1
     tooltips.contextOrigins[owner], tooltips.contextParents[owner] = origin, parent
@@ -289,44 +365,49 @@ end
 function map.unwatch(owner) map.watches[owner] = nil end
 function map.isSuspended() return map.suspended end
 local windows, views = {}, {}
-local function contentHost(options)
-    local instance = { options = options, content = {}, controls = {} }
+local function contentHost(hostOptions)
+    local instance = { options = hostOptions, content = {}, controls = {} }
     function instance:AddTitle(text) self.content[#self.content + 1] = text end
     function instance:AddText(text)
         local result = { content = text }
         self.content[#self.content + 1] = result
         return result
     end
-    function instance:AddSlider(sliderOptions)
+    function instance.AddSlider(host, sliderOptions)
         local result = { options = sliderOptions, value = sliderOptions.value }
         function result:SetValue(value)
             assert(not instance.destroyed, "updating a destroyed settings host")
             self.value = value
         end
-        self.controls.cap = result
+        host.controls.cap = result
         return result
     end
-    function instance:AddComboBox(options)
-        local result = { options = options, selected = options.selectedID }
+    function instance.AddComboBox(host, comboOptions)
+        local result = { options = comboOptions, selected = comboOptions.selectedID }
         function result:Select(value)
             assert(not instance.destroyed, "updating a destroyed settings host")
             self.selected = value
         end
-        self.controls.position = result
+        host.controls.position = result
         return result
     end
-    function instance:AddCheckboxButton(values, options)
-        local result = { values = values, options = options, selected = values[1].selected }
+    function instance.AddCheckboxButton(host, values, checkboxOptions)
+        local result = { values = values, options = checkboxOptions, selected = values[1].selected }
         function result:SetSelected(_, value)
             assert(not instance.destroyed, "updating a destroyed settings host")
             self.selected = value
         end
-        self.controls.autoHide = result
+        host.controls.autoHide = result
         return result
     end
     function instance:Show() self.visible = true end
-    function instance:Close() self.options.onClose(); self.visible = false end
-    function instance:SetSize(width, height) self.width, self.height = width, height end
+    function instance:Close()
+        self.options.onClose()
+        self.visible = false
+    end
+    function instance:SetSize(width, height)
+        self.width, self.height = width, height
+    end
     function instance:Destroy()
         self.destroyed = true
         if self.root then self.root:Destroy() end
@@ -365,38 +446,55 @@ package.loaded["src/window"] = Window
 package.loaded["src/nis/group"] = { resume = function() end }
 package.loaded["src/nis/persistence"] = { setActive = function() return false end }
 package.loaded["src/nis/native"] = {
-    remember = function() return nil end, register = function() end,
+    remember = function() return nil end,
+    register = function() end,
 }
 local RibbonBar = require("src/ribbon_bar")
 local function click(button)
     return assert(button.root.subscriptions[ui.Hook.ONCLICK], "real RibbonButton hook missing")(button.root)
 end
-local function buttons()
-    local surface
+local function ribbonSurfaceIn(parent)
+    for _, child in ipairs(parent.children) do
+        if child.ribbonSurface and not child.destroyed then return child end
+    end
+end
+
+local function findRibbonSurface()
     for _, parent in ipairs({ area, top }) do
         if parent and loaded[parent.interfaceID] then
-            for _, child in ipairs(parent.children) do
-                if child.ribbonSurface and not child.destroyed then surface = child; break end
-            end
+            local surface = ribbonSurfaceIn(parent)
+            if surface then return surface end
         end
-        if surface then break end
     end
+end
+
+local function buttons()
+    local surface = findRibbonSurface()
     local result = {}
     local function collect(node)
         if node.subscriptions[ui.Hook.ONCLICK] and tooltips.forTarget[node] then
-            if tooltips.forTarget[node] == "PrettyUI settings" then table.insert(result, 1, node)
-            else result[#result + 1] = node end
+            if tooltips.forTarget[node] == "PrettyUI settings" then
+                table.insert(result, 1, node)
+            else
+                result[#result + 1] = node
+            end
         end
-        for _, child in ipairs(node.children) do collect(child) end
+        for _, child in ipairs(node.children) do
+            collect(child)
+        end
     end
     if surface then collect(surface) end
     return surface, result
 end
 local function panel(icon, text, active)
     local result = {
-        parent = area, root = component(area, "panel shell"),
-        interfaceID = area.interfaceID, tabIcon = icon, tabText = text,
-        active = active, calls = 0,
+        parent = area,
+        root = component(area, "panel shell"),
+        interfaceID = area.interfaceID,
+        tabIcon = icon,
+        tabText = text,
+        active = active,
+        calls = 0,
     }
     function result:IsActive() return self.active end
     function result:SetActive(value)
@@ -451,22 +549,32 @@ local function modernRegistrationAndSettings()
 
     click({ root = roots[1] })
     local settings = windows[#windows]
-    expect(settings.controls.position ~= nil and settings.controls.autoHide ~= nil, true,
-        "modern settings show position and auto-hide")
+    expect(
+        settings.controls.position ~= nil and settings.controls.autoHide ~= nil,
+        true,
+        "modern settings show position and auto-hide"
+    )
     click({ root = roots[1] })
     expect(settings.visible, false, "settings cog closes window")
     RibbonBar.SetPosition("top")
     RibbonBar.SetAutoHide(true)
     expect(db.ribbonBarPosition, "top", "position persisted")
     expect(db.ribbonBarAutoHide, true, "auto-hide persisted")
-    expect(roots[2].parent.x + roots[2].x - roots[1].x - roots[1].width, 2,
-        "top ribbon keeps a normal button gap after the compact cog")
+    expect(
+        roots[2].parent.x + roots[2].x - roots[1].x - roots[1].width,
+        2,
+        "top ribbon keeps a normal button gap after the compact cog"
+    )
     tick()
     expect(surface.y, -8, "auto-hide slides by one step")
-    for _ = 1, 10 do tick() end
+    for _ = 1, 10 do
+        tick()
+    end
     expect(surface.y, -44, "auto-hide reaches hidden edge")
     RibbonBar.SetAutoHide(false)
-    for _ = 1, 10 do tick() end
+    for _ = 1, 10 do
+        tick()
+    end
     expect(surface.y, 0, "disabling auto-hide returns bar into view")
     map.suspended = true
     map.watches[surface](true)
@@ -535,8 +643,7 @@ local function clickRoot(rootButton)
     return click({ root = rootButton })
 end
 local function screenLeft(surface)
-    return (surface.xAnchor or 0) * top.width + surface.x
-        - (surface.xSelf or 0) * surface.width
+    return (surface.xAnchor or 0) * top.width + surface.x - (surface.xSelf or 0) * surface.width
 end
 local function rail(width, description)
     local surface = assert(buttons(), description .. " surface absent")
@@ -558,8 +665,12 @@ local function classicPanel(name, enabled)
     result._contentReady = true
     function result:_SetClassicMode(value)
         self._nisClassic = value
-        if value then self._contentReady = false
-        else self:_SetClassicHost(nil); self._nisClassicState = nil end
+        if value then
+            self._contentReady = false
+        else
+            self:_SetClassicHost(nil)
+            self._nisClassicState = nil
+        end
         self.root.hidden = value
     end
     function result:_SetClassicHost(host)
@@ -577,16 +688,19 @@ local function classicPanel(name, enabled)
     function result:SetActive(value)
         self.active, self.calls = value, self.calls + 1
         if classicMode == 1 then
-            if value then RibbonBar.selectClassic(self, false)
-            elseif RibbonBar.isClassicSelected(self) then RibbonBar.selectClassic(self, true) end
+            if value then
+                RibbonBar.selectClassic(self, false)
+            elseif RibbonBar.isClassicSelected(self) then
+                RibbonBar.selectClassic(self, true)
+            end
         end
         RibbonBar.sync(self)
     end
-    function result:_LayoutBody() end
-    function result:_SyncChrome() end
-    function result:_SyncOverlays() end
-    function result:_SyncContent() end
-    function result:RefreshRowBackgrounds() end
+    function result._LayoutBody() end
+    function result._SyncChrome() end
+    function result._SyncOverlays() end
+    function result._SyncContent() end
+    function result.RefreshRowBackgrounds() end
     return result
 end
 
@@ -610,8 +724,11 @@ local function classicSelectionAndModeTransitions()
     expect(a.root.hidden, true, "modern panel shell hidden")
     expect(a.builds + b.builds, 0, "Classic content is lazy")
     expect(gameview.width, 3396, "collapsed rail reserves gameview")
-    expect(buttonNamed("A").children[2].sprite, Plugin.resources.encounter.runtimeSprite,
-        "Classic button renders resource icon")
+    expect(
+        buttonNamed("A").children[2].sprite,
+        Plugin.resources.encounter.runtimeSprite,
+        "Classic button renders resource icon"
+    )
 
     clickRoot(buttonNamed("A"))
     rail(344, "selected content")
@@ -623,8 +740,7 @@ local function classicSelectionAndModeTransitions()
     local aButton = buttonNamed("A")
     a.tabIcon = Plugin.resources.alternate
     RibbonBar.sync(a)
-    expect(aButton.children[2].sprite, Plugin.resources.alternate.runtimeSprite,
-        "selected button syncs resource icon")
+    expect(aButton.children[2].sprite, Plugin.resources.alternate.runtimeSprite, "selected button syncs resource icon")
     clickRoot(buttonNamed("B"))
     expect(lifecycle[2], "A:release", "old content releases before replacement")
     expect(lifecycle[3], "B:build", "new content builds after release")
@@ -654,8 +770,11 @@ local function classicSelectionAndModeTransitions()
     local settings = views[#views]
     expect(settings.parent.parent, surface, "Classic settings mount inside the sidebar body")
     expect(RibbonBar.isClassicSelected(disabled), false, "settings replace the selected page")
-    expect(settings.controls.position ~= nil and settings.controls.autoHide ~= nil, true,
-        "Classic settings can edit all Modern ribbon preferences")
+    expect(
+        settings.controls.position ~= nil and settings.controls.autoHide ~= nil,
+        true,
+        "Classic settings can edit all Modern ribbon preferences"
+    )
     expect(RibbonBar.GetPosition(), "top", "Classic mode preserves modern position")
     expect(RibbonBar.GetAutoHide(), true, "Classic mode preserves modern auto-hide")
     clickRoot(buttonNamed("PrettyUI settings"))
@@ -690,8 +809,11 @@ local function classicSelectionAndModeTransitions()
     expect(gameview.width, 3440, "mode exit restores gameview")
     expect(surface.destroyed, true, "mode exit destroys Classic surface")
     expect(a.root.hidden, false, "modern panel shell restored")
-    expect(buttonNamed("A").children[2].sprite, Plugin.resources.alternate.runtimeSprite,
-        "modern button retains updated icon")
+    expect(
+        buttonNamed("A").children[2].sprite,
+        Plugin.resources.alternate.runtimeSprite,
+        "modern button retains updated icon"
+    )
     mode(1)
     rail(44, "mode reentry starts collapsed")
     expect(RibbonBar.isClassicSelected(a), false, "old selection does not return")
@@ -734,7 +856,7 @@ local function classicWidthProtectsChatAndInventory()
     expect(owner.releases, 0, "inventory changes retain content")
     clickRoot(buttonNamed("Responsive"))
     rail(44, "collapse releases sidebar space")
-    expect(action.position.xParentPc, .5, "collapse restores centred native anchor")
+    expect(action.position.xParentPc, 0.5, "collapse restores centred native anchor")
     expect(action.position.x, 0, "collapse removes compact offset")
     expect(action.y + action.height, viewport.height, "collapse restores bottom-aligned bars")
     RibbonBar.Shutdown()
@@ -756,10 +878,14 @@ local function classicOverflowKeepsButtonsReachable()
     tick()
     local last = buttonNamed("Overflow 12")
     local scroll = last.parent
-    while scroll and not scroll.subscriptions[ui.Hook.ONSCROLLWHEEL] do scroll = scroll.parent end
+    while scroll and not scroll.subscriptions[ui.Hook.ONSCROLLWHEEL] do
+        scroll = scroll.parent
+    end
     assert(scroll, "Classic icon list must bind the mouse wheel")
     expect(scroll.height < scroll.scrollHeight, true, "icons overflow clipped viewport")
-    for _ = 1, 20 do scroll.subscriptions[ui.Hook.ONSCROLLWHEEL](scroll, 1) end
+    for _ = 1, 20 do
+        scroll.subscriptions[ui.Hook.ONSCROLLWHEEL](scroll, 1)
+    end
     expect(scroll.scrollY > 0, true, "wheel reveals hidden buttons")
     local first = buttonNamed("Overflow 1")
     expect(first.enabled, false, "clipped button cannot intercept clicks")
@@ -770,10 +896,15 @@ local function classicOverflowKeepsButtonsReachable()
     expect(tooltipY, scroll.y + last.y - scroll.scrollY, "scrolled tooltip y")
     clickRoot(last)
     expect(RibbonBar.isClassicSelected(overflow[12]), true, "last scrolled button selects page")
-    for index = 1, 11 do RibbonBar.unregister(overflow[index]) end
+    for index = 1, 11 do
+        RibbonBar.unregister(overflow[index])
+    end
     tick()
-    expect(scroll.scrollY <= math.max(0, scroll.scrollHeight - scroll.height), true,
-        "removing icons clamps scroll offset")
+    expect(
+        scroll.scrollY <= math.max(0, scroll.scrollHeight - scroll.height),
+        true,
+        "removing icons clamps scroll offset"
+    )
     top:SetSize(3440, 1440, 0, 0)
     viewport:SetSize(3440, 1440, 0, 0)
     tick()
@@ -846,7 +977,9 @@ local function modernOverflowAndCap()
     expect(surface.width <= area.width, true, "ribbon fits a smaller game area")
     RibbonBar.SetPosition("right")
     expect(surface.height <= area.height, true, "vertical ribbon fits a smaller game area")
-    for index = 1, 22 do RibbonBar.unregister(panels[index]) end
+    for index = 1, 22 do
+        RibbonBar.unregister(panels[index])
+    end
     local last = buttonNamed("Modern 23")
     expect(last.hidden, false, "removing buttons clamps scroll to remaining panel")
     expect(last.parent.scrollY, 0, "removing overflow resets scroll")
@@ -881,7 +1014,7 @@ local function classicUnavailableNativeLayoutAndRemount()
     local incompatible = classicPanel("Incompatible", true)
     RibbonBar.register(incompatible)
     expect(buttons(), nil, "incompatible topology cannot mount a rail")
-    area.position.xParentPc = .5
+    area.position.xParentPc = 0.5
     tick()
     local oldSurface = rail(44, "compatible layout becomes available")
     loaded[top.interfaceID] = nil
@@ -890,9 +1023,13 @@ local function classicUnavailableNativeLayoutAndRemount()
     expect(map.watches[oldSurface], nil, "top-layer unload removes map observer")
     expect(area.width, 3440, "unloaded layer restores native reservation")
 
-    top = native(1062, 71, nil,
+    top = native(
+        1062,
+        71,
+        nil,
         { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
-        { width = 3440, height = 1440, widthParentPc = 0, heightParentPc = 0 })
+        { width = 3440, height = 1440, widthParentPc = 0, heightParentPc = 0 }
+    )
     tick()
     rail(44, "replacement top layer remounts collapsed")
     clickRoot(buttonNamed("Incompatible"))
@@ -920,11 +1057,11 @@ local function sharedNativeSettingsLifecycle()
     local parent = component(area, "native settings layer")
     parent:SetSize(440, 500)
     mountSettings({ component = parent })
-    local native = views[#views]
+    local nativeSettings = views[#views]
     expect(buttons(), nil, "native settings are available without panel registrations")
-    native.controls.position.options.onChange(nil, 1)
-    native.controls.autoHide.options.onChange(nil, nil, nil, false)
-    native.controls.cap.options.onChange(nil, 4)
+    nativeSettings.controls.position.options.onChange(nil, 1)
+    nativeSettings.controls.autoHide.options.onChange(nil, nil, nil, false)
+    nativeSettings.controls.cap.options.onChange(nil, 4)
     expect(RibbonBar.GetPosition(), "left", "native settings update saved placement")
     expect(RibbonBar.GetButtonCap(), 4, "native settings update saved cap without panels")
 
@@ -934,29 +1071,29 @@ local function sharedNativeSettingsLifecycle()
     local floating = windows[#windows]
     expect(floating.controls.cap.value, 4, "floating settings load native edits")
     floating.controls.autoHide.options.onChange(nil, nil, nil, true)
-    expect(native.controls.autoHide.selected, true, "floating changes synchronize to native settings")
-    native.controls.position.options.onChange(nil, 3)
+    expect(nativeSettings.controls.autoHide.selected, true, "floating changes synchronize to native settings")
+    nativeSettings.controls.position.options.onChange(nil, 3)
     expect(floating.controls.position.selected, 3, "native changes synchronize to floating settings")
     mode(1)
-    expect(native.destroyed, nil, "mode change preserves native settings")
+    expect(nativeSettings.destroyed, nil, "mode change preserves native settings")
     clickRoot(buttonNamed("PrettyUI settings"))
     local sidebar = views[#views]
     expect(sidebar.controls.position.selected, 3, "Classic settings expose saved placement")
     expect(sidebar.controls.autoHide.selected, true, "Classic settings expose saved auto-hide")
     sidebar.controls.cap.options.onChange(nil, 6)
-    expect(native.controls.cap.value, 6, "Classic changes synchronize to native settings")
-    native.controls.position.options.onChange(nil, 2)
+    expect(nativeSettings.controls.cap.value, 6, "Classic changes synchronize to native settings")
+    nativeSettings.controls.position.options.onChange(nil, 2)
     expect(sidebar.controls.position.selected, 2, "native changes synchronize to Classic settings")
     rail(344, "editing Modern preferences leaves Classic sidebar fixed")
     RibbonBar.unregister(owner)
     expect(sidebar.destroyed, true, "last panel unregister destroys sidebar settings")
-    expect(native.destroyed, nil, "last panel unregister preserves native settings")
-    native.controls.cap.options.onChange(nil, 7)
+    expect(nativeSettings.destroyed, nil, "last panel unregister preserves native settings")
+    nativeSettings.controls.cap.options.onChange(nil, 7)
     expect(RibbonBar.GetButtonCap(), 7, "native settings still work without the ribbon")
 
     mountSettings({ component = parent })
     local replacement = views[#views]
-    expect(native.destroyed, true, "remount destroys old settings view")
+    expect(nativeSettings.destroyed, true, "remount destroys old settings view")
     expect(parent.destroyed, nil, "remount preserves the client-owned layer")
     expect(replacement.controls.cap.value, 7, "remount loads current saved settings")
     replacement.controls.cap.options.onChange(nil, 8)

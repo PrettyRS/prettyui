@@ -59,8 +59,13 @@ local ensureMounted, destroySurface, collapseClassic
 
 local function identity(component)
     if component == nil then return nil end
-    return component.interfaceID .. ":" .. component.staticID .. ":"
-        .. component.categoryID .. ":" .. component.dynamicID
+    return component.interfaceID
+        .. ":"
+        .. component.staticID
+        .. ":"
+        .. component.categoryID
+        .. ":"
+        .. component.dynamicID
 end
 
 local function nativeComponent(name)
@@ -162,8 +167,7 @@ local function barSize()
     local count = math.min(#entries, buttonCap)
     local run = math.max(0, count * PITCH - BUTTON_GAP)
     if #entries > count or run > available then
-        count = math.min(count, math.max(0,
-            math.floor((available - INDICATOR_SIZE * 2 + BUTTON_GAP) / PITCH)))
+        count = math.min(count, math.max(0, math.floor((available - INDICATOR_SIZE * 2 + BUTTON_GAP) / PITCH)))
         run = math.max(0, count * PITCH - BUTTON_GAP) + INDICATOR_SIZE * 2
     end
     run = math.min(span, PADDING * 2 + SETTINGS_PITCH + run)
@@ -188,69 +192,65 @@ local function isHitboxHovered(width, height)
     if mouse == nil then return false end
     local x, y = ribbonOrigin(width, height)
     -- The unslid edge stays reachable while the bar is auto-hidden.
-    if position == "top" then y = 0
-    elseif position == "right" then x = (gameArea.width or 0) - width
-    else x = 0 end
+    if position == "top" then
+        y = 0
+    elseif position == "right" then
+        x = (gameArea.width or 0) - width
+    else
+        x = 0
+    end
     x, y = x + (gameArea.x or 0), y + (gameArea.y or 0)
     return mouse.x >= x and mouse.x < x + width and mouse.y >= y and mouse.y < y + height
 end
 
-local function layoutRoot()
-    if root == nil or ui.Interfaces:GetInterface(interfaceID) == nil then return end
-    local width, height = barSize()
-    local rearrange = width ~= layoutWidth or height ~= layoutHeight
-        or position ~= layoutPosition or #entries ~= layoutCount
-    if not rearrange and slideOffset == layoutSlideOffset and iconScroll == layoutScrollY then return end
-    local horizontal = not classic and position == "top"
-    local body = 0
-    if classic then
-        local _
-        _, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
-        if rearrange then root:SetPos(-width, 0, 1, 0) end
-        local resized = classicBody.width ~= body or classicBody.height ~= height
-        if resized then
-            classicBody:SetSize(body, height)
-            frame.contentBackground:SetSize(math.max(0, body - BORDER * 2), math.max(0, height - BORDER * 2))
-            if settingsView then
-                settingsView:SetSize(math.max(0, body - BORDER * 2), math.max(0, height - BORDER * 2))
-            end
+local function layoutClassicBody(width, height, rearrange)
+    local _, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
+    if rearrange then root:SetPos(-width, 0, 1, 0) end
+    local resized = classicBody.width ~= body or classicBody.height ~= height
+    if resized then
+        classicBody:SetSize(body, height)
+        frame.contentBackground:SetSize(math.max(0, body - BORDER * 2), math.max(0, height - BORDER * 2))
+        if settingsView then
+            settingsView:SetSize(math.max(0, body - BORDER * 2), math.max(0, height - BORDER * 2))
         end
-        Components.setHidden(classicBody, classicSelectedPanel == nil and not settingsOpen)
-        if resized and classicSelectedPanel and classicSelectedPanel._scroll then
-            classicSelectedPanel._scroll:Refresh()
-            classicSelectedPanel:RefreshRowBackgrounds()
-        end
-    elseif horizontal then
-        root:SetPos(-math.floor(width / 2), -slideOffset, 0.5, 0)
-    elseif position == "right" then
-        root:SetPos(-width + slideOffset, -math.floor(height / 2), 1, 0.5)
-    else
-        root:SetPos(-slideOffset, -math.floor(height / 2), 0, 0.5)
     end
+    Components.setHidden(classicBody, classicSelectedPanel == nil and not settingsOpen)
+    if resized and classicSelectedPanel and classicSelectedPanel._scroll then
+        classicSelectedPanel._scroll:Refresh()
+        classicSelectedPanel:RefreshRowBackgrounds()
+    end
+    return body
+end
+
+local function arrangeIconList(width, height, body, horizontal, gutter, extent, total)
+    root:SetSize(width, height)
+    settingsButton.root:SetPos(
+        body + PADDING + (horizontal and 0 or SETTINGS_BUTTON_OFFSET),
+        PADDING + (horizontal and SETTINGS_BUTTON_OFFSET or 0)
+    )
+    if horizontal then
+        iconList:SetPos(PADDING + SETTINGS_PITCH + gutter, PADDING)
+        iconList:SetSize(extent, BUTTON_SIZE)
+        iconList:SetScrollSize(math.max(extent, total), BUTTON_SIZE)
+        previousIndicator:SetPos(PADDING + SETTINGS_PITCH, PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2)
+        nextIndicator:SetPos(width - PADDING - INDICATOR_SIZE, PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2)
+    else
+        iconList:SetPos(body + PADDING, PADDING + SETTINGS_PITCH + gutter)
+        iconList:SetSize(BUTTON_SIZE, extent)
+        iconList:SetScrollSize(BUTTON_SIZE, math.max(extent, total))
+        previousIndicator:SetPos(body + PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2, PADDING + SETTINGS_PITCH)
+        nextIndicator:SetPos(body + PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2, height - PADDING - INDICATOR_SIZE)
+    end
+    previousIndicator.rotationDegrees = horizontal and -90 or 0
+    nextIndicator.rotationDegrees = horizontal and -90 or 0
+end
+
+local function layoutIcons(width, height, body, horizontal, rearrange)
     local available = math.max(0, (horizontal and width or height) - PADDING * 2 - SETTINGS_PITCH)
     local total = math.max(0, #entries * PITCH - BUTTON_GAP)
     local gutter = total > available and INDICATOR_SIZE or 0
     local extent = math.max(0, available - gutter * 2)
-    if rearrange then
-        root:SetSize(width, height)
-        settingsButton.root:SetPos(body + PADDING + (horizontal and 0 or SETTINGS_BUTTON_OFFSET),
-            PADDING + (horizontal and SETTINGS_BUTTON_OFFSET or 0))
-        if horizontal then
-            iconList:SetPos(PADDING + SETTINGS_PITCH + gutter, PADDING)
-            iconList:SetSize(extent, BUTTON_SIZE)
-            iconList:SetScrollSize(math.max(extent, total), BUTTON_SIZE)
-            previousIndicator:SetPos(PADDING + SETTINGS_PITCH, PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2)
-            nextIndicator:SetPos(width - PADDING - INDICATOR_SIZE, PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2)
-        else
-            iconList:SetPos(body + PADDING, PADDING + SETTINGS_PITCH + gutter)
-            iconList:SetSize(BUTTON_SIZE, extent)
-            iconList:SetScrollSize(BUTTON_SIZE, math.max(extent, total))
-            previousIndicator:SetPos(body + PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2, PADDING + SETTINGS_PITCH)
-            nextIndicator:SetPos(body + PADDING + (BUTTON_SIZE - INDICATOR_SIZE) / 2, height - PADDING - INDICATOR_SIZE)
-        end
-        previousIndicator.rotationDegrees = horizontal and -90 or 0
-        nextIndicator.rotationDegrees = horizontal and -90 or 0
-    end
+    if rearrange then arrangeIconList(width, height, body, horizontal, gutter, extent, total) end
     iconScroll = math.max(0, math.min(iconScroll, total - extent))
     iconList:SetScrollPos(horizontal and iconScroll or 0, horizontal and 0 or iconScroll)
     Components.setHidden(previousIndicator, gutter == 0 or iconScroll == 0)
@@ -264,6 +264,28 @@ local function layoutRoot()
             Components.setHidden(entry.button.root, not entry.visible)
         end
     end
+end
+
+local function layoutRoot()
+    if root == nil or ui.Interfaces:GetInterface(interfaceID) == nil then return end
+    local width, height = barSize()
+    local rearrange = width ~= layoutWidth
+        or height ~= layoutHeight
+        or position ~= layoutPosition
+        or #entries ~= layoutCount
+    if not rearrange and slideOffset == layoutSlideOffset and iconScroll == layoutScrollY then return end
+    local horizontal = not classic and position == "top"
+    local body = 0
+    if classic then
+        body = layoutClassicBody(width, height, rearrange)
+    elseif horizontal then
+        root:SetPos(-math.floor(width / 2), -slideOffset, 0.5, 0)
+    elseif position == "right" then
+        root:SetPos(-width + slideOffset, -math.floor(height / 2), 1, 0.5)
+    else
+        root:SetPos(-slideOffset, -math.floor(height / 2), 0, 0.5)
+    end
+    layoutIcons(width, height, body, horizontal, rearrange)
     layoutWidth, layoutHeight, layoutPosition = width, height, position
     layoutSlideOffset, layoutScrollY, layoutCount = slideOffset, iconScroll, #entries
 end
@@ -290,7 +312,9 @@ end
 local function buildSettings(host, showTitle)
     if showTitle then host:AddTitle("PrettyUI settings") end
     host:AddTitle("Ribbon settings")
-    host:AddText("These preferences apply to the Modern Interface ribbon. Classic Interface uses a fixed, full-height sidebar.")
+    host:AddText(
+        "These preferences apply to the Modern Interface ribbon. Classic Interface uses a fixed, full-height sidebar."
+    )
     local controls = {}
     settingsControls[host] = controls
     host:AddText("Ribbon alignment")
@@ -310,7 +334,10 @@ local function buildSettings(host, showTitle)
     })
     controls.capLabel = host:AddText("Visible panel buttons: " .. buttonCap)
     controls.cap = host:AddSlider({
-        min = 1, max = MAX_BUTTON_CAP, step = 1, value = buttonCap,
+        min = 1,
+        max = MAX_BUTTON_CAP,
+        step = 1,
+        value = buttonCap,
         onChange = function(_, value) RibbonBar.SetButtonCap(value) end,
     })
 end
@@ -319,7 +346,10 @@ local function mountSettingsLayer(event)
     destroySettingsHost(settingsLayerView)
     settingsLayerView = SimpleView.new(event.component, {
         categoryID = "auto",
-        width = 0, height = 0, widthAnchor = 1, heightAnchor = 1,
+        width = 0,
+        height = 0,
+        widthAnchor = 1,
+        heightAnchor = 1,
     })
     local view = settingsLayerView
     view.root:Subscribe(ui.Hook.ONRESIZE, EVENT_ID, function() view:Refresh() end)
@@ -335,7 +365,9 @@ local function showSettings()
         settingsOpen = true
         layoutRoot()
         settingsView = SimpleView.new(classicBody, {
-            categoryID = "auto", x = BORDER, y = BORDER,
+            categoryID = "auto",
+            x = BORDER,
+            y = BORDER,
             width = math.max(0, body - BORDER * 2),
             height = math.max(0, gameArea.height - BORDER * 2),
         })
@@ -368,7 +400,11 @@ end
 
 local function toggleSettings()
     if settingsOpen then
-        if classic then collapseClassic() else settingsWindow:Close() end
+        if classic then
+            collapseClassic()
+        else
+            settingsWindow:Close()
+        end
     else
         showSettings()
     end
@@ -378,15 +414,23 @@ destroySurface = function(keepLayout)
     local selected = classicSelectedPanel
     classicSelectedPanel = nil
     local ok, problem = true, nil
-    if selected then ok, problem = pcall(selected._SetClassicHost, selected, nil) end
+    if selected then
+        ok, problem = pcall(selected._SetClassicHost, selected, nil)
+    end
     if not keepLayout then ClassicLayout.restore() end
     destroySettingsHost(settingsWindow)
     destroySettingsHost(settingsView)
     settingsWindow, settingsView = nil, nil
     settingsOpen, hitboxHovered, slideOffset = false, false, 0
-    if settingsButton then settingsButton:Destroy(); settingsButton = nil end
+    if settingsButton then
+        settingsButton:Destroy()
+        settingsButton = nil
+    end
     for _, entry in ipairs(entries) do
-        if entry.button then entry.button:Destroy(); entry.button = nil end
+        if entry.button then
+            entry.button:Destroy()
+            entry.button = nil
+        end
     end
     if root then
         WorldMap.unwatch(root)
@@ -405,19 +449,30 @@ destroySurface = function(keepLayout)
 end
 
 local function clearEntries()
-    for _, entry in ipairs(entries) do byPanel[entry.panel] = nil end
+    for _, entry in ipairs(entries) do
+        byPanel[entry.panel] = nil
+    end
     entries = {}
 end
 
 local function panelLoaded(panel)
-    if panel._destroyed or panel._destroying or panel.root == nil
-        or ui.Interfaces:GetInterface(panel.interfaceID) == nil then return false end
+    if
+        panel._destroyed
+        or panel._destroying
+        or panel.root == nil
+        or ui.Interfaces:GetInterface(panel.interfaceID) == nil
+    then
+        return false
+    end
     local entry = byPanel[panel]
     if entry then
         local shell = entry.shell
         local fresh = ui.Interfaces:GetComponent(table.unpack(shell))
-        return fresh ~= nil and fresh.interfaceID == shell[1] and fresh.staticID == shell[2]
-            and fresh.categoryID == shell[3] and fresh.dynamicID == shell[4]
+        return fresh ~= nil
+            and fresh.interfaceID == shell[1]
+            and fresh.staticID == shell[2]
+            and fresh.categoryID == shell[3]
+            and fresh.dynamicID == shell[4]
     end
     return true
 end
@@ -430,7 +485,10 @@ local function removeEntry(index)
     end
     table.remove(entries, index)
     byPanel[entry.panel] = nil
-    if entry.button then entry.button:Destroy(); entry.button = nil end
+    if entry.button then
+        entry.button:Destroy()
+        entry.button = nil
+    end
     if not ok then error(problem, 0) end
 end
 
@@ -440,8 +498,11 @@ local function createEntryButton(entry)
     entry.button = RibbonButton.new(iconList, panel.tabIcon, function()
         if byPanel[panel] ~= entry or not panelLoaded(panel) or not entry.visible then return end
         if classic then
-            if not panel:IsActive() then panel:SetActive(true)
-            else RibbonBar.selectClassic(panel, true) end
+            if not panel:IsActive() then
+                panel:SetActive(true)
+            else
+                RibbonBar.selectClassic(panel, true)
+            end
         else
             panel:SetActive(not panel:IsActive())
         end
@@ -460,8 +521,11 @@ local function snapshot(panel)
     if native then
         local free = native.free
         native = {
-            frame = native.frame, frames = { table.unpack(native.frames) },
-            index = native.index, beforeNative = native.beforeNative, selected = native.selected,
+            frame = native.frame,
+            frames = { table.unpack(native.frames) },
+            index = native.index,
+            beforeNative = native.beforeNative,
+            selected = native.selected,
             free = { x = free.x, y = free.y, width = free.width, height = free.height },
         }
     end
@@ -471,7 +535,9 @@ end
 local function suspendPanels()
     -- Premark and snapshot the entire batch: detaching one native member can
     -- otherwise change the next member's tab index and selection.
-    for _, entry in ipairs(entries) do entry.panel._nisClassic = true end
+    for _, entry in ipairs(entries) do
+        entry.panel._nisClassic = true
+    end
     for _, entry in ipairs(entries) do
         local panel = entry.panel
         if not panel._nisClassicState then panel._nisClassicState = snapshot(panel) end
@@ -482,6 +548,24 @@ local function suspendPanels()
         if not ok and problem == nil then problem = failure end
     end
     if problem ~= nil then error(problem, 0) end
+end
+
+local function restoreModernPanel(panel, saved, attempt)
+    if not panel:IsActive() then
+        panel._nisInactiveNative = panel._nisInactiveNative or saved.native
+        return
+    end
+    local restored = NisPersistence.setActive(panel, true, NisGroup)
+    if not restored and panel._nisInactiveGroup then
+        attempt(NisGroup.resume, panel, panel._nisInactiveGroup)
+    end
+    panel._nisNativePending = saved.native or panel._nisNativePending or panel._nisInactiveNative
+    -- Let native mode-change scripts finish before redocking.
+    -- Queue only native redocking; normal modern panels resume now.
+    if panel._nisNativePending then
+        attempt(NisNative.register, panel, false, MODERN_NATIVE_RESTORE_TICKS)
+    end
+    panel._nisInactiveGroup, panel._nisInactiveNative = nil, nil
 end
 
 local function changeMode(enabled)
@@ -510,28 +594,15 @@ local function changeMode(enabled)
         end
         for _, entry in ipairs(entries) do
             local panel = entry.panel
-            if panel:IsActive() then
-                local restored = NisPersistence.setActive(panel, true, NisGroup)
-                if not restored and panel._nisInactiveGroup then
-                    attempt(NisGroup.resume, panel, panel._nisInactiveGroup)
-                end
-                panel._nisNativePending = saved[panel].native or panel._nisNativePending
-                    or panel._nisInactiveNative
-                -- Let native mode-change scripts finish before redocking.
-                -- Queue only native redocking; normal modern panels resume now.
-                if panel._nisNativePending then
-                    attempt(NisNative.register, panel, false, MODERN_NATIVE_RESTORE_TICKS)
-                end
-                panel._nisInactiveGroup, panel._nisInactiveNative = nil, nil
-            else
-                panel._nisInactiveNative = panel._nisInactiveNative or saved[panel].native
-            end
+            restoreModernPanel(panel, saved[panel], attempt)
         end
         for _, entry in ipairs(entries) do
             local panel = entry.panel
             if not panel._nisNative then
-                Components.setHidden(panel.root, panel._nisHidden == true
-                    or panel._nisGroup ~= nil and panel._nisGroup.active ~= panel)
+                Components.setHidden(
+                    panel.root,
+                    panel._nisHidden == true or panel._nisGroup ~= nil and panel._nisGroup.active ~= panel
+                )
             end
             panel._contentReady = saved[panel].contentReady
             panel:_LayoutBody()
@@ -555,14 +626,17 @@ collapseClassic = function(reserve)
         settingsView = nil
     end
     local ok, problem = true, nil
-    if panel then ok, problem = pcall(panel._SetClassicHost, panel, nil) end
+    if panel then
+        ok, problem = pcall(panel._SetClassicHost, panel, nil)
+    end
     local reserved = true
-    if reserve ~= false and classic and started and #entries > 0 and gameArea
-        and not WorldMap.isSuspended() then
+    if reserve ~= false and classic and started and #entries > 0 and gameArea and not WorldMap.isSuspended() then
         local rail = classicWidths(false)
         local applied, result = pcall(reserveClassic, rail)
         reserved = applied and result
-        if not applied and ok then ok, problem = false, result end
+        if not applied and ok then
+            ok, problem = false, result
+        end
     end
     layoutRoot()
     syncClassicButtons()
@@ -570,24 +644,133 @@ collapseClassic = function(reserve)
     return reserved
 end
 
+local function mountSurface()
+    root = Components.new(ui.Layer, gameArea, { categoryID = "auto" })
+    root.clickthrough = false
+    local rootContext = Tooltip.registerContext(root, gameArea, function(target)
+        local width, height = barSize()
+        local x, y = ribbonOrigin(width, height)
+        return x + (target.x or 0), y + (target.y or 0)
+    end)
+    frame = createFrame(root)
+    layoutFrame()
+    if classic then
+        classicBody = Components.newContent(root)
+        classicBody:SetPos(0, 0, 0, 0, 0, 0)
+        classicBody.clickthrough = false
+        frame.contentBackground = sprite(classicBody, Sprites.NIS_PANEL.content)
+        frame.contentBackground.isTiling = true
+        frame.contentBackground:SetPos(BORDER, BORDER)
+        frame.contentBackground:MoveToBack()
+        -- Content inherits category zero; categorized artwork can otherwise
+        -- paint over it regardless of construction order.
+        frame.background:MoveToBack()
+        Tooltip.registerContext(
+            classicBody,
+            gameArea,
+            function(target)
+                return gameArea.width - root.width + (target.x or 0), (target.y or 0)
+            end,
+            rootContext
+        )
+    end
+    iconList = Components.new(ui.Layer, root)
+    iconList.clickthrough = false
+    Wheel.bind(iconList, { _onScrollWheel = scrollIcons })
+    Wheel.bind(root, { _onScrollWheel = scrollIcons })
+    Tooltip.registerContext(iconList, gameArea, function(target)
+        local width, height = barSize()
+        local x, y = ribbonOrigin(width, height)
+        local horizontal = not classic and position == "top"
+        return x + iconList.x + (target.x or 0) - (horizontal and iconScroll or 0),
+            y + iconList.y + (target.y or 0) - (horizontal and 0 or iconScroll)
+    end, rootContext)
+    previousIndicator = sprite(root, id.Sprite.RS3_ICON_ACCORDION_5)
+    nextIndicator = sprite(root, id.Sprite.RS3_ICON_ACCORDION_2)
+    previousIndicator:SetSize(INDICATOR_SIZE, INDICATOR_SIZE)
+    nextIndicator:SetSize(INDICATOR_SIZE, INDICATOR_SIZE)
+    for _, indicator in ipairs({ previousIndicator, nextIndicator }) do
+        indicator.clickthrough = false
+        local delta = indicator == previousIndicator and -1 or 1
+        indicator:Subscribe(ui.Hook.ONCLICK, function()
+            if not indicator.hidden then scrollIcons(indicator, delta) end
+            return false
+        end)
+        Wheel.bind(indicator, { _onScrollWheel = scrollIcons })
+    end
+    WorldMap.watch(root, function(suspended)
+        if suspended then Tooltip.hideContextTooltips(root) end
+        if classicSelectedPanel then
+            local panel = classicSelectedPanel
+            if not suspended and panel._scroll then
+                panel._scroll:Refresh()
+                panel:RefreshRowBackgrounds()
+            end
+            panel:_SyncOverlays(suspended)
+        end
+    end)
+    settingsButton = SpriteButton.new(root, "SETTINGS", toggleSettings, {
+        tooltip = "PrettyUI settings",
+        _categoryPolicy = "auto",
+        size = SETTINGS_BUTTON_SIZE,
+    })
+    for _, entry in ipairs(entries) do
+        createEntryButton(entry)
+    end
+end
+
+local function updateAutoHide()
+    local width, height = barSize()
+    hitboxHovered = isHitboxHovered(width, height)
+    local target = autoHide and not hitboxHovered and not settingsOpen and (position == "top" and height or width) or 0
+    if slideOffset < target then
+        slideOffset = math.min(target, slideOffset + AUTO_HIDE_SLIDE_STEP)
+    elseif slideOffset > target then
+        slideOffset = math.max(target, slideOffset - AUTO_HIDE_SLIDE_STEP)
+    end
+end
+
+local function reserveClassicSpace()
+    local rail, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
+    if body == 0 and (classicSelectedPanel ~= nil or settingsOpen) then
+        collapseClassic(false)
+    end
+    local ok, reserved = pcall(reserveClassic, rail + body)
+    if not ok or not reserved then
+        pcall(destroySurface, true)
+        if not ok then error(reserved, 0) end
+        return false
+    end
+    return true
+end
+
 ensureMounted = function()
     if not started or #entries == 0 then return end
     for index = #entries, 1, -1 do
         if not panelLoaded(entries[index].panel) then removeEntry(index) end
     end
-    if #entries == 0 then destroySurface(); return end
+    if #entries == 0 then
+        destroySurface()
+        return
+    end
     if WorldMap.isSuspended() then return end
     local enabled = NativeInterfaceSettings.isClassicUI()
     if enabled ~= classic then changeMode(enabled) end
     if classic then suspendPanels() end
-    local current = ui.Interfaces:GetComponent(classic
-        and id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP or id.Component.TOPLEVEL_V2__GAME_AREA)
+    local current = ui.Interfaces:GetComponent(
+        classic and id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP or id.Component.TOPLEVEL_V2__GAME_AREA
+    )
     local currentKey = identity(current)
     local generation = current and ui.Interfaces:GetInterface(current.interfaceID)
-    if gameArea and (ui.Interfaces:GetInterface(interfaceID) == nil
-        or mountKey ~= currentKey or mountGeneration ~= generation) then
+    if
+        gameArea
+        and (ui.Interfaces:GetInterface(interfaceID) == nil or mountKey ~= currentKey or mountGeneration ~= generation)
+    then
         destroySurface()
-        if not classic then clearEntries(); return end
+        if not classic then
+            clearEntries()
+            return
+        end
     end
     if current == nil or generation == nil then
         if classic then ClassicLayout.update(0) end
@@ -595,94 +778,9 @@ ensureMounted = function()
     end
     gameArea, interfaceID = current, current.interfaceID
     mountKey, mountGeneration = currentKey, generation
-    if classic then
-        local rail, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
-        if body == 0 and (classicSelectedPanel ~= nil or settingsOpen) then
-            collapseClassic(false)
-        end
-        local ok, reserved = pcall(reserveClassic, rail + body)
-        if not ok or not reserved then
-            pcall(destroySurface, true)
-            if not ok then error(reserved, 0) end
-            return
-        end
-    end
-    if root == nil then
-        root = Components.new(ui.Layer, gameArea, { categoryID = "auto" })
-        root.clickthrough = false
-        local rootContext = Tooltip.registerContext(root, gameArea, function(target)
-            local width, height = barSize()
-            local x, y = ribbonOrigin(width, height)
-            return x + (target.x or 0), y + (target.y or 0)
-        end)
-        frame = createFrame(root)
-        layoutFrame()
-        if classic then
-            classicBody = Components.newContent(root)
-            classicBody:SetPos(0, 0, 0, 0, 0, 0)
-            classicBody.clickthrough = false
-            frame.contentBackground = sprite(classicBody, Sprites.NIS_PANEL.content)
-            frame.contentBackground.isTiling = true
-            frame.contentBackground:SetPos(BORDER, BORDER)
-            frame.contentBackground:MoveToBack()
-            -- Content inherits category zero; categorized artwork can otherwise
-            -- paint over it regardless of construction order.
-            frame.background:MoveToBack()
-            Tooltip.registerContext(classicBody, gameArea, function(target)
-                return gameArea.width - root.width + (target.x or 0), (target.y or 0)
-            end, rootContext)
-        end
-        iconList = Components.new(ui.Layer, root)
-        iconList.clickthrough = false
-        Wheel.bind(iconList, { _onScrollWheel = scrollIcons })
-        Wheel.bind(root, { _onScrollWheel = scrollIcons })
-        Tooltip.registerContext(iconList, gameArea, function(target)
-            local width, height = barSize()
-            local x, y = ribbonOrigin(width, height)
-            local horizontal = not classic and position == "top"
-            return x + iconList.x + (target.x or 0) - (horizontal and iconScroll or 0),
-                y + iconList.y + (target.y or 0) - (horizontal and 0 or iconScroll)
-        end, rootContext)
-        previousIndicator = sprite(root, id.Sprite.RS3_ICON_ACCORDION_5)
-        nextIndicator = sprite(root, id.Sprite.RS3_ICON_ACCORDION_2)
-        previousIndicator:SetSize(INDICATOR_SIZE, INDICATOR_SIZE)
-        nextIndicator:SetSize(INDICATOR_SIZE, INDICATOR_SIZE)
-        for _, indicator in ipairs({ previousIndicator, nextIndicator }) do
-            indicator.clickthrough = false
-            local delta = indicator == previousIndicator and -1 or 1
-            indicator:Subscribe(ui.Hook.ONCLICK, function()
-                if not indicator.hidden then scrollIcons(indicator, delta) end
-                return false
-            end)
-            Wheel.bind(indicator, { _onScrollWheel = scrollIcons })
-        end
-        WorldMap.watch(root, function(suspended)
-            if suspended then Tooltip.hideContextTooltips(root) end
-            if classicSelectedPanel then
-                local panel = classicSelectedPanel
-                if not suspended and panel._scroll then
-                    panel._scroll:Refresh()
-                    panel:RefreshRowBackgrounds()
-                end
-                panel:_SyncOverlays(suspended)
-            end
-        end)
-        settingsButton = SpriteButton.new(root, "SETTINGS", toggleSettings, {
-            tooltip = "PrettyUI settings", _categoryPolicy = "auto", size = SETTINGS_BUTTON_SIZE,
-        })
-        for _, entry in ipairs(entries) do createEntryButton(entry) end
-    end
-    if not classic then
-        local width, height = barSize()
-        hitboxHovered = isHitboxHovered(width, height)
-        local target = autoHide and not hitboxHovered and not settingsOpen
-            and (position == "top" and height or width) or 0
-        if slideOffset < target then
-            slideOffset = math.min(target, slideOffset + AUTO_HIDE_SLIDE_STEP)
-        elseif slideOffset > target then
-            slideOffset = math.max(target, slideOffset - AUTO_HIDE_SLIDE_STEP)
-        end
-    end
+    if classic and not reserveClassicSpace() then return end
+    if root == nil then mountSurface() end
+    if not classic then updateAutoHide() end
     layoutRoot()
     root:MoveToFront()
     Tooltip.moveContextTooltipsToFront(root)
@@ -700,8 +798,16 @@ function RibbonBar.selectClassic(panel, toggle)
     end
     if classicSelecting then return false end
     ensureMounted()
-    if not classic or not root or not byPanel[panel] or not panelLoaded(panel)
-        or not panel:IsActive() or WorldMap.isSuspended() then return false end
+    if
+        not classic
+        or not root
+        or not byPanel[panel]
+        or not panelLoaded(panel)
+        or not panel:IsActive()
+        or WorldMap.isSuspended()
+    then
+        return false
+    end
     local rail, body = classicWidths(true)
     if body == 0 then return false end
     if panel == classicSelectedPanel then return true end
@@ -727,8 +833,7 @@ function RibbonBar.register(panel)
     if byPanel[panel] then return end
     if not panelLoaded(panel) then return end
     local shell = panel.root
-    local entry = { panel = panel,
-        shell = { panel.interfaceID, shell.staticID, shell.categoryID, shell.dynamicID } }
+    local entry = { panel = panel, shell = { panel.interfaceID, shell.staticID, shell.categoryID, shell.dynamicID } }
     entries[#entries + 1] = entry
     byPanel[panel] = entry
     ensureMounted()
@@ -743,11 +848,16 @@ function RibbonBar.unregister(panel)
     if not entry then return end
     local ok, problem = true, nil
     for index, candidate in ipairs(entries) do
-        if candidate == entry then ok, problem = pcall(removeEntry, index); break end
+        if candidate == entry then
+            ok, problem = pcall(removeEntry, index)
+            break
+        end
     end
     if #entries == 0 then
         local removed, failure = pcall(destroySurface)
-        if not removed and ok then ok, problem = false, failure end
+        if not removed and ok then
+            ok, problem = false, failure
+        end
     else
         layoutRoot()
     end
@@ -757,8 +867,14 @@ end
 function RibbonBar.sync(panel)
     local entry = byPanel[panel]
     if not entry then return end
-    if not panelLoaded(panel) then RibbonBar.unregister(panel); return end
-    if not entry.button then ensureMounted(); return end
+    if not panelLoaded(panel) then
+        RibbonBar.unregister(panel)
+        return
+    end
+    if not entry.button then
+        ensureMounted()
+        return
+    end
     entry.button:SetActive(classic and classicSelectedPanel == panel or not classic and panel:IsActive())
     if entry.icon ~= panel.tabIcon then
         entry.button:SetIcon(panel.tabIcon)
@@ -799,8 +915,7 @@ function RibbonBar.panelPosition(parent, width, height)
         x = RAIL_WIDTH + PADDING
     end
     x, y = x + origin.x - parentOrigin.x, y + origin.y - parentOrigin.y
-    return math.max(0, math.min(x, parent.width - width)),
-        math.max(0, math.min(y, parent.height - height))
+    return math.max(0, math.min(x, parent.width - width)), math.max(0, math.min(y, parent.height - height))
 end
 
 function RibbonBar.SetAutoHide(value)
