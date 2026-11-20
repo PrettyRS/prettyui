@@ -11,8 +11,18 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
     local warn = actions.warn
     local positions = { "x", "y", "xParentPc", "yParentPc", "xSelfPc", "ySelfPc" }
     local sizes = { "width", "height", "widthParentPc", "heightParentPc" }
-    local hostFields = { "frame", "content", "scroll", "tabs", "backdrop", "tabControls",
-        "backgrounds", "children", "nativeLayout", "nativeByKey" }
+    local hostFields = {
+        "frame",
+        "content",
+        "scroll",
+        "tabs",
+        "backdrop",
+        "tabControls",
+        "backgrounds",
+        "children",
+        "nativeLayout",
+        "nativeByKey",
+    }
 
     local identity = Host.identity
     local component = Host.component
@@ -65,19 +75,25 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         local function remember(comp)
             if comp then
                 host.flags[#host.flags + 1] = {
-                    component = comp, key = identity(comp), hidden = comp.hidden,
+                    component = comp,
+                    key = identity(comp),
+                    hidden = comp.hidden,
                 }
             end
         end
         if group.nativeRoots then
-            for _, saved in ipairs(group.nativeRoots) do remember(saved.component) end
+            for _, saved in ipairs(group.nativeRoots) do
+                remember(saved.component)
+            end
         else
             remember(host.content)
         end
         remember(host.scroll)
         remember(edit)
         subscribeHost(group, host.tabs)
-        for _, child in ipairs(host.children) do subscribeHost(group, child) end
+        for _, child in ipairs(host.children) do
+            subscribeHost(group, child)
+        end
         if group.grouped then
             host.seam = Components.new(ui.Sprite, host.overflow.viewport, { _categoryPolicy = "auto" })
             host.seam.spriteID = art.tabBarTile
@@ -100,12 +116,22 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
     end
 
     local function matchingHost(a, b)
-        if a.key ~= b.key or a.owner ~= b.owner or a.grouped ~= b.grouped
-            or a.signature ~= b.signature or a.used ~= b.used
+        if
+            a.key ~= b.key
+            or a.owner ~= b.owner
+            or a.grouped ~= b.grouped
+            or a.signature ~= b.signature
+            or a.used ~= b.used
             or a.nativeIcon ~= b.nativeIcon
-            or not same(a.content, b.content) or not same(a.scroll, b.scroll)
-            or not same(a.tabs, b.tabs) or not same(a.backdrop, b.backdrop)
-            or #a.backgrounds ~= #b.backgrounds or #a.children ~= #b.children then return false end
+            or not same(a.content, b.content)
+            or not same(a.scroll, b.scroll)
+            or not same(a.tabs, b.tabs)
+            or not same(a.backdrop, b.backdrop)
+            or #a.backgrounds ~= #b.backgrounds
+            or #a.children ~= #b.children
+        then
+            return false
+        end
         for i, bg in ipairs(a.backgrounds) do
             if bg.key ~= b.backgrounds[i].key then return false end
         end
@@ -115,75 +141,102 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         return true
     end
 
-    -- Equal public IDs establish membership, not a native object's lifetime.
-    -- Always adopt the current lookup handles, including unchanged-ID rebuilds.
-    local function refreshHost(group, host, current)
+    local function baselineMatches(previous, fresh)
+        if not fresh or fresh.offset ~= 0 then return false end
+        for index = 1, 6 do
+            if previous.original[index] ~= fresh.original[index] then return false end
+        end
+        return true
+    end
+
+    local function canResetLayout(group, host, current)
         local allowReset = group.lockTransition ~= nil
-        if current.nativeLayout then
-            local reset, complete, stable = false, true, true
-            for _, previous in ipairs(host.nativeLayout) do
-                if previous.offset ~= 0 then
-                    local fresh = current.nativeByKey[previous.key]
-                    if not fresh or fresh.offset ~= previous.offset or fresh._conflicted then stable = false end
-                    local baseline = fresh and fresh.offset == 0
-                    if baseline then
-                        for index = 1, 6 do
-                            if previous.original[index] ~= fresh.original[index] then baseline = false; break end
-                        end
-                    end
-                    if baseline then reset = true else complete = false end
+        if not current.nativeLayout then return allowReset end
+        local reset, complete, stable = false, true, true
+        for _, previous in ipairs(host.nativeLayout) do
+            if previous.offset ~= 0 then
+                local fresh = current.nativeByKey[previous.key]
+                if not fresh or fresh.offset ~= previous.offset or fresh._conflicted then stable = false end
+                if baselineMatches(previous, fresh) then
+                    reset = true
+                else
+                    complete = false
                 end
-            end
-            -- Selection scripts can reset rows after Logic. Accept complete baseline
-            -- resets through that selection's first Draw; unrelated repeated resets
-            -- still require a subsequent stable logic frame.
-            if stable and host.tabResetTick and actions.logicSequence() > host.tabResetTick then host.tabReset = true end
-            if reset and complete and (host.tabReset or group.paintPending) then
-                allowReset, host.tabReset, host.tabResetTick = true, false, actions.logicSequence()
             end
         end
-        for _, field in ipairs(hostFields) do host[field] = current[field] end
-        if host.grouped then TabLayout.track(host.tabs, host.nativeLayout, allowReset) end
-        if host.overflow then host.overflow.host = host end
+        -- Selection scripts can reset rows after Logic. Accept complete baseline
+        -- resets through that selection's first Draw; unrelated repeated resets
+        -- still require a subsequent stable logic frame.
+        if stable and host.tabResetTick and actions.logicSequence() > host.tabResetTick then host.tabReset = true end
+        if reset and complete and (host.tabReset or group.paintPending) then
+            allowReset, host.tabReset, host.tabResetTick = true, false, actions.logicSequence()
+        end
+        return allowReset
+    end
+
+    local function releaseFamiliarRoot(saved)
+        -- Dismissal can unparent a still-live page rather than
+        -- unload it. Release our inset before a later remount.
+        local fresh = saved.changed and component(saved.packed)
+        if fresh and identity(fresh) == saved.key and fresh.parent == nil then
+            saved.component = fresh
+            applyLayout(fresh, saved.original)
+            Components.setHidden(fresh, saved.hidden)
+            saved.changed = false
+        end
+    end
+
+    local function releaseMissingFamiliarRoots(host, roots, retained)
+        for index = #host.flags, 1, -1 do
+            local flag = host.flags[index]
+            for _, saved in ipairs(roots) do
+                if saved.key == flag.key and not retained[saved.key] then
+                    releaseFamiliarRoot(saved)
+                    table.remove(host.flags, index)
+                    break
+                end
+            end
+        end
+    end
+
+    local function refreshFamiliarRoots(group, host, roots)
+        local currentRoots = familiarRootsFor(host, roots)
+        if not currentRoots then error("unrecognized familiar page layout") end
+        local unavailable = component(host.spec.EDIT_BLOCK).visible == true
+        local availabilityChanged = group.familiarUnavailable ~= unavailable
+        group.familiarUnavailable = unavailable
+        local retained = {}
+        for _, saved in ipairs(currentRoots) do
+            retained[saved.key] = true
+        end
+        releaseMissingFamiliarRoots(host, roots, retained)
+        group.nativeRoots = currentRoots
+        for _, saved in ipairs(currentRoots) do
+            if not saved.changed then
+                saved.changed = true -- setters can partially apply before throwing
+                applyLayout(saved.component, saved.inset)
+                host.flags[#host.flags + 1] = {
+                    component = saved.component,
+                    key = saved.key,
+                    hidden = saved.hidden,
+                }
+            elseif availabilityChanged then
+                saved.baselineReset = true
+            end
+        end
+        return currentRoots
+    end
+
+    local function findRootComponent(roots, key)
+        for _, root in ipairs(roots) do
+            if key == root.key then return root.component end
+        end
+    end
+
+    local function refreshConcealment(group, host)
         local roots = group.nativeRoots
         if roots and host.spec.name == "TOPLEVEL_V2__LORE_WINDOW" then
-            local currentRoots = familiarRootsFor(host, roots)
-            if not currentRoots then error("unrecognized familiar page layout") end
-            local unavailable = component(host.spec.EDIT_BLOCK).visible == true
-            local availabilityChanged = group.familiarUnavailable ~= unavailable
-            group.familiarUnavailable = unavailable
-            local retained = {}
-            for _, saved in ipairs(currentRoots) do retained[saved.key] = true end
-            for index = #host.flags, 1, -1 do
-                local flag = host.flags[index]
-                for _, saved in ipairs(roots) do
-                    if saved.key == flag.key and not retained[saved.key] then
-                        -- Dismissal can unparent a still-live page rather than
-                        -- unload it. Release our inset before a later remount.
-                        local fresh = saved.changed and component(saved.packed)
-                        if fresh and identity(fresh) == saved.key and fresh.parent == nil then
-                            saved.component = fresh
-                            applyLayout(fresh, saved.original)
-                            Components.setHidden(fresh, saved.hidden)
-                            saved.changed = false
-                        end
-                        table.remove(host.flags, index)
-                        break
-                    end
-                end
-            end
-            group.nativeRoots, roots = currentRoots, currentRoots
-            for _, saved in ipairs(roots) do
-                if not saved.changed then
-                    saved.changed = true -- setters can partially apply before throwing
-                    applyLayout(saved.component, saved.inset)
-                    host.flags[#host.flags + 1] = {
-                        component = saved.component, key = saved.key, hidden = saved.hidden,
-                    }
-                elseif availabilityChanged then
-                    saved.baselineReset = true
-                end
-            end
+            roots = refreshFamiliarRoots(group, host, roots)
         elseif roots then
             for _, saved in ipairs(roots) do
                 local fresh = component(saved.packed)
@@ -196,126 +249,138 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         local edit = component(host.spec.EDIT_BLOCK)
         local contentKey, scrollKey, editKey = identity(host.content), identity(host.scroll), identity(edit)
         for _, saved in ipairs(host.flags) do
-            local fresh
-            if roots then
-                for _, root in ipairs(roots) do
-                    if saved.key == root.key then fresh = root.component; break end
-                end
-            end
+            local fresh = roots and findRootComponent(roots, saved.key)
             if not fresh then
-                if saved.key == contentKey then fresh = host.content
-                elseif saved.key == scrollKey then fresh = host.scroll
-                elseif saved.key == editKey then fresh = edit end
+                if saved.key == contentKey then
+                    fresh = host.content
+                elseif saved.key == scrollKey then
+                    fresh = host.scroll
+                elseif saved.key == editKey then
+                    fresh = edit
+                end
             end
             if not fresh then error("native concealment component retired") end
             saved.component = fresh
         end
+    end
+
+    -- Equal public IDs establish membership, not a native object's lifetime.
+    -- Always adopt the current lookup handles, including unchanged-ID rebuilds.
+    local function refreshHost(group, host, current)
+        local allowReset = canResetLayout(group, host, current)
+        for _, field in ipairs(hostFields) do
+            host[field] = current[field]
+        end
+        if host.grouped then TabLayout.track(host.tabs, host.nativeLayout, allowReset) end
+        if host.overflow then host.overflow.host = host end
+        refreshConcealment(group, host)
         local artwork = group.artwork
         if artwork and artwork.host == host then
             for _, bg in ipairs(host.backgrounds) do
-                if bg.key == artwork.key then artwork.component = bg.component; break end
+                if bg.key == artwork.key then
+                    artwork.component = bg.component
+                    break
+                end
             end
         end
         subscribeHost(group, host.tabs)
-        for _, child in ipairs(host.children) do subscribeHost(group, child) end
+        for _, child in ipairs(host.children) do
+            subscribeHost(group, child)
+        end
     end
 
-    -- A former frame identity anchors the group. Rectangles and matching tab
-    -- art alone cannot confer ownership of an unrelated native window.
-    local function reconcile(group)
-        if not live(group) then error("native interface retired") end
-        local open, mounted = false, false
+    local function nativeGroupOpen(group)
+        local mounted = false
         for _, host in pairs(group.frames) do
             local frame = component(host.spec.frame)
             if frame and same(frame.parent, group.area) then
                 mounted = true
-                if frame.visible ~= false and not frame.hidden then open = true; break end
+                if frame.visible ~= false and not frame.hidden then return true end
             end
         end
         -- Interface morphs temporarily hide every native host while retaining their
         -- top-level components. Suspend until one returns; unmounted hosts are gone.
-        if not open then
-            if mounted then return nil end
-            error("native group closed")
-        end
-        local found = discover(group.area)
-        local previous = {}
-        for _, host in ipairs(group.hosts) do previous[host.key] = host end
-        local anchor
-        local preferred = group.hosts[group.current]
+        if mounted then return false end
+        error("native group closed")
+    end
+
+    local function anchorHost(group, found, preferred)
         for _, host in ipairs(found) do
-            if group.frames[host.key] and host.grouped == group.grouped
-                and host.frame.visibleGlobal then anchor = host; break end
-        end
-        if not anchor then
-            for _, host in ipairs(found) do
-                if group.frames[host.key] and host.key == preferred.key
-                    and host.grouped == group.grouped then anchor = host; break end
+            if group.frames[host.key] and host.grouped == group.grouped and host.frame.visibleGlobal then
+                return host
             end
         end
-        if not anchor then
-            for _, host in ipairs(found) do
-                if group.frames[host.key] and host.grouped == group.grouped then anchor = host; break end
-            end
-        end
-        if not anchor or anchor.grouped ~= group.grouped then
-            if not selectedFrame(group) then
-                for _, host in pairs(group.frames) do
-                    local frame = component(host.spec.frame)
-                    if frame and same(frame.parent, group.area) then return nil end
-                end
-            end
-            error("native host closed or changed to an unsupported arrangement")
-        end
-        local hosts = {}
         for _, host in ipairs(found) do
-            if related(anchor, host) then
-                if byFrame[host.key] and byFrame[host.key] ~= group then
-                    error("native host belongs to another docked group")
-                end
-                hosts[#hosts + 1] = host
+            if group.frames[host.key] and host.key == preferred.key and host.grouped == group.grouped then
+                return host
             end
         end
-        if group.grouped and #hosts == 1 and #group.hosts > 1 then
-            local function pendingHidden(host)
-                local saved = group.frames[host.key]
-                return saved and saved.sortPending and not host.frame.visibleGlobal
-            end
-            -- Frame copies rebuilt at different moments still share their native
-            -- geometry; wait for their tab signatures to agree before adopting them.
-            for _, other in ipairs(found) do
-                if previous[other.key] and other.key ~= anchor.key and other.grouped
-                    and not pendingHidden(other) and other.owner == anchor.owner
-                    and other.frame.x == anchor.frame.x and other.frame.y == anchor.frame.y
-                    and other.frame.width == anchor.frame.width
-                    and other.frame.height == anchor.frame.height
-                    and other.tabs.x == anchor.tabs.x and other.tabs.y == anchor.tabs.y
-                    and other.tabs.width == anchor.tabs.width
-                    and other.content.y == anchor.content.y then return nil end
-            end
-            if not selectedFrame(group) then return nil end
+        for _, host in ipairs(found) do
+            if group.frames[host.key] and host.grouped == group.grouped then return host end
         end
-        -- A hidden frame can lose its row until that native page is selected after
-        -- the world map closes. Keep proven membership independently of renderable
-        -- rows, without retaining stale native handles. A captured incompatible row
-        -- still establishes a real split; missing/unparented frames are retired.
+        if not selectedFrame(group) then
+            for _, host in pairs(group.frames) do
+                local frame = component(host.spec.frame)
+                if frame and same(frame.parent, group.area) then return nil end
+            end
+        end
+        error("native host closed or changed to an unsupported arrangement")
+    end
+
+    local function waitingForFrameCopies(group, found, previous, anchor, hosts)
+        if not (group.grouped and #hosts == 1 and #group.hosts > 1) then return false end
+        -- Frame copies rebuilt at different moments still share their native
+        -- geometry; wait for their tab signatures to agree before adopting them.
+        for _, other in ipairs(found) do
+            local saved = group.frames[other.key]
+            local pendingHidden = saved and saved.sortPending and not other.frame.visibleGlobal
+            if
+                previous[other.key]
+                and other.key ~= anchor.key
+                and other.grouped
+                and not pendingHidden
+                and other.owner == anchor.owner
+                and other.frame.x == anchor.frame.x
+                and other.frame.y == anchor.frame.y
+                and other.frame.width == anchor.frame.width
+                and other.frame.height == anchor.frame.height
+                and other.tabs.x == anchor.tabs.x
+                and other.tabs.y == anchor.tabs.y
+                and other.tabs.width == anchor.tabs.width
+                and other.content.y == anchor.content.y
+            then
+                return true
+            end
+        end
+        return not selectedFrame(group)
+    end
+
+    local function retainedFrame(group, anchor, key, saved, captured)
+        if captured then
+            local matches = related(anchor, captured)
+            local retained = matches or saved.sortPending and not captured.frame.visibleGlobal
+            if matches or captured.frame.visibleGlobal then saved.sortPending = nil end
+            return retained
+        end
+        local frame = component(saved.spec.frame)
+        return frame and identity(frame) == key and same(frame.parent, group.area) and not frame.visibleGlobal
+    end
+
+    -- A hidden frame can lose its row until that native page is selected after
+    -- the world map closes. Keep proven membership independently of renderable
+    -- rows, without retaining stale native handles. A captured incompatible row
+    -- still establishes a real split; missing/unparented frames are retired.
+    local function reconcileMembership(group, found, anchor, hosts)
         local membershipChanged = false
         for key, saved in pairs(group.frames) do
             local captured
             for _, host in ipairs(found) do
-                if host.key == key then captured = host; break end
+                if host.key == key then
+                    captured = host
+                    break
+                end
             end
-            local retained
-            if captured then
-                local matches = related(anchor, captured)
-                retained = matches or saved.sortPending and not captured.frame.visibleGlobal
-                if matches or captured.frame.visibleGlobal then saved.sortPending = nil end
-            else
-                local frame = component(saved.spec.frame)
-                retained = frame and identity(frame) == key and same(frame.parent, group.area)
-                    and not frame.visibleGlobal
-            end
-            if not retained then
+            if not retainedFrame(group, anchor, key, saved, captured) then
                 group.frames[key] = nil
                 membershipChanged = true
                 if byFrame[key] == group then byFrame[key] = nil end
@@ -328,18 +393,11 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             end
             byFrame[host.key] = group
         end
-        local changed = #hosts ~= #group.hosts
-        if not changed then
-            for i, host in ipairs(hosts) do
-                if not matchingHost(group.hosts[i], host) then changed = true; break end
-            end
-        end
-        if not changed then
-            for i, host in ipairs(hosts) do refreshHost(group, group.hosts[i], host) end
-            return membershipChanged
-        end
+        return membershipChanged
+    end
 
-        local active, savedFlags, oldTabs = group.active, {}, {}
+    local function prepareRebuild(group)
+        local savedFlags, oldTabs, oldOverflows, nativeTabs = {}, {}, {}, {}
         restoreArtwork(group)
         for _, host in ipairs(group.hosts) do
             if host.grouped then TabLayout.restore(host.tabs) end
@@ -352,11 +410,11 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         releaseObservers(group)
         for _, panel in ipairs(group.members) do
             local tabs = {}
-            for i, host in ipairs(group.hosts) do tabs[host.key] = group.bindings[panel].tabs[i] end
+            for i, host in ipairs(group.hosts) do
+                tabs[host.key] = group.bindings[panel].tabs[i]
+            end
             oldTabs[panel] = tabs
         end
-        local oldOverflows = {}
-        local nativeTabs = {}
         for _, host in ipairs(group.hosts) do
             if host.overflow then oldOverflows[#oldOverflows + 1] = host.overflow end
             if not group.frames[host.key] then byFrame[host.key] = nil end
@@ -365,6 +423,10 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
                 if host[key] and live(group) then host[key]:Destroy() end
             end
         end
+        return savedFlags, oldTabs, oldOverflows, nativeTabs
+    end
+
+    local function rebuildHosts(group, hosts, previous, preferred, savedFlags)
         group.current = nil
         group.hosts = hosts
         for i, host in ipairs(hosts) do
@@ -382,22 +444,31 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             end
         end
         group.current = group.current or selectedFrame(group) or 1
+    end
+
+    local function rebuildMemberTab(group, panel, host, tabs)
+        local tab = tabs[host.key]
+        if tab then
+            if tab.visual and live(group) then tab.visual:Destroy() end
+            makeVisual(tab, host, panel.tabIcon or art.defaultIcon)
+            tabs[host.key] = nil
+        else
+            tab = newTab(group, host, panel, panel.tabIcon or art.defaultIcon, false)
+        end
+        return tab
+    end
+
+    local function rebuildTabs(group, hosts, oldTabs, nativeTabs)
         for _, panel in ipairs(group.members) do
             local binding, tabs = group.bindings[panel], oldTabs[panel]
             local updated = {}
             for i, host in ipairs(hosts) do
-                local tab = tabs[host.key]
-                if tab then
-                    if tab.visual and live(group) then tab.visual:Destroy() end
-                    makeVisual(tab, host, panel.tabIcon or art.defaultIcon)
-                    tabs[host.key] = nil
-                else
-                    tab = newTab(group, host, panel, panel.tabIcon or art.defaultIcon, false)
-                end
-                updated[i] = tab
+                updated[i] = rebuildMemberTab(group, panel, host, tabs)
             end
             binding.tabs = updated
-            for _, tab in pairs(tabs) do destroyTab(tab) end
+            for _, tab in pairs(tabs) do
+                destroyTab(tab)
+            end
         end
         for _, host in ipairs(hosts) do
             local tab = nativeTabs[host.key]
@@ -410,29 +481,84 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
                 host.nativeTab = newTab(group, host, group.members[1], host.nativeIcon, true)
             end
         end
-        for _, tab in pairs(nativeTabs) do destroyTab(tab) end
-        for _, view in ipairs(oldOverflows) do view:Destroy() end
+        for _, tab in pairs(nativeTabs) do
+            destroyTab(tab)
+        end
+    end
+
+    local function restoreActiveAfterRebuild(group, hosts, active)
+        if not active or group.pending then return end
+        local current = selectedFrame(group)
+        if current then
+            local host = hosts[current]
+            if group.grouped then borrow(group, host) end
+            conceal(group, host)
+            group.needsConceal = nil
+        else
+            group.needsConceal = true
+        end
+    end
+
+    -- A former frame identity anchors the group. Rectangles and matching tab
+    -- art alone cannot confer ownership of an unrelated native window.
+    local function reconcile(group)
+        if not live(group) then error("native interface retired") end
+        if not nativeGroupOpen(group) then return nil end
+        local found = discover(group.area)
+        local previous = {}
+        for _, host in ipairs(group.hosts) do
+            previous[host.key] = host
+        end
+        local preferred = group.hosts[group.current]
+        local anchor = anchorHost(group, found, preferred)
+        if not anchor then return nil end
+        local hosts = {}
+        for _, host in ipairs(found) do
+            if related(anchor, host) then
+                if byFrame[host.key] and byFrame[host.key] ~= group then
+                    error("native host belongs to another docked group")
+                end
+                hosts[#hosts + 1] = host
+            end
+        end
+        if waitingForFrameCopies(group, found, previous, anchor, hosts) then return nil end
+        local membershipChanged = reconcileMembership(group, found, anchor, hosts)
+        local changed = #hosts ~= #group.hosts
+        if not changed then
+            for i, host in ipairs(hosts) do
+                if not matchingHost(group.hosts[i], host) then
+                    changed = true
+                    break
+                end
+            end
+        end
+        if not changed then
+            for i, host in ipairs(hosts) do
+                refreshHost(group, group.hosts[i], host)
+            end
+            return membershipChanged
+        end
+
+        local active = group.active
+        local savedFlags, oldTabs, oldOverflows, nativeTabs = prepareRebuild(group)
+        rebuildHosts(group, hosts, previous, preferred, savedFlags)
+        rebuildTabs(group, hosts, oldTabs, nativeTabs)
+        for _, view in ipairs(oldOverflows) do
+            view:Destroy()
+        end
         for _, oldHost in pairs(previous) do
             if oldHost.chrome and live(group) then oldHost.chrome:Destroy() end
         end
-        if active and not group.pending then
-            local current = selectedFrame(group)
-            if current then
-                local host = hosts[current]
-                if group.grouped then borrow(group, host) end
-                conceal(group, host)
-                group.needsConceal = nil
-            else
-                group.needsConceal = true
-            end
-        end
+        restoreActiveAfterRebuild(group, hosts, active)
         return true
     end
 
     local function moveActive(group, current)
         restoreArtwork(group)
         for _, host in ipairs(group.hosts) do
-            for _, flag in ipairs(host.flags) do restoreFlag(group, flag) end
+            for _, flag in ipairs(host.flags) do
+                restoreFlag(group, flag)
+            end
         end
         local host = group.hosts[current]
         if group.grouped then borrow(group, host) end
@@ -473,8 +599,8 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         return true
     end
 
-    local function sameLayout(component, saved)
-        local pos, size = component.position, component.size
+    local function sameLayout(target, saved)
+        local pos, size = target.position, target.size
         local matches = true
         for index, field in ipairs(positions) do
             local value = pos[field]
@@ -489,6 +615,23 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         return matches
     end
 
+    local function restoreRootInset(saved)
+        if not saved.baselineReset or not sameLayout(saved.component, saved.original) then
+            error("native script overwrote tab inset")
+        end
+        local parent, expected = saved.component.parent, saved.inset
+        if parent.width * expected[9] + expected[7] <= 0 or parent.height * expected[10] + expected[8] <= 0 then
+            error("native content root resized below its bounds")
+        end
+        -- One baseline reset per lock/familiar-availability transition.
+        -- Keep the allowance across idle ticks for deferred reflow.
+        saved.baselineReset = nil
+        applyLayout(saved.component, expected)
+        if not sameLayout(saved.component, expected) then
+            error("native reflow did not retain tab inset")
+        end
+    end
+
     local function reconcileRoots(group)
         local changed = false
         if not group.nativeRoots then return changed end
@@ -497,21 +640,7 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
                 local matches = sameLayout(saved.component, saved.inset)
                 if matches == nil then error("native content layout retired") end
                 if not matches then
-                    if not saved.baselineReset or not sameLayout(saved.component, saved.original) then
-                        error("native script overwrote tab inset")
-                    end
-                    local parent, expected = saved.component.parent, saved.inset
-                    if parent.width * expected[9] + expected[7] <= 0
-                        or parent.height * expected[10] + expected[8] <= 0 then
-                        error("native content root resized below its bounds")
-                    end
-                    -- One baseline reset per lock/familiar-availability transition.
-                    -- Keep the allowance across idle ticks for deferred reflow.
-                    saved.baselineReset = nil
-                    applyLayout(saved.component, expected)
-                    if not sameLayout(saved.component, expected) then
-                        error("native reflow did not retain tab inset")
-                    end
+                    restoreRootInset(saved)
                     changed = true
                 end
                 if saved.component.width <= 0 or saved.component.height <= 0 then
@@ -529,9 +658,17 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         if selected ~= group.current then return true end
         local host = group.hosts[selected]
         if not host or not host.grouped then return false end
-        if host.overflow and (host.tabs.x ~= host.overflow.x
-            or host.tabs.width ~= host.overflow.width or host.tabs.scrollX ~= host.overflow.scrollX
-            or host.content.width ~= host.overflow.bandWidth) then return true end
+        if
+            host.overflow
+            and (
+                host.tabs.x ~= host.overflow.x
+                or host.tabs.width ~= host.overflow.width
+                or host.tabs.scrollX ~= host.overflow.scrollX
+                or host.content.width ~= host.overflow.bandWidth
+            )
+        then
+            return true
+        end
         local changed, count = false, 0
         host.tabs:IterateDynamicComponents(function(child)
             if not same(child.parent, host.tabs) then return false end
@@ -543,8 +680,13 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             end
             if child.width == 24 and child.height == 24 and child.y == 2 then
                 for _, bg in ipairs(host.backgrounds) do
-                    if saved.x == bg.layout.x + math.floor((bg.component.width - 24) / 2)
-                        and spriteID(child) ~= bg.icon then changed = true; return true end
+                    if
+                        saved.x == bg.layout.x + math.floor((bg.component.width - 24) / 2)
+                        and spriteID(child) ~= bg.icon
+                    then
+                        changed = true
+                        return true
+                    end
                 end
             end
             return false
@@ -558,9 +700,15 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             local ok, problem = pcall(callback)
             if not ok then failed = failed or problem end
         end
-        attempt(function() stopSortInputs(group); group.nativeSort = nil end)
+        attempt(function()
+            stopSortInputs(group)
+            group.nativeSort = nil
+        end)
         if group.constructingTab then
-            attempt(function() destroyTab(group.constructingTab); group.constructingTab = nil end)
+            attempt(function()
+                destroyTab(group.constructingTab)
+                group.constructingTab = nil
+            end)
         end
         attempt(function() nativePage(group) end)
         attempt(function() releaseObservers(group) end)
@@ -571,8 +719,11 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             for _, saved in ipairs(group.nativeRoots) do
                 if saved.changed then
                     attempt(function()
-                        if live(group) and identity(saved.component) == saved.key
-                            and ui.Interfaces:GetInterface(saved.owner) ~= nil then
+                        if
+                            live(group)
+                            and identity(saved.component) == saved.key
+                            and ui.Interfaces:GetInterface(saved.owner) ~= nil
+                        then
                             applyLayout(saved.component, saved.original)
                             Components.setHidden(saved.component, saved.hidden)
                         end
@@ -582,12 +733,23 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             end
         end
         for _, host in ipairs(group.hosts) do
-            if host.nativeTab then attempt(function() destroyTab(host.nativeTab); host.nativeTab = nil end) end
+            if host.nativeTab then
+                attempt(function()
+                    destroyTab(host.nativeTab)
+                    host.nativeTab = nil
+                end)
+            end
             if host.seam then
-                attempt(function() if live(group) then host.seam:Destroy() end; host.seam = nil end)
+                attempt(function()
+                    if live(group) then host.seam:Destroy() end
+                    host.seam = nil
+                end)
             end
             if host.overflow then
-                attempt(function() host.overflow:Destroy(); host.overflow = nil end)
+                attempt(function()
+                    host.overflow:Destroy()
+                    host.overflow = nil
+                end)
             end
             for _, key in ipairs({ "tabBuffer", "seam", "divider", "chrome" }) do
                 local owned = host[key]
