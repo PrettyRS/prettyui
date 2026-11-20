@@ -69,8 +69,8 @@ local function component(parent, kind, categoryID, dynamicID)
     function result:Unsubscribe(hook)
         self.subscriptions[hook] = nil
     end
-    function result:MoveToFront() end
-    function result:MoveToBack() end
+    function result.MoveToFront() end
+    function result.MoveToBack() end
     function result:Destroy() self.destroyed = true end
     if parent then
         parent.children = parent.children or {}
@@ -80,9 +80,11 @@ local function component(parent, kind, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent, categoryID, dynamicID)
-        return component(parent, kind, categoryID, dynamicID)
-    end }
+    return {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, kind, categoryID, dynamicID)
+        end,
+    }
 end
 
 local function inputField(parent, categoryID, dynamicID)
@@ -288,31 +290,15 @@ rawMousePosition = {
     x = rawMousePosition.x,
     y = rawMousePosition.y + 40,
 }
-thumbDrag.subscriptions[ui.Hook.ONHOLD](
-    thumbDrag,
-    rawMousePosition.x,
-    rawMousePosition.y
-)
-expect(
-    thumbDrag.width,
-    parent.width,
-    "window overlay synchronization preserves the expanded thumb capture"
-)
+thumbDrag.subscriptions[ui.Hook.ONHOLD](thumbDrag, rawMousePosition.x, rawMousePosition.y)
+expect(thumbDrag.width, parent.width, "window overlay synchronization preserves the expanded thumb capture")
 local draggedScrollY = window.scrollY
 expect(draggedScrollY > 0, true, "thumb hold advances the scroll position")
 local dragStartHandler = thumbDrag.subscriptions[ui.Hook.ONDRAG]
 if dragStartHandler then dragStartHandler(thumbDrag, clickX, clickY) end
-expect(
-    window.scrollY,
-    draggedScrollY,
-    "drag-start coordinates do not rewind an active thumb drag"
-)
+expect(window.scrollY, draggedScrollY, "drag-start coordinates do not rewind an active thumb drag")
 scrollPositionUpdates = window._scroll.viewport.scrollPositionUpdates
-thumbDrag.subscriptions[ui.Hook.ONHOLD](
-    thumbDrag,
-    rawMousePosition.x,
-    rawMousePosition.y
-)
+thumbDrag.subscriptions[ui.Hook.ONHOLD](thumbDrag, rawMousePosition.x, rawMousePosition.y)
 expect(
     window._scroll.viewport.scrollPositionUpdates,
     scrollPositionUpdates,
@@ -336,12 +322,20 @@ fixedWindow:Destroy()
 local Panel = require("src/panel")
 local panelTargets = {}
 local fakePanel = {
-    dock = { scroll = { ScrollToChild = function(_, child, offset)
-        panelTargets.dock, panelTargets.dockOffset = child, offset
-    end } },
-    overlay = { scroll = { ScrollToChild = function(_, child, offset)
-        panelTargets.overlay, panelTargets.overlayOffset = child, offset
-    end } },
+    dock = {
+        scroll = {
+            ScrollToChild = function(_, child, offset)
+                panelTargets.dock, panelTargets.dockOffset = child, offset
+            end,
+        },
+    },
+    overlay = {
+        scroll = {
+            ScrollToChild = function(_, child, offset)
+                panelTargets.overlay, panelTargets.overlayOffset = child, offset
+            end,
+        },
+    },
 }
 local pairedChild = { dock = {}, overlay = {} }
 Panel.ScrollToChild(fakePanel, pairedChild, 9)
@@ -355,10 +349,7 @@ local trackerWindow = Window.new(parent, {
     width = 600,
     height = 600,
 })
-local trackerTabs = trackerWindow:AddTabs(
-    { "General", "Debug" },
-    { height = -20, heightAnchor = 1.0 }
-)
+local trackerTabs = trackerWindow:AddTabs({ "General", "Debug" }, { height = -20, heightAnchor = 1.0 })
 local generalPage = trackerTabs:GetPage(1)
 expect(
     trackerTabs.root.height,
@@ -373,11 +364,7 @@ for index = 1, 13 do
         marginBottom = 8,
     })
 end
-expect(
-    generalPage.scrollbarVisible,
-    true,
-    "tab page scrolling starts when tracker rows exceed the visible page"
-)
+expect(generalPage.scrollbarVisible, true, "tab page scrolling starts when tracker rows exceed the visible page")
 generalPage:SetScrollPosition(10000)
 local addRow = generalPage._managedFlowEntries[#generalPage._managedFlowEntries].component
 expect(
@@ -392,9 +379,13 @@ local clippingTabs = clippingWindow:AddTabs({ "NPCs", "Objects" }, { height = 26
 local clippingPage = clippingTabs:GetPage(1)
 local inputChanges = 0
 local tabField = clippingPage:AddTextField({
-    text = "26773, 31635", y = 40, width = 120,
-    colour = 0x12345680, placeholderColour = 0x23456760,
-    caretColour = 0x34567840, selectionColour = 0x45678920,
+    text = "26773, 31635",
+    y = 40,
+    width = 120,
+    colour = 0x12345680,
+    placeholderColour = 0x23456760,
+    caretColour = 0x34567840,
+    selectionColour = 0x45678920,
     onChange = function() inputChanges = inputChanges + 1 end,
 })
 tabField.root.errorCaretRGBA = 0x56789A80
@@ -478,18 +469,29 @@ local following = inlinePanel:AddText("Next row")
 local function checkInlineLayout()
     for _, side in ipairs({ "dock", "overlay" }) do
         local heading, boxes = title[side], checks[side]
-        expect(boxes.root.y >= heading.y + heading.height + 8, true,
-            side .. " inline checkboxes start below the title and its gap")
-        expect(boxes.items[1].row.y, boxes.items[2].row.y,
-            side .. " checkbox choices still share one row")
+        expect(
+            boxes.root.y >= heading.y + heading.height + 8,
+            true,
+            side .. " inline checkboxes start below the title and its gap"
+        )
+        expect(boxes.items[1].row.y, boxes.items[2].row.y, side .. " checkbox choices still share one row")
         local text, input = label[side], field[side].root
         expect(input.y, text.y, side .. " inline text field shares the label row")
-        expect(input.x, text.x + font:GetStringWidth(text.content) + 4 + 8,
-            side .. " inline text field follows the rendered label")
-        expect(input.x + input.width, text.parent.width - 14,
-            side .. " default inline field fills only the remaining row width")
-        expect(following[side].y >= input.y + input.height + 8, true,
-            side .. " following text clears the taller inline field")
+        expect(
+            input.x,
+            text.x + font:GetStringWidth(text.content) + 4 + 8,
+            side .. " inline text field follows the rendered label"
+        )
+        expect(
+            input.x + input.width,
+            text.parent.width - 14,
+            side .. " default inline field fills only the remaining row width"
+        )
+        expect(
+            following[side].y >= input.y + input.height + 8,
+            true,
+            side .. " following text clears the taller inline field"
+        )
     end
 end
 checkInlineLayout()
@@ -498,36 +500,42 @@ checkInlineLayout()
 
 local fixedLabel = inlinePanel:AddText({ text = "Fixed:", width = 110 })
 local fixedField = inlinePanel:AddTextField({ inline = true, width = 100 })
-expect(fixedField.dock.root.x, fixedLabel.dock.x + 110 + 8,
-    "explicit label width takes precedence over measured text")
+expect(fixedField.dock.root.x, fixedLabel.dock.x + 110 + 8, "explicit label width takes precedence over measured text")
 following:Destroy()
-expect(fixedField.dock.root.x, fixedLabel.dock.x + 110 + 8,
-    "explicit label width is preserved during reflow")
+expect(fixedField.dock.root.x, fixedLabel.dock.x + 110 + 8, "explicit label width is preserved during reflow")
 checks:Destroy()
 label:Destroy()
 expect(field.dock.root.x, 14, "removing the label moves its field to the row start")
-expect(field.dock.root.x + field.dock.root.width, dockView.content.width - 14,
-    "removing the label expands the field to the remaining content width")
+expect(
+    field.dock.root.x + field.dock.root.width,
+    dockView.content.width - 14,
+    "removing the label expands the field to the remaining content width"
+)
 dockView:Destroy()
 overlayView:Destroy()
 
 -- Logout arrives after native interfaces are gone. Retained handles deliberately
 -- reject every read/write so this exercises the unsafe path, not tolerant mocks.
 local callbacks = {}
-Event = { Logic = {
-    Subscribe = function(key, callback) callbacks[key] = callback end,
-    Unsubscribe = function(key) callbacks[key] = nil end,
-} }
+Event = {
+    Logic = {
+        Subscribe = function(key, callback) callbacks[key] = callback end,
+        Unsubscribe = function(key) callbacks[key] = nil end,
+    },
+}
 Keyboard = { IsAvailable = function() return false end }
 config.Cursor.CURSOR_OPEN = { id = 1 }
 package.loaded["src/core/sprites"].CONTENT_FRAME = {}
 package.loaded["src/core/sprites"].HUD_WINDOW = {}
 package.loaded["src/core/sprites"].SPRITE_BUTTONS = {
-    POPOUT = { neutral = 1 }, DOCK = { neutral = 1 },
+    POPOUT = { neutral = 1 },
+    DOCK = { neutral = 1 },
 }
 local closed = 0
 local logoutWindow = Window.new(parent, {
-    title = "Logout", width = 400, height = 300,
+    title = "Logout",
+    width = 400,
+    height = 300,
     rowBackgroundColours = { 0x24211EFF },
     onClose = function() closed = closed + 1 end,
 })
