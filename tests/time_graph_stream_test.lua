@@ -53,8 +53,11 @@ integer:Push(math.maxinteger)
 integer:Push(math.maxinteger)
 assert(integer.total > math.maxinteger, "integer totals must not wrap negative")
 for _, options in ipairs({
-    { metric = "" }, { metric = "x", interval = 0 }, { metric = "x", interval = 0.03 },
-    { metric = "x", capacity = 1 }, { metric = "x", capacity = 2.5 },
+    { metric = "" },
+    { metric = "x", interval = 0 },
+    { metric = "x", interval = 0.03 },
+    { metric = "x", capacity = 1 },
+    { metric = "x", capacity = 2.5 },
 }) do
     expect(pcall(Stream.new, options), false, "invalid graph options rejected")
 end

@@ -41,13 +41,17 @@ function Stream.CreateEventBus()
         if not finite(payload.value) then return false, "TimeGraph updates require a finite numeric delta." end
         local metric, value = payload.metric, payload.value
         local snapshot = {}
-        for index, callback in ipairs(listeners) do snapshot[index] = callback end
+        for index, callback in ipairs(listeners) do
+            snapshot[index] = callback
+        end
         for _, callback in ipairs(snapshot) do
             local ok, message = pcall(callback, { metric = metric, value = value })
             if not ok then
-                pcall(function()
-                    log("[prettyui] TimeGraph update subscriber failed: " .. tostring(message))
-                end)
+                pcall(
+                    function()
+                        log("[prettyui] TimeGraph update subscriber failed: " .. tostring(message))
+                    end
+                )
             end
         end
         return true
@@ -90,7 +94,9 @@ function Stream:Reset()
     self.count = 1
     self.elapsedTicks = 0
     self.total = 0
-    for index = 1, self.capacity do self.values[index] = 0 end
+    for index = 1, self.capacity do
+        self.values[index] = 0
+    end
     self.revision = self.revision + 1
 end
 
@@ -110,7 +116,9 @@ function Stream:Advance(logicTick)
     -- A suspended client can skip hours: clear at most capacity slots rather
     -- than constructing every expired interval. Total remains session-wide.
     if steps >= self.capacity then
-        for index = 1, self.capacity do self.values[index] = 0 end
+        for index = 1, self.capacity do
+            self.values[index] = 0
+        end
         self.head = 1
         self.count = self.capacity
     else
