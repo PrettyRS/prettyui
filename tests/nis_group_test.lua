@@ -15,14 +15,17 @@ end
 
 run("docking targets the tab band, not the body", function(f)
     local source, target = pair(f)
-    f:begin(source); f:move(source, 650, 130)
+    f:begin(source)
+    f:move(source, 650, 130)
     assert(source.root.hidden and not target._nisTabs.root.hidden)
     f:move(source, 650, 250)
     assert(not source.root.hidden and target._nisTabs.root.hidden)
     f:release(source)
     assert(source._nisGroup == nil, "leaving the band cancels the pending target")
 
-    f:begin(source); f:move(source, 650, 130); f:release(source)
+    f:begin(source)
+    f:move(source, 650, 130)
+    f:release(source)
     assert(source._nisGroup == target._nisGroup and target.root.hidden)
     rect(source.root, 500, 100, 300, 260)
     source:Undock()
@@ -33,11 +36,14 @@ end)
 
 run("tab selection rebuilds only the selected page and retains pressed input", function(f)
     local builds, row = 0, nil
-    local source, target = pair(f, { contentHeight = 500, tabIcon = Plugin.resources.image,
+    local source, target = pair(f, {
+        contentHeight = 500,
+        tabIcon = Plugin.resources.image,
         buildContent = function(owner)
             builds = builds + 1
             row = owner:AddText("Page")
-        end })
+        end,
+    })
     assert(source:DockTo(target))
     source:SetScrollPosition(64)
     local oldRow = row
@@ -49,7 +55,8 @@ run("tab selection rebuilds only the selected page and retains pressed input", f
     assert(source.content == nil and oldRow.destroyed and not target.root.hidden)
     assert(not pressed.destroyed, "selection must not destroy the in-flight native click")
     f.fire(pressed, ui.Hook.ONRELEASE, 10, 10)
-    source:SelectTab(); source:SelectTab()
+    source:SelectTab()
+    source:SelectTab()
     assert(row ~= oldRow and builds == 2 and source.scrollY == 64)
     f:lock(true)
     target:SelectTab()
@@ -66,7 +73,8 @@ run("group size limits apply to every member and disappear on undock", function(
     f.expect(target.root.width, 280, "inactive member minimum constrains resize")
     rect(source.root, target.root.x, target.root.y, target.root.width, target.root.height)
     source:Undock()
-    source:SetSize(200, 200); target:SetSize(400, 200)
+    source:SetSize(200, 200)
+    target:SetSize(400, 200)
     assert(source.root.width == 200 and target.root.width == 400)
 end)
 
@@ -91,14 +99,22 @@ for _, finish in ipairs({ "release", "escape", "focus", "lock" }) do
         local tab = source._nisTabs.tabs[2].hit
         dragTab(f, tab, 200, 500)
         assert(not source.root.hidden and not target.root.hidden)
-        if finish == "release" then f.fire(tab, ui.Hook.ONRELEASE)
-        elseif finish == "escape" then f:emit("KeyDown", { gameKey = GameKey.ESCAPE })
-        elseif finish == "focus" then f:emit("WindowFocusChanged", { hasFocus = false })
-        else f:lock(true) end
+        if finish == "release" then
+            f.fire(tab, ui.Hook.ONRELEASE)
+        elseif finish == "escape" then
+            f:emit("KeyDown", { gameKey = GameKey.ESCAPE })
+        elseif finish == "focus" then
+            f:emit("WindowFocusChanged", { hasFocus = false })
+        else
+            f:lock(true)
+        end
         if finish == "release" then
             assert(source._nisGroup == nil and target._nisGroup == nil)
-            assert(source.root.y >= target.root.y + target.root.height
-                or source.root.x + source.root.width <= target.root.x, "tear-out must not overlap survivor")
+            assert(
+                source.root.y >= target.root.y + target.root.height
+                    or source.root.x + source.root.width <= target.root.x,
+                "tear-out must not overlap survivor"
+            )
         else
             assert(source._nisGroup == target._nisGroup and target.root.hidden)
             rect(source.root, 500, 100, 300, 260)
@@ -189,7 +205,10 @@ run("locked activation appends to the existing group and persists its selection"
     assert(target.content == nil and peer.content == nil and source.content ~= nil)
     assert(not source.dragLayer.enabled, "automatic docking must not unlock the panel")
     rect(source.root, 180, 100, 400, 240)
-    source:Destroy(); peer:Destroy(); target:Destroy(); f:restart()
+    source:Destroy()
+    peer:Destroy()
+    target:Destroy()
+    f:restart()
     source = f:panel({ id = "source" })
     peer = f:panel({ id = "peer" })
     target = f:panel({ id = "target" })
