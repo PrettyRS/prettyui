@@ -15,8 +15,15 @@ end
 local function host(interfaceID)
     nextStaticID = nextStaticID + 1
     local static = {
-        interfaceID = interfaceID, staticID = nextStaticID, categoryID = -1, dynamicID = -1,
-        width = 1000, height = 800, children = {}, registry = {}, virtual = {},
+        interfaceID = interfaceID,
+        staticID = nextStaticID,
+        categoryID = -1,
+        dynamicID = -1,
+        width = 1000,
+        height = 800,
+        children = {},
+        registry = {},
+        virtual = {},
         subscriptions = {},
     }
     loaded[interfaceID] = static
@@ -56,16 +63,29 @@ local function component(parent, categoryID, dynamicID, kind)
             dynamic = dynamic + 1
         end
     end
-    assert(category >= 0 and category <= 234 and dynamic >= 0 and
-        dynamic <= (category == 0 and 4095 or 234), "native ID capacity exceeded")
+    assert(
+        category >= 0 and category <= 234 and dynamic >= 0 and dynamic <= (category == 0 and 4095 or 234),
+        "native ID capacity exceeded"
+    )
     local key = pair(category, dynamic)
     assert(not static.registry[key] and not static.virtual[key], "native ID collision: " .. key)
     local result = {
-        parent = parent, parentStatic = static, interfaceID = static.interfaceID,
-        categoryID = category, dynamicID = dynamic, kind = kind,
+        parent = parent,
+        parentStatic = static,
+        interfaceID = static.interfaceID,
+        categoryID = category,
+        dynamicID = dynamic,
+        kind = kind,
         staticID = static.staticID,
-        children = {}, subscriptions = {}, x = 0, y = 0, width = 0, height = 0,
-        hidden = false, cursorConfig = {}, text = {},
+        children = {},
+        subscriptions = {},
+        x = 0,
+        y = 0,
+        width = 0,
+        height = 0,
+        hidden = false,
+        cursorConfig = {},
+        text = {},
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
     }
     static.registry[key] = result
@@ -88,15 +108,19 @@ local function component(parent, categoryID, dynamicID, kind)
     function result:SetScrollSize(width, height)
         self.scrollWidth, self.scrollHeight = width, height
     end
-    function result:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
+    function result:SetScrollPos(x, y)
+        self.scrollX, self.scrollY = x, y
+    end
     function result:Subscribe(hook, name, callback) self.subscriptions[hook] = callback or name end
     function result:Unsubscribe(hook) self.subscriptions[hook] = nil end
-    function result:MoveToFront() end
-    function result:MoveToBack() end
+    function result.MoveToFront() end
+    function result.MoveToBack() end
     function result:SetAssociatedObject(objectID) self.associatedObject = objectID end
     function result:Destroy()
         if self.destroyed then return end
-        for _, child in ipairs(self.children) do child:Destroy() end
+        for _, child in ipairs(self.children) do
+            child:Destroy()
+        end
         self.destroyed = true
         if static.registry[key] == self then static.registry[key] = nil end
     end
@@ -104,22 +128,31 @@ local function component(parent, categoryID, dynamicID, kind)
 end
 
 local function factory(kind)
-    return { new = function(parent, category, dynamic)
-        return component(parent, category, dynamic, kind)
-    end }
+    return {
+        new = function(parent, category, dynamic)
+            return component(parent, category, dynamic, kind)
+        end,
+    }
 end
 local function namespace()
-    return setmetatable({}, { __index = function(table_, field)
-        local value = 1
-        rawset(table_, field, value)
-        return value
-    end })
+    return setmetatable({}, {
+        __index = function(table_, field)
+            local value = 1
+            rawset(table_, field, value)
+            return value
+        end,
+    })
 end
 local enum = setmetatable({}, { __index = function(_, field) return field end })
 ui = {
-    Layer = factory("layer"), Text = factory("text"), Sprite = factory("sprite"),
-    Rectangle = factory("rectangle"), Button = factory("button"),
-    Hook = enum, AlignMode = enum, ComponentType = enum,
+    Layer = factory("layer"),
+    Text = factory("text"),
+    Sprite = factory("sprite"),
+    Rectangle = factory("rectangle"),
+    Button = factory("button"),
+    Hook = enum,
+    AlignMode = enum,
+    ComponentType = enum,
     ObjectQuantityDisplayMode = enum,
     SelectionChangeEvent = { SELECTED = 1, DESELECTED = 2, ERROR_MAX_SELECTED = 3 },
     Interfaces = {
@@ -128,22 +161,26 @@ ui = {
             local static = namespaces[interfaceID] and namespaces[interfaceID][staticID]
             if not loaded[interfaceID] or not static then return nil end
             if categoryID == nil then return static end
-            return static.registry[pair(categoryID, dynamicID)] or
-                static.virtual[pair(categoryID, dynamicID)]
+            return static.registry[pair(categoryID, dynamicID)] or static.virtual[pair(categoryID, dynamicID)]
         end,
     },
 }
-id = setmetatable({}, { __index = function(table_, field)
-    local value = namespace()
-    rawset(table_, field, value)
-    return value
-end })
+id = setmetatable({}, {
+    __index = function(table_, field)
+        local value = namespace()
+        rawset(table_, field, value)
+        return value
+    end,
+})
 config = {
     Cursor = enum,
-    Font = { MUSEO_SANS_15PT_REGULAR = {
-        baseline = 18, GetStringLineCount = function() return 1 end,
-        GetStringWidth = function(_, text) return #text * 7 end,
-    } },
+    Font = {
+        MUSEO_SANS_15PT_REGULAR = {
+            baseline = 18,
+            GetStringLineCount = function() return 1 end,
+            GetStringWidth = function(_, text) return #text * 7 end,
+        },
+    },
 }
 config.Font.CINZEL_13PT_BOLD = config.Font.MUSEO_SANS_15PT_REGULAR
 Plugin = { resources = {} }
@@ -164,7 +201,9 @@ package.loaded["src/minimenu"] = { Start = function() end, Shutdown = function()
 
 local prettyui = require("main")
 local occupied = host(1)
-for dynamic = 0, 4049 do occupied.virtual[pair(0, dynamic)] = true end
+for dynamic = 0, 4049 do
+    occupied.virtual[pair(0, dynamic)] = true
+end
 occupied.virtual[pair(1, 6)] = true
 local neighbor = ui.Layer.new(occupied, 2, 0)
 local window = prettyui.Window.new(occupied, { categoryID = "auto", title = "Capacity", width = 400, height = 230 })
@@ -173,7 +212,9 @@ local firstClick, lastClick
 for index = 1, 250 do
     local row = prettyui.NewComponent(ui.Layer, window.content)
     rawRows[index] = row
-    for _ = 1, 4 do prettyui.NewComponent(ui.Text, row) end
+    for _ = 1, 4 do
+        prettyui.NewComponent(ui.Text, row)
+    end
     local button = prettyui.NewComponent(ui.Button, row)
     button:Subscribe(ui.Hook.ONCLICK, function()
         if index == 1 then firstClick = true end
@@ -188,7 +229,9 @@ expect(rawRows[250].categoryID > 0, true, "raw rows cross category zero")
 expect(neighbor.destroyed, nil, "mixed-owner neighbor survives raw rows")
 
 local choices = {}
-for index = 1, 250 do choices[index] = { label = "Choice " .. index, value = index } end
+for index = 1, 250 do
+    choices[index] = { label = "Choice " .. index, value = index }
+end
 local checkbox = window:AddCheckboxButton(choices)
 checkbox.items[1].row.subscriptions[ui.Hook.ONCLICK]()
 checkbox.items[250].row.subscriptions[ui.Hook.ONCLICK]()
@@ -211,10 +254,14 @@ expect(pairChoice.overlay.items[1].row.categoryID > 0, true, "panel overlay chil
 
 local second = host(1)
 local independent = prettyui.NewComponent(ui.Layer, second)
-assert(independent.categoryID == 0 and independent.dynamicID == 0,
-    "static parents sharing an interface allocate independently")
+assert(
+    independent.categoryID == 0 and independent.dynamicID == 0,
+    "static parents sharing an interface allocate independently"
+)
 
-for _, row in ipairs(rawRows) do row:Destroy() end
+for _, row in ipairs(rawRows) do
+    row:Destroy()
+end
 panel:Destroy()
 view:Destroy()
 window:Destroy()
@@ -233,9 +280,13 @@ expect(nestedForeign.destroyed, nil, "nested foreign component is preserved")
 
 local saturated = host(4)
 local saturatedParent = ui.Layer.new(saturated, 0, 0)
-for dynamic = 1, 4095 do saturated.virtual[pair(0, dynamic)] = true end
+for dynamic = 1, 4095 do
+    saturated.virtual[pair(0, dynamic)] = true
+end
 for category = 1, 234 do
-    for dynamic = 0, 234 do saturated.virtual[pair(category, dynamic)] = true end
+    for dynamic = 0, 234 do
+        saturated.virtual[pair(category, dynamic)] = true
+    end
 end
 local before = constructed
 local full = pcall(prettyui.NewComponent, ui.Text, saturatedParent, { categoryID = "auto" })
@@ -307,8 +358,11 @@ require("src/core/components").withBatch(mixedParent, function()
     local foreign = ui.Text.new(mixedParent, 1, first.dynamicID + 1)
     prettyui.RefreshComponentIDs(mixedParent)
     local following = prettyui.NewComponent(ui.Text, mixedParent, { categoryID = "auto" })
-    expect(following.dynamicID, foreign.dynamicID + 1,
-        "refresh during a batch includes newly inserted unmanaged descendants")
+    expect(
+        following.dynamicID,
+        foreign.dynamicID + 1,
+        "refresh during a batch includes newly inserted unmanaged descendants"
+    )
 end)
 
 -- Legacy positional APIs preserve native identity; an opted-in sibling cannot
@@ -332,8 +386,8 @@ do
     end
 end
 local nativeFailure = "legacy native constructor failed"
-local legacySuccess, legacyError = pcall(prettyui.NewComponent,
-    { new = function() error(nativeFailure, 0) end }, host(29))
+local legacySuccess, legacyError =
+    pcall(prettyui.NewComponent, { new = function() error(nativeFailure, 0) end }, host(29))
 expect(legacySuccess, false, "legacy native construction failure propagates")
 expect(legacyError, nativeFailure, "legacy constructor preserves native error")
 
@@ -344,11 +398,17 @@ do
     for _, content in ipairs({ auto.root, auto.content, auto._scroll.root, auto._scroll.viewport }) do
         expect(content.categoryID, 0, "automatic Window structural spine remains category zero")
     end
-    expect(ui.Text.new(auto.content, auto.root.categoryID).categoryID, 0,
-        "native extensions keep the category-zero content namespace")
+    expect(
+        ui.Text.new(auto.content, auto.root.categoryID).categoryID,
+        0,
+        "native extensions keep the category-zero content namespace"
+    )
     local foreignLayer = ui.Layer.new(auto.content)
-    expect(prettyui.Text.new(foreignLayer, { text = "Late" }).categoryID > 0, true,
-        "ancestor policy passes through foreign native layers")
+    expect(
+        prettyui.Text.new(foreignLayer, { text = "Late" }).categoryID > 0,
+        true,
+        "ancestor policy passes through foreign native layers"
+    )
     expect(legacy:AddText("Still legacy").categoryID, 0, "auto sibling does not relabel shared host")
     local collapse = auto:AddCollapseButton("Section", { expanded = true })
     expect(collapse.root.categoryID, 0, "auto CollapseButton root is raw-compatible")
@@ -402,10 +462,16 @@ do
         if mode == "unresolved" then ui.Interfaces.GetComponent = function() return nil end end
         local control = C.new(ui.Text, parentAlias, { categoryID = "auto" })
         control.content = "This plugin"
-        expect(static.registry[pair(foreign.categoryID, foreign.dynamicID)].content, "Other plugin",
-            "aliased parent preserves the other plugin's control: " .. mode)
-        expect(static.registry[pair(control.categoryID, control.dynamicID)].content, "This plugin",
-            "aliased parent creates a separately addressable control: " .. mode)
+        expect(
+            static.registry[pair(foreign.categoryID, foreign.dynamicID)].content,
+            "Other plugin",
+            "aliased parent preserves the other plugin's control: " .. mode
+        )
+        expect(
+            static.registry[pair(control.categoryID, control.dynamicID)].content,
+            "This plugin",
+            "aliased parent creates a separately addressable control: " .. mode
+        )
         control:Destroy()
         expect(foreign.destroyed, nil, "aliased allocation cleanup cannot destroy a foreign control")
         ui.Interfaces.GetComponent = fullLookup
@@ -420,12 +486,12 @@ do
     local foreignRoot = ui.Layer.new(area)
     local foreign = ui.Sprite.new(foreignRoot, 1, 0)
     foreign.content = "Existing plugin"
-    local window = prettyui.Window.new(area, { categoryID = "auto", title = "Static descendant" })
-    local text = window:AddText("Independent window")
+    local descendantWindow = prettyui.Window.new(area, { categoryID = "auto", title = "Static descendant" })
+    local text = descendantWindow:AddText("Independent window")
     expect(text.parentStatic, area, "managed content uses the supplied static area's namespace")
     expect(area.registry[pair(1, 0)], foreign, "managed construction preserves another plugin's sprite")
     expect(next(ancestor.registry), nil, "managed construction does not allocate in the static ancestor")
-    window:Destroy()
+    descendantWindow:Destroy()
     expect(foreign.content, "Existing plugin", "destroying the new window preserves existing content")
     local grouped = prettyui.BuildCategoryGroup(area, 1, function(new)
         return new(ui.Text, foreignRoot)
@@ -458,13 +524,17 @@ do
     end
     local static = host(34)
     local parent = ui.Layer.new(static, 7, 230)
-    for dynamic = 231, 234 do static.virtual[pair(7, dynamic)] = true end
+    for dynamic = 231, 234 do
+        static.virtual[pair(7, dynamic)] = true
+    end
     local count = constructed
     local success = pcall(C.new, ui.Text, parent)
     expect(success, false, "occupied inherited suffix cannot silently escape category")
     expect(constructed, count, "full inherited suffix avoids native entry")
     local empty = host(35)
-    for dynamic = 0, 4095 do empty.virtual[pair(0, dynamic)] = true end
+    for dynamic = 0, 4095 do
+        empty.virtual[pair(0, dynamic)] = true
+    end
     count = constructed
     success = pcall(prettyui.Window.new, empty, { categoryID = "auto" })
     expect(success, false, "full category zero does not relocate automatic content")
@@ -493,7 +563,9 @@ do
     expect(constructed, count, "invalid combo dropdown leaves no shell")
     -- Permit the first structural root, then fail its viewport preflight.
     local tiny = host(38)
-    for dynamic = 1, 4095 do tiny.virtual[pair(0, dynamic)] = true end
+    for dynamic = 1, 4095 do
+        tiny.virtual[pair(0, dynamic)] = true
+    end
     success = pcall(prettyui.SimpleView.new, tiny, { categoryID = "auto" })
     expect(success, false, "later content capacity rejection propagates")
     expect(next(tiny.registry), nil, "direct constructor rolls back its earlier structural layers")
@@ -522,15 +594,19 @@ do
     for _, automatic in ipairs({ true, false }) do
         local grid = prettyui.ItemGrid.new(parent, { { id = 42, name = "Item" } }, {
             categoryID = automatic and "auto" or nil,
-            columns = 2, rows = 1, dragDrop = true,
+            columns = 2,
+            rows = 1,
+            dragDrop = true,
         })
         expect(grid.dragCapture, nil, "ItemGrid capture remains lazy before drag")
         grid.slots[1].root.subscriptions[ui.Hook.ONCLICK]()
         expect(grid.dragCapture.parent, overlay, "drag capture mounts under resolved overlay")
-        expect(grid.dragCapture.categoryID > 0, automatic,
-            "detached capture follows owner, not an already-auto overlay")
-        expect(grid.dragSprite.categoryID > 0, automatic,
-            "floating item follows its logical owner")
+        expect(
+            grid.dragCapture.categoryID > 0,
+            automatic,
+            "detached capture follows owner, not an already-auto overlay"
+        )
+        expect(grid.dragSprite.categoryID > 0, automatic, "floating item follows its logical owner")
         local capture = grid.dragCapture
         grid.dragCapture.subscriptions[ui.Hook.ONRELEASE]()
         expect(capture.destroyed, true, "release tears down native drag capture")
@@ -545,16 +621,17 @@ end
 do
     local savedVector = Vector4
     Vector4 = { new = function(r, g, b, a) return { r, g, b, a } end }
+    local function isChrome(layer)
+        for _, child in ipairs(layer.children) do
+            if child.kind == "rectangle" and child.colour ~= nil then return true end
+        end
+        return false
+    end
     local function chromes(parent)
         local result = {}
         for _, layer in ipairs(parent.children) do
-            if not layer.destroyed and layer.kind == "layer" then
-                for _, child in ipairs(layer.children) do
-                    if child.kind == "rectangle" and child.colour ~= nil then
-                        result[#result + 1] = layer
-                        break
-                    end
-                end
+            if not layer.destroyed and layer.kind == "layer" and isChrome(layer) then
+                result[#result + 1] = layer
             end
         end
         return result
@@ -571,20 +648,26 @@ do
                 expect(ui.Layer.new(window_.content).categoryID, 0, "modal callback can safely extend zero content")
             end,
         })
-        expect(first.window:AddText("First owner").categoryID > 0, firstAuto,
-            "real first modal Window preserves its allocation choice")
+        expect(
+            first.window:AddText("First owner").categoryID > 0,
+            firstAuto,
+            "real first modal Window preserves its allocation choice"
+        )
         local chrome = chromes(parent)
         expect(#chrome, 2, "modal mounts a dim and blocker")
         expect(chrome[1].categoryID > 0, firstAuto, "real shared chrome follows its first modal owner")
-        local second = prettyui.Dialog.new(parent, {
+        local nextDialog = prettyui.Dialog.new(parent, {
             categoryID = not firstAuto and "auto" or nil,
         })
-        expect(second.window:AddText("Second owner").categoryID > 0, not firstAuto,
-            "real second modal Window preserves an independent allocation choice")
+        expect(
+            nextDialog.window:AddText("Second owner").categoryID > 0,
+            not firstAuto,
+            "real second modal Window preserves an independent allocation choice"
+        )
         local stillChrome = chromes(parent)
         expect(#stillChrome, 2, "stacking a modal does not create replacement chrome")
         expect(stillChrome[1], chrome[1], "shared dim retains native identity across policies")
-        second.window:Close()
+        nextDialog.window:Close()
         expect(chrome[1].destroyed, nil, "shared chrome survives while another modal remains")
         first.actionSlots[action1].button.root.subscriptions[ui.Hook.ONCLICK]()
         expect(chrome[1].destroyed, true, "last modal destroys shared chrome")

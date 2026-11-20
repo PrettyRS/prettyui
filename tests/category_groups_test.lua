@@ -13,8 +13,13 @@ local hosts = {}
 local virtualComponent = {}
 local function host(interfaceID)
     local static = {
-        interfaceID = interfaceID, staticID = 1, categoryID = -1, dynamicID = -1,
-        children = {}, registry = {}, virtual = {},
+        interfaceID = interfaceID,
+        staticID = 1,
+        categoryID = -1,
+        dynamicID = -1,
+        children = {},
+        registry = {},
+        virtual = {},
     }
     hosts[interfaceID] = static
     function static:IterateDynamicComponents(callback)
@@ -28,24 +33,38 @@ end
 local function component(parent, categoryID, dynamicID, kind)
     constructorCalls = constructorCalls + 1
     local static = parent.parentStatic or parent
-    assert(categoryID == nil or parent ~= static and parent.categoryID ~= -1,
-        "native explicit IDs on a static host")
+    assert(categoryID == nil or parent ~= static and parent.categoryID ~= -1, "native explicit IDs on a static host")
     local category = categoryID or (parent.categoryID == -1 and 0 or parent.categoryID)
     local dynamic = dynamicID
     local ids = static.registry[category]
-    if not ids then ids = {}; static.registry[category] = ids end
+    if not ids then
+        ids = {}
+        static.registry[category] = ids
+    end
     if dynamic == nil then
         dynamic = parent.dynamicID + 1
-        while ids[dynamic] do dynamic = dynamic + 1 end
+        while ids[dynamic] do
+            dynamic = dynamic + 1
+        end
     end
-    assert(category >= 0 and category <= 234 and dynamic >= 0 and
-        dynamic <= (category == 0 and 4095 or 234), "native ID out of range")
-    assert(not ids[dynamic] and not static.virtual[key(category, dynamic)],
-        "native ID collision " .. key(category, dynamic))
+    assert(
+        category >= 0 and category <= 234 and dynamic >= 0 and dynamic <= (category == 0 and 4095 or 234),
+        "native ID out of range"
+    )
+    assert(
+        not ids[dynamic] and not static.virtual[key(category, dynamic)],
+        "native ID collision " .. key(category, dynamic)
+    )
     local result = {
-        parent = parent, parentStatic = static, interfaceID = static.interfaceID,
-        staticID = static.staticID, categoryID = category, dynamicID = dynamic, kind = kind,
-        children = {}, hooks = {},
+        parent = parent,
+        parentStatic = static,
+        interfaceID = static.interfaceID,
+        staticID = static.staticID,
+        categoryID = category,
+        dynamicID = dynamic,
+        kind = kind,
+        children = {},
+        hooks = {},
     }
     ids[dynamic] = result
     parent.children[#parent.children + 1] = result
@@ -57,7 +76,9 @@ local function component(parent, categoryID, dynamicID, kind)
     function result:Subscribe(hook, callback) self.hooks[hook] = callback end
     function result:Destroy()
         if self.destroyed then return end
-        for _, child in ipairs(self.children) do child:Destroy() end
+        for _, child in ipairs(self.children) do
+            child:Destroy()
+        end
         self.destroyed = true
         if ids[dynamic] == self then ids[dynamic] = nil end
     end
@@ -65,15 +86,21 @@ local function component(parent, categoryID, dynamicID, kind)
 end
 
 ui = {
-    Layer = { new = function(parent, category, dynamic)
-        return component(parent, category, dynamic, "layer")
-    end },
-    Text = { new = function(parent, category, dynamic)
-        return component(parent, category, dynamic, "text")
-    end },
-    Button = { new = function(parent, category, dynamic)
-        return component(parent, category, dynamic, "button")
-    end },
+    Layer = {
+        new = function(parent, category, dynamic)
+            return component(parent, category, dynamic, "layer")
+        end,
+    },
+    Text = {
+        new = function(parent, category, dynamic)
+            return component(parent, category, dynamic, "text")
+        end,
+    },
+    Button = {
+        new = function(parent, category, dynamic)
+            return component(parent, category, dynamic, "button")
+        end,
+    },
     Hook = { ONCLICK = 1 },
     Interfaces = {
         GetInterface = function(_, interfaceID) return hosts[interfaceID] end,
@@ -89,11 +116,13 @@ ui = {
 }
 Plugin = { resources = {} }
 local function namespace()
-    return setmetatable({}, { __index = function(table_, field)
-        local value = setmetatable({}, { __index = function() return 1 end })
-        rawset(table_, field, value)
-        return value
-    end })
+    return setmetatable({}, {
+        __index = function(table_, field)
+            local value = setmetatable({}, { __index = function() return 1 end })
+            rawset(table_, field, value)
+            return value
+        end,
+    })
 end
 id = namespace()
 config = namespace()
@@ -121,7 +150,9 @@ prettyui.WithCategoryBatch(content, function(buildGroup)
     for index = 1, 720 do
         rows[index] = buildGroup(6, function(new)
             local row = new(ui.Layer, content)
-            for _ = 1, 4 do new(ui.Text, row) end
+            for _ = 1, 4 do
+                new(ui.Text, row)
+            end
             local button = new(ui.Button, row)
             button:Subscribe(ui.Hook.ONCLICK, function() clicks[#clicks + 1] = index end)
             return row
@@ -142,12 +173,16 @@ local foreign = ui.Layer.new(mixedContent, 1, 6)
 foreign.hidden = true
 build(mixedContent, 6, function(new)
     local row = new(ui.Layer, mixedContent)
-    for _ = 1, 5 do new(ui.Text, row) end
+    for _ = 1, 5 do
+        new(ui.Text, row)
+    end
     return row
 end)
 local second = build(mixedContent, 6, function(new)
     local row = new(ui.Layer, mixedContent)
-    for _ = 1, 5 do new(ui.Text, row) end
+    for _ = 1, 5 do
+        new(ui.Text, row)
+    end
     return row
 end)
 expect(second.dynamicID, 7, "reserved block skips a nested hidden foreign occupant")
@@ -163,7 +198,9 @@ expect(ok, false, "native constructor failure propagates")
 expect(reason, "injected native error", "native error text is unchanged")
 local retry = build(rollbackContent, 6, function(new)
     local row = new(ui.Layer, rollbackContent)
-    for _ = 1, 5 do new(ui.Text, row) end
+    for _ = 1, 5 do
+        new(ui.Text, row)
+    end
     return row
 end)
 expect(retry.dynamicID, 0, "failed group releases its IDs and cursor")
@@ -189,19 +226,27 @@ local full = pcall(build, survivor, 6, function(new)
 end)
 expect(full, false, "a full namespace rejects before construction")
 expect(constructorCalls, callsBefore, "capacity failure never invokes a constructor")
-for dynamicID = 229, 234 do saturated.virtual[key(234, dynamicID)] = nil end
+for dynamicID = 229, 234 do
+    saturated.virtual[key(234, dynamicID)] = nil
+end
 local rescued = build(survivor, 6, function(new)
     local row = new(ui.Layer, survivor)
-    for _ = 1, 5 do new(ui.Text, row) end
+    for _ = 1, 5 do
+        new(ui.Text, row)
+    end
     return row
 end)
 expect(rescued.categoryID, 234, "freed category can be allocated")
 expect(rescued.dynamicID, 229, "freed contiguous block is reused")
 rescued:Destroy()
-for dynamicID = 0, 5 do saturated.virtual[key(1, dynamicID)] = nil end
+for dynamicID = 0, 5 do
+    saturated.virtual[key(1, dynamicID)] = nil
+end
 local wrapped = build(survivor, 6, function(new)
     local row = new(ui.Layer, survivor)
-    for _ = 1, 5 do new(ui.Text, row) end
+    for _ = 1, 5 do
+        new(ui.Text, row)
+    end
     return row
 end)
 expect(wrapped.categoryID, 1, "cursor wraps from the final category")
@@ -217,7 +262,7 @@ expect(staticOK, false, "reserved constructors reject static parents")
 assert(staticError:find("require a dynamic parent", 1, true), "static rejection is actionable")
 expect(constructorCalls, beforeStatic, "static rejection precedes native construction")
 
-local guardedRow, guardedManaged = build(guardedContent, 3, function(new)
+local guardedPair = build(guardedContent, 3, function(new)
     local ordinary = prettyui.NewComponent(ui.Text, guardedContent, { categoryID = "auto" })
     prettyui.RefreshComponentIDs(guardedContent)
     local row = new(ui.Layer, guardedContent)
@@ -225,7 +270,7 @@ local guardedRow, guardedManaged = build(guardedContent, 3, function(new)
     new(ui.Text, row)
     return { row, ordinary }
 end)
-guardedRow, guardedManaged = guardedRow[1], guardedRow[2]
+local guardedRow, guardedManaged = guardedPair[1], guardedPair[2]
 expect(guardedRow.dynamicID, 0, "reserved block remains intact after managed allocation and refresh")
 expect(guardedManaged.dynamicID, 3, "ordinary allocation skips all unbuilt reserved slots")
 
@@ -253,8 +298,10 @@ local collisionOK, collisionError = pcall(build, interruptedContent, 3, function
     new(ui.Text, interruptedContent)
 end)
 expect(collisionOK, false, "a raw occupant in a reserved future slot rejects the group")
-assert(collisionError:find("reserved category ID became occupied", 1, true),
-    "reservation collision is reported before native construction")
+assert(
+    collisionError:find("reserved category ID became occupied", 1, true),
+    "reservation collision is reported before native construction"
+)
 expect(raw.destroyed, nil, "group rollback leaves the unrelated raw occupant alive")
 expect(interrupted.registry[1][0], nil, "partial group component is rolled back")
 local recovered = build(interruptedContent, 2, function(new)
@@ -288,10 +335,12 @@ local SharedInterfaces = require("tests/interface_fixture")
 local sharedRoot = SharedInterfaces.component({ interfaceID = 90, children = {} })
 local sharedParent = SharedInterfaces.component({ children = {} }, sharedRoot)
 local sharedCalls = 0
-local sharedNative = { new = function(parent)
-    sharedCalls = sharedCalls + 1
-    return SharedInterfaces.component({ children = {} }, parent)
-end }
+local sharedNative = {
+    new = function(parent)
+        sharedCalls = sharedCalls + 1
+        return SharedInterfaces.component({ children = {} }, parent)
+    end,
+}
 local Components = require("src/core/components")
 local knownChild = Components.new(sharedNative, sharedParent)
 SharedInterfaces.unload(90)
