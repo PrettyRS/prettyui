@@ -9,7 +9,9 @@ local variants = Sprites.OVERHEAD_BARS
 OverheadBar.Variants = variants
 
 local byName = {}
-for _, variant in ipairs(variants) do byName[variant.name] = variant end
+for _, variant in ipairs(variants) do
+    byName[variant.name] = variant
+end
 local active = {}
 local nextID = 0
 
@@ -27,9 +29,12 @@ local function create(entity, targetType, options)
     local variant = byName[options.variant or "health.default"]
     assert(variant, "Unknown overhead bar variant: " .. tostring(options.variant))
     local value = options.value == nil and 1 or options.value
-    assert(type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge,
-        "Overhead bar value must be a finite fraction")
-    local parent = options.parent or ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__ROOT)
+    assert(
+        type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge,
+        "Overhead bar value must be a finite fraction"
+    )
+    local parent = options.parent
+        or ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__ROOT)
         or ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA)
     if parent == nil then return nil end
     local heightAboveGround = options.heightAboveGround
@@ -83,8 +88,10 @@ end
 
 function OverheadBar:SetValue(value)
     if self.root == nil then return false end
-    assert(type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge,
-        "Overhead bar value must be a finite fraction")
+    assert(
+        type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge,
+        "Overhead bar value must be a finite fraction"
+    )
     self.value = math.max(0, math.min(1, value))
     self.fillClip:SetSize(math.floor(self.variant.width * self.value + 0.5), self.variant.height)
     return true
@@ -133,8 +140,14 @@ function OverheadBar:Update()
         self:Destroy()
         return false
     end
-    if not succeeded or screen == nil or screen.x < 0 or screen.y < 0
-        or screen.x > self.parent.width or screen.y > self.parent.height then
+    if
+        not succeeded
+        or screen == nil
+        or screen.x < 0
+        or screen.y < 0
+        or screen.x > self.parent.width
+        or screen.y > self.parent.height
+    then
         Components.setHidden(self.root, true)
         return false
     end
@@ -174,7 +187,9 @@ function OverheadBar:Destroy()
 end
 
 function OverheadBar.Shutdown()
-    for bar in pairs(active) do bar:Destroy() end
+    for bar in pairs(active) do
+        bar:Destroy()
+    end
 end
 
 return OverheadBar
