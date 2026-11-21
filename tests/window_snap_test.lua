@@ -18,8 +18,16 @@ end
 
 local function component(parent, kind, categoryID, dynamicID)
     local result = {
-        parent = parent, kind = kind, children = {}, subscriptions = {}, namedSubscriptions = {},
-        x = 0, y = 0, width = 0, height = 0, hidden = false,
+        parent = parent,
+        kind = kind,
+        children = {},
+        subscriptions = {},
+        namedSubscriptions = {},
+        x = 0,
+        y = 0,
+        width = 0,
+        height = 0,
+        hidden = false,
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
         cursorConfig = {},
     }
@@ -29,7 +37,9 @@ local function component(parent, kind, categoryID, dynamicID)
         self.y = y + ((parent and parent.height or 0) * (yAnchor or 0))
     end
     function result:EmitResize()
-        for _, callback in pairs(self.namedSubscriptions[ui.Hook.ONRESIZE] or {}) do callback(self) end
+        for _, callback in pairs(self.namedSubscriptions[ui.Hook.ONRESIZE] or {}) do
+            callback(self)
+        end
     end
     function result:SetSize(width, height, widthAnchor, heightAnchor)
         self.width = width + ((parent and parent.width or 0) * (widthAnchor or 0))
@@ -77,32 +87,47 @@ local function component(parent, kind, categoryID, dynamicID)
         table.insert(parent.children, 1, self)
     end
     function result:Destroy()
-        while #self.children > 0 do self.children[#self.children]:Destroy() end
+        while #self.children > 0 do
+            self.children[#self.children]:Destroy()
+        end
         removeChild(parent, self)
         self.destroyed = true
     end
-    setmetatable(result, { __index = function(self, key)
-        if key ~= "xyGlobal" then return nil end
-        local origin = parent and parent.xyGlobal or { x = 0, y = 0 }
-        return { x = origin.x + self.x, y = origin.y + self.y }
-    end })
+    setmetatable(result, {
+        __index = function(self, key)
+            if key ~= "xyGlobal" then return nil end
+            local origin = parent and parent.xyGlobal or { x = 0, y = 0 }
+            return { x = origin.x + self.x, y = origin.y + self.y }
+        end,
+    })
     if parent then table.insert(parent.children, result) end
     return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent, categoryID, dynamicID)
-        return component(parent, kind, categoryID, dynamicID)
-    end }
+    return {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, kind, categoryID, dynamicID)
+        end,
+    }
 end
 
 ui = {
-    Layer = factory("layer"), Sprite = factory("sprite"),
-    Rectangle = factory("rectangle"), Text = factory("text"),
+    Layer = factory("layer"),
+    Sprite = factory("sprite"),
+    Rectangle = factory("rectangle"),
+    Text = factory("text"),
     Hook = {
-        ONCLICK = 1, ONHOLD = 2, ONDRAG = 3, ONRELEASE = 4,
-        ONDRAGCOMPLETE = 5, ONSCROLLWHEEL = 6, ONMOUSEOVER = 7,
-        ONMOUSELEAVE = 8, ONMOUSEREPEAT = 9, ONRESIZE = 10,
+        ONCLICK = 1,
+        ONHOLD = 2,
+        ONDRAG = 3,
+        ONRELEASE = 4,
+        ONDRAGCOMPLETE = 5,
+        ONSCROLLWHEEL = 6,
+        ONMOUSEOVER = 7,
+        ONMOUSELEAVE = 8,
+        ONMOUSEREPEAT = 9,
+        ONRESIZE = 10,
     },
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
 }
@@ -133,7 +158,9 @@ local minimap = { xyGlobal = { x = 700, y = 40 }, width = 200, height = 150, vis
 local closedWindow = { xyGlobal = { x = 300, y = 300 }, width = 200, height = 150, visibleGlobal = false }
 local layoutLayer = { children = { minimap, closedWindow } }
 function layoutLayer:IterateStaticComponents(callback)
-    for _, child in ipairs(self.children) do callback(child) end
+    for _, child in ipairs(self.children) do
+        callback(child)
+    end
 end
 local layoutLayerFails = false
 ui.Interfaces = {
@@ -167,7 +194,12 @@ parent:SetSize(1000, 700)
 
 local snapping = Window.new(parent, { title = "Snapping", x = 100, y = 300, width = 300, height = 200 })
 local still = Window.new(parent, {
-    title = "Not snapping", x = 600, y = 300, width = 300, height = 200, snapToEdges = false,
+    title = "Not snapping",
+    x = 600,
+    y = 300,
+    width = 300,
+    height = 200,
+    snapToEdges = false,
 })
 expect(snapping.snapToEdges, true, "snapToEdges is on by default")
 expect(still.snapToEdges, false, "snapToEdges = false turns snapping off")

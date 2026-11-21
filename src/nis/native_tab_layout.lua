@@ -8,11 +8,14 @@ local handles = setmetatable({}, { __mode = "k" })
 
 local function identity(component)
     if not component then return nil end
-    local ok, a, b, c, d = pcall(function()
-        return component.interfaceID, component.staticID, component.categoryID, component.dynamicID
-    end)
-    if not ok or type(a) ~= "number" or type(b) ~= "number"
-        or type(c) ~= "number" or type(d) ~= "number" then return nil end
+    local ok, a, b, c, d = pcall(
+        function()
+            return component.interfaceID, component.staticID, component.categoryID, component.dynamicID
+        end
+    )
+    if not ok or type(a) ~= "number" or type(b) ~= "number" or type(c) ~= "number" or type(d) ~= "number" then
+        return nil
+    end
     return a .. ":" .. b .. ":" .. c .. ":" .. d, a, b
 end
 
@@ -62,11 +65,20 @@ function NativeTabLayout.capture(tabs, children)
         local key = identity(child)
         if not key or seen[key] then return nil end
         seen[key] = true
-        local ok, parent, x, width, height = pcall(function()
-            return child.parent, child.x, child.width, child.height
-        end)
-        if not ok or identity(parent) ~= tabKey or type(x) ~= "number"
-            or type(width) ~= "number" or type(height) ~= "number" then return nil end
+        local ok, parent, x, width, height = pcall(
+            function()
+                return child.parent, child.x, child.width, child.height
+            end
+        )
+        if
+            not ok
+            or identity(parent) ~= tabKey
+            or type(x) ~= "number"
+            or type(width) ~= "number"
+            or type(height) ~= "number"
+        then
+            return nil
+        end
         local saved = previous and previous.records[key]
         local offset, conflicted, current = 0, false
         if saved and matches(child, saved.original, saved.offset) then
@@ -83,9 +95,15 @@ function NativeTabLayout.capture(tabs, children)
             end
         end
         records[#records + 1] = {
-            component = child, key = key, original = current,
-            x = x - offset, width = width, height = height, offset = offset,
-            _tabsKey = tabKey, _conflicted = conflicted,
+            component = child,
+            key = key,
+            original = current,
+            x = x - offset,
+            width = width,
+            height = height,
+            offset = offset,
+            _tabsKey = tabKey,
+            _conflicted = conflicted,
         }
     end
     return records
@@ -96,18 +114,31 @@ function NativeTabLayout.track(tabs, records, allowReset)
     local key, interfaceID, staticID = identity(tabs)
     assert(key and type(records) == "table", "invalid native tab layout")
     local previous = tracked[key]
-    local saved = { key = key, interfaceID = interfaceID, staticID = staticID,
-        parentKey = identity(tabs.parent), records = {} }
+    local saved = {
+        key = key,
+        interfaceID = interfaceID,
+        staticID = staticID,
+        parentKey = identity(tabs.parent),
+        records = {},
+    }
     for _, record in ipairs(records) do
-        assert(record._tabsKey == key and record.key and not saved.records[record.key]
-            and record.original and type(record.offset) == "number", "invalid native tab record")
+        assert(
+            record._tabsKey == key
+                and record.key
+                and not saved.records[record.key]
+                and record.original
+                and type(record.offset) == "number",
+            "invalid native tab record"
+        )
         local old = previous and previous.records[record.key]
         local blocked = not allowReset and (record._conflicted or old and old.blocked) or false
         local entry = {
-            original = old and (old.original == record.original
-                or samePosition(old.original, record.original))
-                and old.original or copy(record.original),
-            offset = record.offset, blocked = blocked,
+            original = old
+                    and (old.original == record.original or samePosition(old.original, record.original))
+                    and old.original
+                or copy(record.original),
+            offset = record.offset,
+            blocked = blocked,
         }
         saved.records[record.key] = entry
         record._entry = entry
@@ -121,17 +152,17 @@ function NativeTabLayout.move(record, offset)
     local owner = tracked[record._tabsKey]
     local entry = owner and owner.records[record.key]
     assert(entry and entry == record._entry, "native tab record is no longer tracked")
-    assert(identity(record.component) == record.key
-        and matches(record.component, entry.original, entry.offset),
-        "native tab position changed since capture")
+    assert(
+        identity(record.component) == record.key and matches(record.component, entry.original, entry.offset),
+        "native tab position changed since capture"
+    )
     if entry.blocked then return false end
     if offset == entry.offset then return true end
     -- SetPos can apply a layout and then throw. Record ownership first so the
     -- next capture or restore can recognize the actual post-error position.
     entry.offset, record.offset = offset, offset
     local original = entry.original
-    record.component:SetPos(original[1] + offset, original[2], original[3],
-        original[4], original[5], original[6])
+    record.component:SetPos(original[1] + offset, original[2], original[3], original[4], original[5], original[6])
     return true
 end
 
@@ -152,15 +183,27 @@ function NativeTabLayout.restore(tabs)
     -- not enumerate a newly rebuilt strip merely to clear zero-offset records.
     local displaced = false
     for _, entry in pairs(saved.records) do
-        if entry.offset ~= 0 then displaced = true; break end
+        if entry.offset ~= 0 then
+            displaced = true
+            break
+        end
     end
-    if not displaced then tracked[key] = nil; return end
+    if not displaced then
+        tracked[key] = nil
+        return
+    end
     local interfaceID, staticID = saved.interfaceID, saved.staticID
     local ok, loaded = pcall(function() return ui.Interfaces:GetInterface(interfaceID) end)
     if not ok then error(loaded) end
-    if not loaded then tracked[key] = nil; return end
+    if not loaded then
+        tracked[key] = nil
+        return
+    end
     local fresh = ui.Interfaces:GetComponent((interfaceID << 16) | staticID)
-    if not fresh or identity(fresh) ~= key then tracked[key] = nil; return end
+    if not fresh or identity(fresh) ~= key then
+        tracked[key] = nil
+        return
+    end
     local parentOK, parent = pcall(function() return fresh.parent end)
     if not parentOK or not parent or saved.parentKey and identity(parent) ~= saved.parentKey then
         tracked[key] = nil
@@ -173,8 +216,11 @@ function NativeTabLayout.restore(tabs)
         local entry = childKey and saved.records[childKey]
         if entry and entry.offset ~= 0 and identity(child.parent) == key then
             -- An ambiguous duplicate identity cannot safely identify either child.
-            if seen[childKey] then children[childKey] = nil
-            else children[childKey], seen[childKey] = child, true end
+            if seen[childKey] then
+                children[childKey] = nil
+            else
+                children[childKey], seen[childKey] = child, true
+            end
         end
         return false
     end)
@@ -183,10 +229,11 @@ function NativeTabLayout.restore(tabs)
         local child = children[childKey]
         if child and entry.offset ~= 0 and matches(child, entry.original, entry.offset) then
             local original = entry.original
-            local success, err = pcall(function()
-                child:SetPos(original[1], original[2], original[3],
-                    original[4], original[5], original[6])
-            end)
+            local success, err = pcall(
+                function()
+                    child:SetPos(original[1], original[2], original[3], original[4], original[5], original[6])
+                end
+            )
             if not success then failed = failed or err end
         end
     end

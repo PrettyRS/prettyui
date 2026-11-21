@@ -16,7 +16,9 @@ local function updateLayout(component)
     component.y = position.y + position.yParentPc * parentHeight + position.ySelfPc * component.height
     local origin = parent and parent.xyGlobal or { x = 0, y = 0 }
     component.xyGlobal = { x = origin.x + component.x, y = origin.y + component.y }
-    for _, child in ipairs(component.children) do updateLayout(child) end
+    for _, child in ipairs(component.children) do
+        updateLayout(child)
+    end
 end
 
 local liveComponents = 0
@@ -24,40 +26,57 @@ local function component(parent, kind, interfaceID, categoryID, dynamicID)
     local result = {
         position = { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
         size = { width = 0, height = 0, widthParentPc = 0, heightParentPc = 0 },
-        children = {}, subscriptions = {}, parent = parent, kind = kind,
-        hidden = false, destroyed = false,
+        children = {},
+        subscriptions = {},
+        parent = parent,
+        kind = kind,
+        hidden = false,
+        destroyed = false,
     }
     function result:SetPos(x, y, xParentPc, yParentPc, xSelfPc, ySelfPc)
         self.position = {
-            x = x, y = y, xParentPc = xParentPc or 0, yParentPc = yParentPc or 0,
-            xSelfPc = xSelfPc or 0, ySelfPc = ySelfPc or 0,
+            x = x,
+            y = y,
+            xParentPc = xParentPc or 0,
+            yParentPc = yParentPc or 0,
+            xSelfPc = xSelfPc or 0,
+            ySelfPc = ySelfPc or 0,
         }
         updateLayout(self)
     end
     function result:SetSize(width, height, widthParentPc, heightParentPc)
         self.size = {
-            width = width, height = height,
-            widthParentPc = widthParentPc or 0, heightParentPc = heightParentPc or 0,
+            width = width,
+            height = height,
+            widthParentPc = widthParentPc or 0,
+            heightParentPc = heightParentPc or 0,
         }
         updateLayout(self)
     end
     function result:Subscribe(hook, id, callback)
-        if callback == nil then callback, id = id, "default" end
+        if callback == nil then
+            callback, id = id, "default"
+        end
         self.subscriptions[tostring(hook) .. ":" .. tostring(id)] = callback
     end
     function result:Unsubscribe(hook, id)
         self.subscriptions[tostring(hook) .. ":" .. tostring(id or "default")] = nil
     end
-    function result:MoveToFront() end
+    function result.MoveToFront() end
     function result:Destroy()
         if self.destroyed then return end
-        while #self.children > 0 do self.children[#self.children]:Destroy() end
+        while #self.children > 0 do
+            self.children[#self.children]:Destroy()
+        end
         self.subscriptions = {}
         self.destroyed = true
         liveComponents = liveComponents - 1
         if self.parent then
             for index, child in ipairs(self.parent.children) do
-                if child == self then table.remove(self.parent.children, index) break end
+                if child == self then
+                    table.remove(self.parent.children, index)
+                    break
+                end
             end
         end
     end
@@ -82,32 +101,45 @@ local nativeLayer = "blocking"
 
 id = {
     Component = {
-        TOPLEVEL_V2__ROOT = 1, TOPLEVEL_V2__GAME_AREA = 2,
-        MINIMENU__PC_MOUSE_LEAVE_LAYER = 3, MINIMENU__MENU_BLOCKING_LAYER = 4,
+        TOPLEVEL_V2__ROOT = 1,
+        TOPLEVEL_V2__GAME_AREA = 2,
+        MINIMENU__PC_MOUSE_LEAVE_LAYER = 3,
+        MINIMENU__MENU_BLOCKING_LAYER = 4,
     },
     Font = { NOTOSANS_BOLD_12 = 1 },
 }
 ui = {
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
     Hook = { ONMOUSEOVER = 1, ONMOUSEREPEAT = 2, ONMOUSELEAVE = 3, ONCLICK = 4, ONSCROLLWHEEL = 5 },
-    Layer = { new = function(parent, categoryID, dynamicID)
-        return component(parent, "Layer", nil, categoryID, dynamicID)
-    end },
-    Rectangle = { new = function(parent, categoryID, dynamicID)
-        return component(parent, "Rectangle", nil, categoryID, dynamicID)
-    end },
-    Sprite = { new = function(parent, categoryID, dynamicID)
-        return component(parent, "Sprite", nil, categoryID, dynamicID)
-    end },
-    Text = { new = function(parent, categoryID, dynamicID)
-        return component(parent, "Text", nil, categoryID, dynamicID)
-    end },
+    Layer = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, "Layer", nil, categoryID, dynamicID)
+        end,
+    },
+    Rectangle = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, "Rectangle", nil, categoryID, dynamicID)
+        end,
+    },
+    Sprite = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, "Sprite", nil, categoryID, dynamicID)
+        end,
+    },
+    Text = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, "Text", nil, categoryID, dynamicID)
+        end,
+    },
     Interfaces = {
         GetComponent = function(_, componentID)
-            if componentID == id.Component.TOPLEVEL_V2__ROOT
-                    or componentID == id.Component.TOPLEVEL_V2__GAME_AREA then return root end
-            if nativeLayer == "mouseLeave" and componentID == id.Component.MINIMENU__PC_MOUSE_LEAVE_LAYER
-                    or nativeLayer == "blocking" and componentID == id.Component.MINIMENU__MENU_BLOCKING_LAYER then
+            if componentID == id.Component.TOPLEVEL_V2__ROOT or componentID == id.Component.TOPLEVEL_V2__GAME_AREA then
+                return root
+            end
+            if
+                nativeLayer == "mouseLeave" and componentID == id.Component.MINIMENU__PC_MOUSE_LEAVE_LAYER
+                or nativeLayer == "blocking" and componentID == id.Component.MINIMENU__MENU_BLOCKING_LAYER
+            then
                 return nativeHitbox
             end
         end,
@@ -118,14 +150,16 @@ local probe = component(root, "Layer")
 probe:Destroy()
 
 local function font(characterWidth)
-    return { GetStringWidth = function(_, text)
-        local visible = text:gsub("<([^>]*)>", function(tag)
-            if tag == "gt" then return ">" end
-            if tag == "lt" then return "<" end
-            return ""
-        end)
-        return #visible * characterWidth
-    end }
+    return {
+        GetStringWidth = function(_, text)
+            local visible = text:gsub("<([^>]*)>", function(tag)
+                if tag == "gt" then return ">" end
+                if tag == "lt" then return "<" end
+                return ""
+            end)
+            return #visible * characterWidth
+        end,
+    }
 end
 config = { Font = { NOTOSANS_BOLD_12 = font(7), MUSEO_SANS_15PT_REGULAR = font(8) } }
 game = { options = { InterfaceScale = { setting = 100 } } }
@@ -140,24 +174,34 @@ local function event(name)
     return {
         Subscribe = function(id, callback)
             for _, listener in ipairs(listeners) do
-                if listener.id == id then listener.callback = callback return end
+                if listener.id == id then
+                    listener.callback = callback
+                    return
+                end
             end
             listeners[#listeners + 1] = { id = id, callback = callback }
         end,
         Unsubscribe = function(id)
             for index, listener in ipairs(listeners) do
-                if listener.id == id then table.remove(listeners, index) return end
+                if listener.id == id then
+                    table.remove(listeners, index)
+                    return
+                end
             end
         end,
     }
 end
 Event = {
-    MiniMenuReady = event("MiniMenuReady"), MiniMenuOpened = event("MiniMenuOpened"),
-    MiniMenuClosed = event("MiniMenuClosed"), MiniMenuEntrySelected = event("MiniMenuEntrySelected"),
+    MiniMenuReady = event("MiniMenuReady"),
+    MiniMenuOpened = event("MiniMenuOpened"),
+    MiniMenuClosed = event("MiniMenuClosed"),
+    MiniMenuEntrySelected = event("MiniMenuEntrySelected"),
     Logic = event("Logic"),
 }
 local function emit(name, payload)
-    for _, listener in ipairs(handlers[name]) do listener.callback(payload) end
+    for _, listener in ipairs(handlers[name]) do
+        listener.callback(payload)
+    end
 end
 local nativeMenuOpen = false
 MiniMenu = { IsOpen = function() return nativeMenuOpen end }
@@ -181,7 +225,7 @@ local function readyMenu(build, labels)
         self.entries[a], self.entries[b] = self.entries[b], self.entries[a]
     end
     nativeMenuOpen = false
-    Event.MiniMenuReady.Subscribe("consumer", function(event) build(event.miniMenu) end)
+    Event.MiniMenuReady.Subscribe("consumer", function(menuEvent) build(menuEvent.miniMenu) end)
     emit("MiniMenuReady", { miniMenu = menu })
     Event.MiniMenuReady.Unsubscribe("consumer")
     menu.writable = false
@@ -230,19 +274,23 @@ local function openMenu(menu, freshWrappers, x, y)
     nativeMenuOpen = true
     emit("MiniMenuOpened", { miniMenu = opened })
 end
+local function hoverNativeHitbox(menu, index, x, y)
+    if nativeLayer == "missing" then return end
+    local mouseOver = hook(nativeHitbox, ui.Hook.ONMOUSEOVER, "prettyui_minimenu")
+    if mouseOver then
+        mouseOver(
+            nativeHitbox,
+            root.xyGlobal.x + (x or 320) - nativeHitbox.xyGlobal.x,
+            root.xyGlobal.y + (y or 100) + 22 + (#menu.entries - index) * 15 + 7 - nativeHitbox.xyGlobal.y
+        )
+    end
+end
+
 local function hoverParent(menu, parent, x, y)
     for index, entry in ipairs(menu.entries) do
         if entry == parent then
             point(x or 320, (y or 100) + 22 + (#menu.entries - index) * 15 + 7)
-            if nativeLayer ~= "missing" then
-                local mouseOver = hook(nativeHitbox, ui.Hook.ONMOUSEOVER, "prettyui_minimenu")
-                if mouseOver then
-                    mouseOver(nativeHitbox,
-                        root.xyGlobal.x + (x or 320) - nativeHitbox.xyGlobal.x,
-                        root.xyGlobal.y + (y or 100) + 22 + (#menu.entries - index) * 15 + 7
-                            - nativeHitbox.xyGlobal.y)
-                end
-            end
+            hoverNativeHitbox(menu, index, x, y)
             emit("Logic")
             return findOverlay(root)
         end
@@ -272,9 +320,12 @@ end
 -- large enough to distinguish top, bottom, and an intermediate position.
 for _, case in ipairs({ { "top", 4 }, { "bottom", 2 }, { 3, 3 }, { 99, 2 } }) do
     local parent
-    local menu = readyMenu(function(menu)
-        parent = PrettyMiniMenu.AddSubmenu(menu, "Positioned", children(), { position = case[1] })
-    end, { "Cancel", "Examine", "Trade", "Walk here" })
+    local menu = readyMenu(
+        function(menu)
+            parent = PrettyMiniMenu.AddSubmenu(menu, "Positioned", children(), { position = case[1] })
+        end,
+        { "Cancel", "Examine", "Trade", "Walk here" }
+    )
     expect(menu.entries[case[2]], parent, "requested placement uses the displayed row")
     expect(menu.entries[1].fullText, "Cancel", "placement preserves Cancel")
     expect(menu.entries[#menu.entries].fullText, "Walk here", "placement preserves the default action")
@@ -283,27 +334,34 @@ end
 -- mocks the client mini menu and adds new entries at the start and end
 local function clientMenu(labels, addAtEnd)
     local stored = {}
-    for index, label in ipairs(labels) do stored[index] = { fullText = label } end
+    for index, label in ipairs(labels) do
+        stored[index] = { fullText = label }
+    end
     local menu = { reads = 0 }
-    function menu:Add(label, action)
+    function menu.Add(_, label, action)
         table.insert(stored, addAtEnd and #stored + 1 or 1, { overrideText = label, callback = action })
     end
-    function menu:Swap(a, b)
+    function menu.Swap(_, a, b)
         stored[a], stored[b] = stored[b], stored[a]
     end
-    return setmetatable(menu, { __index = function(self, key)
-        if key ~= "entries" then return nil end
-        self.reads = self.reads + 1
-        local entries = {}
-        for index, entry in ipairs(stored) do
-            entries[index] = { fullText = entry.fullText, overrideText = entry.overrideText, callback = entry.callback }
-        end
-        return entries
-    end })
+    return setmetatable(menu, {
+        __index = function(self, key)
+            if key ~= "entries" then return nil end
+            self.reads = self.reads + 1
+            local entries = {}
+            for index, entry in ipairs(stored) do
+                entries[index] =
+                    { fullText = entry.fullText, overrideText = entry.overrideText, callback = entry.callback }
+            end
+            return entries
+        end,
+    })
 end
 local function entryLabels(menu)
     local labels = {}
-    for index, entry in ipairs(menu.entries) do labels[index] = entry.overrideText or entry.fullText end
+    for index, entry in ipairs(menu.entries) do
+        labels[index] = entry.overrideText or entry.fullText
+    end
     return table.concat(labels, ", ")
 end
 local function clientSubmenu(menu, label, position)
@@ -329,8 +387,11 @@ for _, addAtEnd in ipairs({ false, true }) do
     emit("MiniMenuReady", { miniMenu = menu })
     clientSubmenu(menu, "First", "top")
     clientSubmenu(menu, "Second", "bottom")
-    expect(entryLabels(menu), "Cancel, Second, Examine, Trade, First, Walk here",
-        "repeated client submenus keep native entries in order")
+    expect(
+        entryLabels(menu),
+        "Cancel, Second, Examine, Trade, First, Walk here",
+        "repeated client submenus keep native entries in order"
+    )
 end
 
 readyMenu(function(menu)
@@ -341,8 +402,8 @@ readyMenu(function(menu)
 end)
 
 local selected, parent
-local menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "PrettyUI actions", {
+local menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "PrettyUI actions", {
         { label = "First child", action = function(value) selected = value end, args = { "first" } },
         { label = "Second child", action = function() selected = "second" end },
     }, { parentAction = function() selected = "parent" end })
@@ -357,10 +418,16 @@ openMenu(menu, true)
 local rightOverlay = assert(hoverParent(menu, parent))
 expect(rightOverlay.parent, nativeHitbox, "blocking host places custom rows above native input blocking")
 expect(rightOverlay.xyGlobal.x > mouse.x, true, "submenu opens on the right with room available")
-expect(nativeHitbox.xyGlobal.x + nativeHitbox.width >= rightOverlay.xyGlobal.x + rightOverlay.width,
-    true, "native hover bounds include submenu width")
-expect(nativeHitbox.xyGlobal.y + nativeHitbox.height >= rightOverlay.xyGlobal.y + rightOverlay.height,
-    true, "native hover bounds include submenu height")
+expect(
+    nativeHitbox.xyGlobal.x + nativeHitbox.width >= rightOverlay.xyGlobal.x + rightOverlay.width,
+    true,
+    "native hover bounds include submenu width"
+)
+expect(
+    nativeHitbox.xyGlobal.y + nativeHitbox.height >= rightOverlay.xyGlobal.y + rightOverlay.height,
+    true,
+    "native hover bounds include submenu height"
+)
 mouse.x, mouse.y = rightOverlay.xyGlobal.x + 5, rightOverlay.xyGlobal.y + 30
 emit("Logic")
 expect(findOverlay(root), rightOverlay, "pointer transition into the submenu keeps it open")
@@ -384,28 +451,26 @@ for _, case in ipairs({
 }) do
     monitorScale = case.rawScale
     game.options.InterfaceScale.setting = case.interfaceScale
-    menu = readyMenu(function(menu)
-        parent = PrettyMiniMenu.AddSubmenu(menu, "PrettyUI actions", children())
-    end)
+    menu = readyMenu(
+        function(native)
+            parent = PrettyMiniMenu.AddSubmenu(native, "PrettyUI actions", children())
+        end
+    )
     openMenu(menu, true)
     if case.rawScale > 1 then emit("Logic") end -- hook can arrive after a logic tick
     local menuOverlay = assert(hoverParent(menu, parent))
     if baselineX == nil then
         baselineX, baselineY = menuOverlay.xyGlobal.x, menuOverlay.xyGlobal.y
     else
-        expect(menuOverlay.xyGlobal.x, baselineX,
-            "monitor scaling keeps the submenu adjacent to the same native row")
-        expect(menuOverlay.xyGlobal.y, baselineY,
-            "monitor scaling preserves the submenu's vertical alignment")
+        expect(menuOverlay.xyGlobal.x, baselineX, "monitor scaling keeps the submenu adjacent to the same native row")
+        expect(menuOverlay.xyGlobal.y, baselineY, "monitor scaling preserves the submenu's vertical alignment")
         mouse.x = (menuOverlay.xyGlobal.x + 5) * monitorScale
         mouse.y = (menuOverlay.xyGlobal.y + 30) * monitorScale
         emit("Logic")
-        expect(findOverlay(root), menuOverlay,
-            "scaled pointer entering the child submenu keeps it open")
+        expect(findOverlay(root), menuOverlay, "scaled pointer entering the child submenu keeps it open")
         mouse.x = (menuOverlay.xyGlobal.x + menuOverlay.width + 20) * monitorScale
         emit("Logic")
-        expect(menuOverlay.destroyed, true,
-            "scaled pointer leaving both menus dismisses the submenu")
+        expect(menuOverlay.destroyed, true, "scaled pointer leaving both menus dismisses the submenu")
     end
     closeMenu()
 end
@@ -414,31 +479,40 @@ game.options.InterfaceScale.setting = 100
 
 -- A duplicate is rejected before mutating the native menu, including text
 -- rendered equivalently after colour markup and whitespace normalization.
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "<col=ff0000>Shared   actions</col>", children(function()
-        selected = "original"
-    end))
-    local count = #menu.entries
-    local accepted = pcall(PrettyMiniMenu.AddSubmenu, menu, "Shared actions", children(function()
-        selected = "wrong"
-    end))
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(
+        native,
+        "<col=ff0000>Shared   actions</col>",
+        children(function()
+            selected = "original"
+        end)
+    )
+    local count = #native.entries
+    local accepted = pcall(
+        PrettyMiniMenu.AddSubmenu,
+        native,
+        "Shared actions",
+        children(function()
+            selected = "wrong"
+        end)
+    )
     expect(accepted, false, "ambiguous submenu labels are rejected")
-    expect(#menu.entries, count, "duplicate rejection preserves native entries")
+    expect(#native.entries, count, "duplicate rejection preserves native entries")
 end)
 openMenu(menu, true)
 click(rows(assert(hoverParent(menu, parent)))[1])
 expect(selected, "original", "duplicate rejection preserves the first registration's action")
 closeMenu()
-readyMenu(function(menu)
-    local accepted = pcall(PrettyMiniMenu.AddSubmenu, menu, "Walk here", children(), { arrow = false })
+readyMenu(function(native)
+    local accepted = pcall(PrettyMiniMenu.AddSubmenu, native, "Walk here", children(), { arrow = false })
     expect(accepted, false, "a submenu cannot impersonate an existing native entry")
-    expect(#menu.entries, 2, "native-label rejection does not add a parent")
+    expect(#native.entries, 2, "native-label rejection does not add a parent")
 end)
 
 local otherParent
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Compare <lt>one<gt>", children(function() selected = "one" end))
-    otherParent = PrettyMiniMenu.AddSubmenu(menu, "Compare <lt>two<gt>", children(function() selected = "two" end))
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Compare <lt>one<gt>", children(function() selected = "one" end))
+    otherParent = PrettyMiniMenu.AddSubmenu(native, "Compare <lt>two<gt>", children(function() selected = "two" end))
 end)
 openMenu(menu, true)
 local firstOverlay = assert(hoverParent(menu, parent))
@@ -451,10 +525,10 @@ closeMenu()
 -- Another subscriber can add a conflicting ordinary entry after AddSubmenu.
 -- Fresh wrappers must not guess, but unchanged entry identity remains safe.
 for _, freshWrappers in ipairs({ true, false }) do
-    menu = readyMenu(function(menu)
-        parent = PrettyMiniMenu.AddSubmenu(menu, "Late collision", children(function() selected = "registered" end))
-        menu:Add(parent.overrideText, function() selected = "native" end)
-        otherParent = menu.entries[1]
+    menu = readyMenu(function(native)
+        parent = PrettyMiniMenu.AddSubmenu(native, "Late collision", children(function() selected = "registered" end))
+        native:Add(parent.overrideText, function() selected = "native" end)
+        otherParent = native.entries[1]
     end)
     openMenu(menu, freshWrappers)
     expect(hoverParent(menu, otherParent), nil, "an unrelated duplicate never inherits a submenu")
@@ -470,16 +544,20 @@ end
 
 local retained = setmetatable({}, { __mode = "v" })
 for index = 1, 20 do
-    readyMenu(function(menu)
+    readyMenu(function(native)
         local payload = { value = index }
         retained[index] = payload
-        PrettyMiniMenu.AddSubmenu(menu, "Dynamic " .. index,
-            children(function() return payload.value end), { arrow = false })
+        PrettyMiniMenu.AddSubmenu(
+            native,
+            "Dynamic " .. index,
+            children(function() return payload.value end),
+            { arrow = false }
+        )
     end)
 end
-menu = readyMenu(function(menu)
-    menu:Add("Dynamic 20", function() selected = "ordinary" end)
-    parent = menu.entries[1]
+menu = readyMenu(function(native)
+    native:Add("Dynamic 20", function() selected = "ordinary" end)
+    parent = native.entries[1]
 end)
 collectgarbage("collect")
 expect(next(retained), nil, "the next menu build releases discarded callbacks without shutdown")
@@ -490,32 +568,41 @@ expect(selected, "ordinary", "the later native action remains independent")
 closeMenu()
 
 root:SetSize(300, 180)
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Edge actions", children())
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Edge actions", children())
 end)
 openMenu(menu, false, 285, 100)
 local leftOverlay = assert(hoverParent(menu, parent, 285, 100))
 expect(leftOverlay.xyGlobal.x + leftOverlay.width <= mouse.x, true, "submenu flips left near the viewport edge")
-expect(leftOverlay.xyGlobal.x >= 0 and leftOverlay.xyGlobal.y >= 0
-    and leftOverlay.xyGlobal.y + leftOverlay.height <= root.height, true, "flipped submenu remains in the viewport")
+expect(
+    leftOverlay.xyGlobal.x >= 0
+        and leftOverlay.xyGlobal.y >= 0
+        and leftOverlay.xyGlobal.y + leftOverlay.height <= root.height,
+    true,
+    "flipped submenu remains in the viewport"
+)
 closeMenu()
 
 root:SetSize(320, 80)
-menu = readyMenu(function(menu)
+menu = readyMenu(function(native)
     local options = {}
     for index, label in ipairs({ "One", "Two", "Three", "Four", "Five" }) do
         options[index] = { label = label, action = function() selected = index end }
     end
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Scrollable", options)
-    menu:Swap(2, 3)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Scrollable", options)
+    native:Swap(2, 3)
 end)
 openMenu(menu, false, 160, 0)
 local scrollOverlay = assert(hoverParent(menu, parent, 160, 0))
 expect(scrollOverlay.height <= root.height, true, "overflow submenu fits the viewport")
 local scrollRow = rows(scrollOverlay)[1]
-for _ = 1, 10 do hook(scrollOverlay, ui.Hook.ONSCROLLWHEEL)(scrollOverlay, -1) end
+for _ = 1, 10 do
+    hook(scrollOverlay, ui.Hook.ONSCROLLWHEEL)(scrollOverlay, -1)
+end
 expect(rowText(scrollRow), "One", "scrolling clamps at the first child")
-for _ = 1, 10 do hook(scrollRow, ui.Hook.ONSCROLLWHEEL)(scrollRow, 1) end
+for _ = 1, 10 do
+    hook(scrollRow, ui.Hook.ONSCROLLWHEEL)(scrollRow, 1)
+end
 expect(rowText(scrollRow), "Three", "scrolling clamps with the last children visible")
 click(scrollRow)
 expect(selected, 3, "a reused visible row selects its current child after scrolling")
@@ -524,8 +611,9 @@ root:SetSize(640, 480)
 
 for _, host in ipairs({ "blocking", "mouseLeave", "missing" }) do
     nativeLayer = host
-    menu = readyMenu(function(menu)
-        parent = PrettyMiniMenu.AddSubmenu(menu, "Close lifecycle", children(function() selected = "closed child" end))
+    menu = readyMenu(function(native)
+        parent =
+            PrettyMiniMenu.AddSubmenu(native, "Close lifecycle", children(function() selected = "closed child" end))
     end)
     originalBounds = nativeSnapshot()
     openMenu(menu)
@@ -542,8 +630,8 @@ for _, host in ipairs({ "blocking", "mouseLeave", "missing" }) do
     nativeHitbox.clickthrough = false
 end
 nativeLayer = "blocking"
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Polled close", children())
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Polled close", children())
 end)
 openMenu(menu)
 local polledOverlay = assert(hoverParent(menu, parent))
@@ -554,8 +642,8 @@ expect(polledOverlay.destroyed, true, "logic also retires an overlay when the na
 -- Fail at three different ownership boundaries: after a native position change,
 -- immediately after allocating the root, and after constructing frame children.
 for _, stage in ipairs({ "nativeSize", "rootPosition", "title" }) do
-    menu = readyMenu(function(menu)
-        parent = PrettyMiniMenu.AddSubmenu(menu, "Failed construction", {
+    menu = readyMenu(function(native)
+        parent = PrettyMiniMenu.AddSubmenu(native, "Failed construction", {
             { label = string.rep("Wide child ", 8), action = function() selected = "recovered" end },
         })
     end)
@@ -567,7 +655,10 @@ for _, stage in ipairs({ "nativeSize", "rootPosition", "title" }) do
         local original = nativeHitbox.SetSize
         local failOnce = true
         nativeHitbox.SetSize = function(self, ...)
-            if failOnce then failOnce = false error(failure, 0) end
+            if failOnce then
+                failOnce = false
+                error(failure, 0)
+            end
             return original(self, ...)
         end
         restoreConstructor = function() nativeHitbox.SetSize = original end
@@ -597,8 +688,8 @@ for _, stage in ipairs({ "nativeSize", "rootPosition", "title" }) do
 end
 
 local actionFailure = {}
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Action failure", children(function() error(actionFailure, 0) end))
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Action failure", children(function() error(actionFailure, 0) end))
 end)
 originalBounds = nativeSnapshot()
 openMenu(menu)
@@ -610,8 +701,8 @@ expect(throwingOverlay.destroyed, true, "cleanup precedes a throwing child actio
 expectNativeRestored(originalBounds)
 closeMenu()
 
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Native selection", children())
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Native selection", children())
 end)
 openMenu(menu)
 local selectedOverlay = assert(hoverParent(menu, parent))
@@ -621,8 +712,8 @@ expect(selectedOverlay.destroyed, true, "native selection retires the custom ove
 expect(findOverlay(root), nil, "native selection cannot reopen the old submenu")
 closeMenu()
 
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Shutdown", children())
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Shutdown", children())
 end)
 openMenu(menu)
 local shutdownOverlay = assert(hoverParent(menu, parent))
@@ -634,31 +725,35 @@ expect(findOverlay(root), nil, "shutdown prevents native events from remounting 
 PrettyMiniMenu.Start()
 PrettyMiniMenu.Start()
 
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Interface unload", children())
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Interface unload", children())
 end)
 openMenu(menu)
 assert(hoverParent(menu, parent))
 -- Native menus live in a different interface from the viewport. Unloading that
 -- interface removes its tree before the native close notification is delivered.
 for index, child in ipairs(root.children) do
-    if child == nativeHitbox then table.remove(root.children, index) break end
+    if child == nativeHitbox then
+        table.remove(root.children, index)
+        break
+    end
 end
 nativeHitbox = nil
 Interfaces.unload(2)
 closeMenu()
 mountNativeHitbox()
-menu = readyMenu(function(menu)
-    parent = PrettyMiniMenu.AddSubmenu(menu, "Remounted", children(function() selected = "remounted" end))
+menu = readyMenu(function(native)
+    parent = PrettyMiniMenu.AddSubmenu(native, "Remounted", children(function() selected = "remounted" end))
 end)
 openMenu(menu, true)
 click(rows(assert(hoverParent(menu, parent)))[1])
 expect(selected, "remounted", "restart and native interface reload allow a fresh submenu action")
 closeMenu()
-menu = readyMenu(function(native)
-    parent = PrettyMiniMenu.AddSubmenu(native, "Opted-in submenu", children(),
-        { categoryID = "auto" })
-end)
+menu = readyMenu(
+    function(native)
+        parent = PrettyMiniMenu.AddSubmenu(native, "Opted-in submenu", children(), { categoryID = "auto" })
+    end
+)
 openMenu(menu)
 local autoOverlay = assert(hoverParent(menu, parent))
 expect(autoOverlay.parent, nativeHitbox, "managed submenu stays on the native menu host")
@@ -670,8 +765,7 @@ menu = readyMenu(function(native)
 end)
 openMenu(menu)
 local legacyOverlay = assert(hoverParent(menu, parent))
-expect(legacyOverlay.categoryID, nativeHitbox.categoryID,
-    "legacy submenu retains native allocation on the same host")
+expect(legacyOverlay.categoryID, nativeHitbox.categoryID, "legacy submenu retains native allocation on the same host")
 closeMenu()
 
 PrettyMiniMenu.Shutdown()

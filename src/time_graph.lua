@@ -27,8 +27,10 @@ local nextID = 0
 
 local function dimension(value, fallback)
     if value == nil then return fallback end
-    assert(type(value) == "number" and value == value and math.abs(value) < math.huge,
-        "graph dimensions must be finite numbers")
+    assert(
+        type(value) == "number" and value == value and math.abs(value) < math.huge,
+        "graph dimensions must be finite numbers"
+    )
     return math.floor(value)
 end
 
@@ -82,14 +84,87 @@ local function setText(component, content)
 end
 
 local function visibleBuckets(capacity, zoom)
-    assert(type(zoom) == "number" and zoom == zoom and zoom > 0 and zoom < math.huge,
-        "graph zoom must be a positive finite number")
+    assert(
+        type(zoom) == "number" and zoom == zoom and zoom > 0 and zoom < math.huge,
+        "graph zoom must be a positive finite number"
+    )
     return clamp(math.floor(capacity / zoom + 0.5), 2, capacity)
 end
 
 function TimeGraph.getSize(options)
     options = options or {}
     return dimension(options.width, DEFAULT_WIDTH), dimension(options.height, DEFAULT_HEIGHT)
+end
+
+local function bindLiveUpdates(self, model, bus)
+    local function hover(_, x, y)
+        if self.root == nil or self.plotWidth == nil or self.plotWidth <= 0 then return true end
+        local slot = clamp(math.floor(x * self.visibleCount / self.plotWidth) + 1, 1, self.visibleCount)
+        if self.hoverSlot ~= slot or self.hoverX ~= x or self.hoverY ~= y then
+            self.hoverSlot, self.hoverX, self.hoverY = slot, x, y
+            self:_RenderHover()
+        end
+        return true
+    end
+    self.plot:Subscribe(ui.Hook.ONMOUSEOVER, hover)
+    self.plot:Subscribe(ui.Hook.ONMOUSEREPEAT, hover)
+    self.plot:Subscribe(ui.Hook.ONMOUSELEAVE, function()
+        if self.root ~= nil then
+            self.hoverSlot = nil
+            self:_RenderHover()
+        end
+        return true
+    end)
+
+    self.listener = function(event)
+        if self.root ~= nil and event.metric == model.metric then
+            model:Push(event.value)
+        end
+    end
+    bus.Update.Subscribe(self.listener)
+    nextID = nextID + 1
+    self.eventID = "prettyui_time_graph_" .. nextID
+    instances[self] = true
+    Event.Logic.Subscribe(self.eventID, function(event)
+        if self.root == nil then return end
+        model:Advance(event.logicTick)
+        self:_Render()
+    end)
+end
+
+local function buildPlot(self, options, model)
+    self.plot = Components.new(ui.Layer, self.root)
+    self.plot.clickthrough = false
+    if self.zoomable then
+        self.plot:Subscribe(ui.Hook.ONSCROLLWHEEL, function(_, delta)
+            if delta < 0 then
+                self:ZoomIn()
+            elseif delta > 0 then
+                self:ZoomOut()
+            end
+            return false
+        end)
+    else
+        Wheel.bind(self.plot, options)
+    end
+    self.plotBackground = rectangle(self.plot, PLOT_RGBA)
+    for index = 1, 2 do
+        self.grid[index] = rectangle(self.plot, GRID_RGBA)
+        self.yLabels[index] = label(self.root, TEXT_RGBA)
+    end
+    for index = 1, 2 do
+        self.xLabels[index] =
+            label(self.root, TEXT_RGBA, index == 1 and ui.AlignMode.TOPLEFT or ui.AlignMode.BOTTOMRIGHT)
+    end
+    -- Allocate once: even idle buckets and hoverable zero values need no new UI.
+    for index = 1, model.capacity do
+        self.bars[index] = rectangle(self.plot, self.barRGBA)
+        Components.setHidden(self.bars[index], true)
+    end
+    self.baseline = rectangle(self.plot, 0xBBA06DFF)
+    self.highlight = rectangle(self.plot, 0xF2C66D33)
+    Components.setHidden(self.highlight, true)
+    self.readout = label(self.root, TEXT_RGBA, ui.AlignMode.BOTTOMRIGHT)
 end
 
 -- options.metric = { id, label?, spriteID?, rgba? } is reusable metadata.
@@ -102,15 +177,25 @@ function TimeGraph.new(parent, options)
     assert(type(metric) == "table", "TimeGraph requires a metric descriptor")
     local model = Stream.new({ metric = metric.id, interval = options.interval, capacity = options.capacity })
     local visibleCount = visibleBuckets(model.capacity, options.zoom or 1)
-    assert(metric.spriteID == nil or (type(metric.spriteID) == "number"
-        and metric.spriteID >= 0 and metric.spriteID < math.huge
-        and metric.spriteID == math.floor(metric.spriteID)), "metric spriteID must be a nonnegative integer")
+    assert(
+        metric.spriteID == nil
+            or (
+                type(metric.spriteID) == "number"
+                and metric.spriteID >= 0
+                and metric.spriteID < math.huge
+                and metric.spriteID == math.floor(metric.spriteID)
+            ),
+        "metric spriteID must be a nonnegative integer"
+    )
     local width, height = TimeGraph.getSize(options)
     local bus = options.bus or TimeGraph.CreateEventBus()
-    assert(type(bus) == "table" and type(bus.Update) == "table"
-        and type(bus.Update.Subscribe) == "function"
-        and type(bus.Update.Unsubscribe) == "function",
-        "graph bus must expose Update.Subscribe and Update.Unsubscribe")
+    assert(
+        type(bus) == "table"
+            and type(bus.Update) == "table"
+            and type(bus.Update.Subscribe) == "function"
+            and type(bus.Update.Unsubscribe) == "function",
+        "graph bus must expose Update.Subscribe and Update.Unsubscribe"
+    )
 
     local self = setmetatable({}, TimeGraph)
     self.model = model
@@ -153,77 +238,25 @@ function TimeGraph.new(parent, options)
         self.title.content = self.label
     end
     local parentContext = Tooltip.getContext(parent)
-    self.tooltipContext = Tooltip.registerContext(self.root, parentContext and parentContext.parent or parent, function(target)
-        local x, y
-        if parentContext then x, y = parentContext.position(self.root)
-        else x, y = self.root.x, self.root.y end
-        return x + target.x, y + target.y
-    end, parentContext)
+    self.tooltipContext = Tooltip.registerContext(
+        self.root,
+        parentContext and parentContext.parent or parent,
+        function(target)
+            local x, y
+            if parentContext then
+                x, y = parentContext.position(self.root)
+            else
+                x, y = self.root.x, self.root.y
+            end
+            return x + target.x, y + target.y
+        end,
+        parentContext
+    )
     Tooltip.bind(self, self.header, self.root, nil)
 
-    self.plot = Components.new(ui.Layer, self.root)
-    self.plot.clickthrough = false
-    if self.zoomable then
-        self.plot:Subscribe(ui.Hook.ONSCROLLWHEEL, function(_, delta)
-            if delta < 0 then self:ZoomIn()
-            elseif delta > 0 then self:ZoomOut() end
-            return false
-        end)
-    else
-        Wheel.bind(self.plot, options)
-    end
-    self.plotBackground = rectangle(self.plot, PLOT_RGBA)
-    for index = 1, 2 do
-        self.grid[index] = rectangle(self.plot, GRID_RGBA)
-        self.yLabels[index] = label(self.root, TEXT_RGBA)
-    end
-    for index = 1, 2 do
-        self.xLabels[index] = label(self.root, TEXT_RGBA,
-            index == 1 and ui.AlignMode.TOPLEFT or ui.AlignMode.BOTTOMRIGHT)
-    end
-    -- Allocate once: even idle buckets and hoverable zero values need no new UI.
-    for index = 1, model.capacity do
-        self.bars[index] = rectangle(self.plot, self.barRGBA)
-        Components.setHidden(self.bars[index], true)
-    end
-    self.baseline = rectangle(self.plot, 0xBBA06DFF)
-    self.highlight = rectangle(self.plot, 0xF2C66D33)
-    Components.setHidden(self.highlight, true)
-    self.readout = label(self.root, TEXT_RGBA, ui.AlignMode.BOTTOMRIGHT)
+    buildPlot(self, options, model)
 
-    local function hover(_, x, y)
-        if self.root == nil or self.plotWidth == nil or self.plotWidth <= 0 then return true end
-        local slot = clamp(math.floor(x * self.visibleCount / self.plotWidth) + 1, 1, self.visibleCount)
-        if self.hoverSlot ~= slot or self.hoverX ~= x or self.hoverY ~= y then
-            self.hoverSlot, self.hoverX, self.hoverY = slot, x, y
-            self:_RenderHover()
-        end
-        return true
-    end
-    self.plot:Subscribe(ui.Hook.ONMOUSEOVER, hover)
-    self.plot:Subscribe(ui.Hook.ONMOUSEREPEAT, hover)
-    self.plot:Subscribe(ui.Hook.ONMOUSELEAVE, function()
-        if self.root ~= nil then
-            self.hoverSlot = nil
-            self:_RenderHover()
-        end
-        return true
-    end)
-
-    self.listener = function(event)
-        if self.root ~= nil and event.metric == model.metric then
-            model:Push(event.value)
-        end
-    end
-    bus.Update.Subscribe(self.listener)
-    nextID = nextID + 1
-    self.eventID = "prettyui_time_graph_" .. nextID
-    instances[self] = true
-    Event.Logic.Subscribe(self.eventID, function(event)
-        if self.root == nil then return end
-        model:Advance(event.logicTick)
-        self:_Render()
-    end)
+    bindLiveUpdates(self, model, bus)
     self:_Render()
     return self
 end
@@ -239,8 +272,11 @@ function TimeGraph:_Layout(width, height)
     place(self.border, 0, 0, width, height)
     local headerWidth = self.icon and 28 or math.floor(math.max(0, width - 24) * 0.35)
     place(self.header, 12, 5, headerWidth, 28)
-    if self.icon then place(self.icon, 2, 2, 24, 24)
-    else place(self.title, 0, 0, headerWidth, 28) end
+    if self.icon then
+        place(self.icon, 2, 2, 24, 24)
+    else
+        place(self.title, 0, 0, headerWidth, 28)
+    end
     place(self.readout, 20 + headerWidth, 5, width - headerWidth - 32, 28)
     place(self.plot, left, top, plotWidth, plotHeight)
     place(self.plotBackground, 0, 0, plotWidth, plotHeight)
@@ -250,13 +286,17 @@ function TimeGraph:_Layout(width, height)
         local y = (index - 1) * math.max(0, plotHeight - 1)
         place(self.grid[index], 0, y, plotWidth, math.min(1, plotHeight))
         local labelY = index == 1 and inset or math.max(inset, plotHeight - labelHeight * 2 - inset)
-        place(self.yLabels[index], left + inset, top + labelY,
-            math.min(80, plotWidth - inset * 2), labelHeight)
+        place(self.yLabels[index], left + inset, top + labelY, math.min(80, plotWidth - inset * 2), labelHeight)
     end
     local labelWidth = math.floor(math.max(0, plotWidth - inset * 2) / 2)
     for index = 1, 2 do
-        place(self.xLabels[index], left + inset + (index - 1) * labelWidth,
-            top + plotHeight - labelHeight - inset, labelWidth, labelHeight)
+        place(
+            self.xLabels[index],
+            left + inset + (index - 1) * labelWidth,
+            top + plotHeight - labelHeight - inset,
+            labelWidth,
+            labelHeight
+        )
     end
 end
 
@@ -284,8 +324,13 @@ function TimeGraph:_RenderHover()
         local plotX, plotY = self.tooltipContext.position(self.plot)
         tooltip.options.x = plotX + (self.hoverX or left) + 12
         tooltip.options.y = plotY + (self.hoverY or 0) + 12
-        local text = timestamp(startSeconds) .. " - " .. timestamp(endSeconds)
-            .. "<br>" .. (value > 0 and "+" or "") .. string.format("%.14g", value) .. self.amountSuffix
+        local text = timestamp(startSeconds)
+            .. " - "
+            .. timestamp(endSeconds)
+            .. "<br>"
+            .. (value > 0 and "+" or "")
+            .. string.format("%.14g", value)
+            .. self.amountSuffix
         if self.bucketTooltipText ~= text then
             self.bucketTooltipText = text
             tooltip:SetText(text)
@@ -301,6 +346,32 @@ function TimeGraph:_PulseLiveBar()
     if bar.hidden then return end
     local phase = (self.model.elapsedTicks % PULSE_TICKS) / PULSE_TICKS
     bar.alpha = self.liveOpacity * (0.55 + 0.20 * math.cos(phase * math.pi * 2))
+end
+
+local function renderBars(self, model, scale, high, span, plotWidth, drawableHeight, zeroY)
+    local empty = self.visibleCount - model.count
+    for slot = 1, self.visibleCount do
+        local bar = self.bars[slot]
+        local index = slot - empty
+        local value = index >= 1 and model:GetBucket(index) or 0
+        local left = math.floor((slot - 1) * plotWidth / self.visibleCount)
+        local right = math.floor(slot * plotWidth / self.visibleCount)
+        local valueY = math.floor((high - value / scale) / span * drawableHeight + 0.5)
+        local barHeight = math.abs(zeroY - valueY)
+        Components.setHidden(bar, index < 1 or value == 0 or right <= left or barHeight == 0)
+        if not bar.hidden then
+            local gap = clamp(right - left - 1, 0, BAR_GAP)
+            place(bar, left + math.floor(gap / 2), math.min(zeroY, valueY), right - left - gap, barHeight)
+            local rgba = value < 0 and NEGATIVE_RGBA or self.barRGBA
+            bar.rgba = rgba
+            local opacity = (rgba % 256) / 255
+            bar.alpha = opacity * BAR_ALPHA
+            if slot == self.visibleCount then self.liveOpacity = opacity end
+        end
+    end
+    for slot = self.visibleCount + 1, model.capacity do
+        Components.setHidden(self.bars[slot], true)
+    end
 end
 
 function TimeGraph:_Render()
@@ -341,27 +412,7 @@ function TimeGraph:_Render()
         setText(self.yLabels[index], compact(normalized * scale))
     end
 
-    local empty = self.visibleCount - model.count
-    for slot = 1, self.visibleCount do
-        local bar = self.bars[slot]
-        local index = slot - empty
-        local value = index >= 1 and model:GetBucket(index) or 0
-        local left = math.floor((slot - 1) * plotWidth / self.visibleCount)
-        local right = math.floor(slot * plotWidth / self.visibleCount)
-        local valueY = math.floor((high - value / scale) / span * drawableHeight + 0.5)
-        local barHeight = math.abs(zeroY - valueY)
-        Components.setHidden(bar, index < 1 or value == 0 or right <= left or barHeight == 0)
-        if not bar.hidden then
-            local gap = clamp(right - left - 1, 0, BAR_GAP)
-            place(bar, left + math.floor(gap / 2), math.min(zeroY, valueY), right - left - gap, barHeight)
-            local rgba = value < 0 and NEGATIVE_RGBA or self.barRGBA
-            bar.rgba = rgba
-            local opacity = (rgba % 256) / 255
-            bar.alpha = opacity * BAR_ALPHA
-            if slot == self.visibleCount then self.liveOpacity = opacity end
-        end
-    end
-    for slot = self.visibleCount + 1, model.capacity do Components.setHidden(self.bars[slot], true) end
+    renderBars(self, model, scale, high, span, plotWidth, drawableHeight, zeroY)
     local _, _, currentEnd = model:GetBucket(model.count)
     -- Labels describe session time at plot boundaries; before-origin positions
     -- stay blank while the initial history grows from the right-hand edge.
@@ -371,8 +422,11 @@ function TimeGraph:_Render()
     end
     local windowSeconds = self.visibleCount * model.interval
     local rateSeconds, rateUnit = 1, "/s"
-    if windowSeconds >= 3600 then rateSeconds, rateUnit = 3600, "/h"
-    elseif windowSeconds >= 60 then rateSeconds, rateUnit = 60, "/min" end
+    if windowSeconds >= 3600 then
+        rateSeconds, rateUnit = 3600, "/h"
+    elseif windowSeconds >= 60 then
+        rateSeconds, rateUnit = 60, "/min"
+    end
     setText(self.readout, compact(mean / model.interval * rateSeconds) .. self.amountSuffix .. rateUnit)
     self:_PulseLiveBar()
     self:_UpdateTooltip()
@@ -380,8 +434,7 @@ function TimeGraph:_Render()
 end
 
 function TimeGraph:_UpdateTooltip()
-    local text = self.label .. "<br>Total: " .. compact(self.model.total)
-        .. self.amountSuffix
+    local text = self.label .. "<br>Total: " .. compact(self.model.total) .. self.amountSuffix
     if self.tooltipText ~= text then
         self.tooltipText = text
         Tooltip.set(self, text)

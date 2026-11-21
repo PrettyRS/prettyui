@@ -56,7 +56,9 @@ local HUE_COLOURS = {
 local function copyOptions(options)
     local copy = {}
     if type(options) == "table" then
-        for key, value in pairs(options) do copy[key] = value end
+        for key, value in pairs(options) do
+            copy[key] = value
+        end
     end
     return copy
 end
@@ -141,13 +143,10 @@ function ColourPicker.new(parent, options)
     self.onChange = options.onChange
     self.disabled = options.disabled == true
     self.alphaSlider = options.alphaSlider == true or options.showAlpha == true
-    self.colour = normaliseColour(
-        options.value or options.colour or options.defaultColour
-    )
+    self.colour = normaliseColour(options.value or options.colour or options.defaultColour)
     self.value = self.colour
     local context = Tooltip.getContext(parent)
-    self.windowParent = options.windowParent or options.overlayParent or
-        (context and context.parent) or parent
+    self.windowParent = options.windowParent or options.overlayParent or (context and context.parent) or parent
     if options.windowParent == nil and options.overlayParent == nil then
         while self.windowParent.parent ~= nil do
             self.windowParent = self.windowParent.parent
@@ -166,35 +165,20 @@ function ColourPicker.new(parent, options)
     self.root = self.button.root
 
     if self.button.content then self.button.content:Destroy() end
-    local swatchSize = clamp(
-        math.floor(math.min(width, height) * SWATCH_PROPORTION),
-        2,
-        math.min(width, height) - 6
-    )
+    local swatchSize = clamp(math.floor(math.min(width, height) * SWATCH_PROPORTION), 2, math.min(width, height) - 6)
     local swatchX = math.floor((width - swatchSize) / 2)
     local swatchY = math.floor((height - swatchSize) / 2)
-    self.swatchFrame = rectangle(
-        self.root, swatchX - 1, swatchY - 1, swatchSize + 2, swatchSize + 2, BLACK
-    )
-    self.swatch = rectangle(
-        self.root, swatchX, swatchY, swatchSize, swatchSize, self.colour
-    )
+    self.swatchFrame = rectangle(self.root, swatchX - 1, swatchY - 1, swatchSize + 2, swatchSize + 2, BLACK)
+    self.swatch = rectangle(self.root, swatchX, swatchY, swatchSize, swatchSize, self.colour)
     self.button.content = self.swatch
     self:SetDisabled(self.disabled)
     return self
 end
 
 function ColourPicker:_PickerWindowBounds()
-    local minimumHeight = WINDOW_HEIGHT +
-        (self.alphaSlider and ALPHA_LAYOUT_OFFSET or 0)
-    local width = math.max(
-        WINDOW_WIDTH,
-        math.floor(self.options.windowWidth or WINDOW_WIDTH)
-    )
-    local height = math.max(
-        minimumHeight,
-        math.floor(self.options.windowHeight or minimumHeight)
-    )
+    local minimumHeight = WINDOW_HEIGHT + (self.alphaSlider and ALPHA_LAYOUT_OFFSET or 0)
+    local width = math.max(WINDOW_WIDTH, math.floor(self.options.windowWidth or WINDOW_WIDTH))
+    local height = math.max(minimumHeight, math.floor(self.options.windowHeight or minimumHeight))
     local x = self.options.windowX or self.options.pickerX
     local y = self.options.windowY or self.options.pickerY
     if x == nil or y == nil then
@@ -237,10 +221,7 @@ function ColourPicker:_DrawHueSpectrum()
     for index = 1, #HUE_COLOURS - 1 do
         local top = math.floor((index - 1) * FIELD_SIZE / (#HUE_COLOURS - 1))
         local bottom = math.floor(index * FIELD_SIZE / (#HUE_COLOURS - 1))
-        self.hueCanvas:AddGradientV(
-            0, top, HUE_WIDTH, bottom - top,
-            HUE_COLOURS[index], HUE_COLOURS[index + 1]
-        )
+        self.hueCanvas:AddGradientV(0, top, HUE_WIDTH, bottom - top, HUE_COLOURS[index], HUE_COLOURS[index + 1])
     end
 end
 
@@ -249,7 +230,10 @@ function ColourPicker:_DrawColourField()
     for x = 0, FIELD_SIZE - 1 do
         local value = x / (FIELD_SIZE - 1)
         self.fieldCanvas:AddGradientV(
-            x, 0, 1, FIELD_SIZE,
+            x,
+            0,
+            1,
+            FIELD_SIZE,
             hsvColour(self.pendingHue, 1, value, 255),
             hsvColour(self.pendingHue, 0, value, 255)
         )
@@ -261,8 +245,7 @@ function ColourPicker:_DrawAlphaCheckerboard()
     self.alphaCheckerCanvas:Clear()
     for y = 0, ALPHA_HEIGHT - 1, ALPHA_CHECKER_SIZE do
         for x = 0, ALPHA_WIDTH - 1, ALPHA_CHECKER_SIZE do
-            local light = (math.floor(x / ALPHA_CHECKER_SIZE) +
-                math.floor(y / ALPHA_CHECKER_SIZE)) % 2 == 0
+            local light = (math.floor(x / ALPHA_CHECKER_SIZE) + math.floor(y / ALPHA_CHECKER_SIZE)) % 2 == 0
             self.alphaCheckerCanvas:AddRectangle(
                 x,
                 y,
@@ -277,9 +260,7 @@ end
 function ColourPicker:_DrawAlphaSpectrum()
     if self.alphaCanvas == nil then return end
     self.alphaCanvas:Clear()
-    local red, green, blue = hsvToRgb(
-        self.pendingHue, self.pendingSaturation, self.pendingValue
-    )
+    local red, green, blue = hsvToRgb(self.pendingHue, self.pendingSaturation, self.pendingValue)
     self.alphaCanvas:AddGradientH(
         0,
         0,
@@ -291,32 +272,20 @@ function ColourPicker:_DrawAlphaSpectrum()
 end
 
 function ColourPicker:_UpdatePickerVisuals(redrawField, preserveText)
-    self.pendingColour = hsvColour(
-        self.pendingHue, self.pendingSaturation, self.pendingValue, self.pendingAlpha
-    )
+    self.pendingColour = hsvColour(self.pendingHue, self.pendingSaturation, self.pendingValue, self.pendingAlpha)
     if redrawField then self:_DrawColourField() end
 
     local fieldMarkerX = math.floor(self.pendingValue * (FIELD_SIZE - 1) + 0.5)
-    local fieldMarkerY = math.floor(
-        (1 - self.pendingSaturation) * (FIELD_SIZE - 1) + 0.5
-    )
-    self.fieldMarkerHorizontal:SetPos(
-        FIELD_X + fieldMarkerX - math.floor(MARKER_SIZE / 2),
-        FIELD_Y + fieldMarkerY
-    )
-    self.fieldMarkerVertical:SetPos(
-        FIELD_X + fieldMarkerX,
-        FIELD_Y + fieldMarkerY - math.floor(MARKER_SIZE / 2)
-    )
+    local fieldMarkerY = math.floor((1 - self.pendingSaturation) * (FIELD_SIZE - 1) + 0.5)
+    self.fieldMarkerHorizontal:SetPos(FIELD_X + fieldMarkerX - math.floor(MARKER_SIZE / 2), FIELD_Y + fieldMarkerY)
+    self.fieldMarkerVertical:SetPos(FIELD_X + fieldMarkerX, FIELD_Y + fieldMarkerY - math.floor(MARKER_SIZE / 2))
 
     local hueY = math.floor((1 - self.pendingHue) * (FIELD_SIZE - 1) + 0.5)
     self.hueMarkerShadow:SetY(HUE_Y + hueY - 2)
     self.hueMarker:SetY(HUE_Y + hueY - 1)
     if self.alphaSlider then
         self:_DrawAlphaSpectrum()
-        local alphaX = math.floor(
-            self.pendingAlpha / 255 * (ALPHA_WIDTH - 1) + 0.5
-        )
+        local alphaX = math.floor(self.pendingAlpha / 255 * (ALPHA_WIDTH - 1) + 0.5)
         self.alphaMarkerShadow:SetX(ALPHA_X + alphaX - 2)
         self.alphaMarker:SetX(ALPHA_X + alphaX - 1)
     end
@@ -330,8 +299,7 @@ end
 
 function ColourPicker:_SetPendingColour(colour, preserveText)
     local red, green, blue, alpha = unpackColour(colour)
-    self.pendingHue, self.pendingSaturation, self.pendingValue =
-        rgbToHsv(red, green, blue)
+    self.pendingHue, self.pendingSaturation, self.pendingValue = rgbToHsv(red, green, blue)
     self.pendingAlpha = alpha
     self:_UpdatePickerVisuals(true, preserveText)
 end
@@ -345,8 +313,7 @@ end
 
 function ColourPicker:_LayoutValueCaption()
     local root = self.valueField.root
-    local textWidth = config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(
-        self.valueField:GetText(), false)
+    local textWidth = config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(self.valueField:GetText(), false)
     -- Native inputs use their content margin rather than horizontal text alignment.
     local inset = math.max(8, math.floor((root.width - textWidth) / 2))
     root.contentMargin = ui.Margin.new(inset, 3, 8, 0)
@@ -393,8 +360,9 @@ function ColourPicker:_AddValueCaption(picker, y)
             -- Native content notifications can arrive after a newer assignment.
             if text ~= field:GetText() then return end
             if not self.valueEditing then
-                if reason ~= ui.InputFieldActionResult.CONTENT_CHANGE or
-                    text == formatValue(self.pendingColour) then return end
+                if reason ~= ui.InputFieldActionResult.CONTENT_CHANGE or text == formatValue(self.pendingColour) then
+                    return
+                end
                 self:_BeginValueEdit()
             end
             if reason == ui.InputFieldActionResult.SUBMIT_ON_ESCAPE then
@@ -408,8 +376,10 @@ function ColourPicker:_AddValueCaption(picker, y)
             else
                 self:_LayoutValueCaption()
             end
-            if reason == ui.InputFieldActionResult.SUBMIT or
-                reason == ui.InputFieldActionResult.SUBMIT_ON_FOCUS_LOSS then
+            if
+                reason == ui.InputFieldActionResult.SUBMIT
+                or reason == ui.InputFieldActionResult.SUBMIT_ON_FOCUS_LOSS
+            then
                 self:_FinishValueEdit()
             end
         end,
@@ -451,12 +421,8 @@ end
 function ColourPicker:_UpdateFieldFromMouse(layer, x, y)
     local mouseX, mouseY = self:_PickerLocalMousePosition(layer, x, y)
     if mouseX == nil then return false end
-    self.pendingValue = clamp(
-        (mouseX - FIELD_X) / (FIELD_SIZE - 1), 0, 1
-    )
-    self.pendingSaturation = 1 - clamp(
-        (mouseY - FIELD_Y) / (FIELD_SIZE - 1), 0, 1
-    )
+    self.pendingValue = clamp((mouseX - FIELD_X) / (FIELD_SIZE - 1), 0, 1)
+    self.pendingSaturation = 1 - clamp((mouseY - FIELD_Y) / (FIELD_SIZE - 1), 0, 1)
     self:_UpdatePickerVisuals(false)
     return false
 end
@@ -475,9 +441,7 @@ end
 function ColourPicker:_UpdateAlphaFromMouse(layer, x, y)
     local mouseX = self:_PickerLocalMousePosition(layer, x, y)
     if mouseX == nil then return false end
-    local ratio = clamp(
-        (mouseX - ALPHA_X) / (ALPHA_WIDTH - 1), 0, 1
-    )
+    local ratio = clamp((mouseX - ALPHA_X) / (ALPHA_WIDTH - 1), 0, 1)
     self.pendingAlpha = math.floor(ratio * 255 + 0.5)
     self:_UpdatePickerVisuals(false)
     return false
@@ -487,8 +451,7 @@ function ColourPicker:_BeginPickerDrag(kind, layer, x, y)
     self:_FinishValueEdit()
     self.dragTarget = kind
     self.dragCaptureExpanded = false
-    layer = layer or (kind == "hue" and self.hueHit) or
-        (kind == "alpha" and self.alphaHit) or self.fieldHit
+    layer = layer or (kind == "hue" and self.hueHit) or (kind == "alpha" and self.alphaHit) or self.fieldHit
     InterfaceMouse.BeginCapture(layer)
     if kind == "hue" then
         self:_UpdateHueFromMouse(layer, x, y)
@@ -537,21 +500,36 @@ function ColourPicker:_StopPickerDrag(kind, layer, x, y)
 end
 
 function ColourPicker:_BindPickerDrag(layer, kind)
-    layer:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
-        return self:_BeginPickerDrag(kind, component, x, y)
-    end)
-    layer:Subscribe(ui.Hook.ONHOLD, function(component, x, y)
-        return self:_UpdatePickerDrag(kind, component, x, y)
-    end)
-    layer:Subscribe(ui.Hook.ONDRAG, function(component, x, y)
-        return self:_UpdatePickerDrag(kind, component, x, y)
-    end)
-    layer:Subscribe(ui.Hook.ONRELEASE, function(component, x, y)
-        return self:_StopPickerDrag(kind, component, x, y)
-    end)
-    layer:Subscribe(ui.Hook.ONDRAGCOMPLETE, function(component, _, x, y)
-        return self:_StopPickerDrag(kind, component, x, y)
-    end)
+    layer:Subscribe(
+        ui.Hook.ONCLICK,
+        function(component, x, y)
+            return self:_BeginPickerDrag(kind, component, x, y)
+        end
+    )
+    layer:Subscribe(
+        ui.Hook.ONHOLD,
+        function(component, x, y)
+            return self:_UpdatePickerDrag(kind, component, x, y)
+        end
+    )
+    layer:Subscribe(
+        ui.Hook.ONDRAG,
+        function(component, x, y)
+            return self:_UpdatePickerDrag(kind, component, x, y)
+        end
+    )
+    layer:Subscribe(
+        ui.Hook.ONRELEASE,
+        function(component, x, y)
+            return self:_StopPickerDrag(kind, component, x, y)
+        end
+    )
+    layer:Subscribe(
+        ui.Hook.ONDRAGCOMPLETE,
+        function(component, _, x, y)
+            return self:_StopPickerDrag(kind, component, x, y)
+        end
+    )
 end
 
 function ColourPicker:_ClearPickerReferences()
@@ -633,43 +611,19 @@ function ColourPicker:Open()
         self.alphaCanvas.clickthrough = true
     end
 
-    rectangle(
-        picker.content, FIELD_X, FIELD_Y, FIELD_SIZE, FIELD_SIZE, FRAME_COLOUR, false
-    )
-    rectangle(
-        picker.content, HUE_X, HUE_Y, HUE_WIDTH, FIELD_SIZE, FRAME_COLOUR, false
-    )
+    rectangle(picker.content, FIELD_X, FIELD_Y, FIELD_SIZE, FIELD_SIZE, FRAME_COLOUR, false)
+    rectangle(picker.content, HUE_X, HUE_Y, HUE_WIDTH, FIELD_SIZE, FRAME_COLOUR, false)
     if self.alphaSlider then
-        rectangle(
-            picker.content,
-            ALPHA_X,
-            ALPHA_Y,
-            ALPHA_WIDTH,
-            ALPHA_HEIGHT,
-            FRAME_COLOUR,
-            false
-        )
+        rectangle(picker.content, ALPHA_X, ALPHA_Y, ALPHA_WIDTH, ALPHA_HEIGHT, FRAME_COLOUR, false)
     end
 
-    self.fieldMarkerHorizontal = rectangle(
-        picker.content, FIELD_X, FIELD_Y, MARKER_SIZE, 1, WHITE
-    )
-    self.fieldMarkerVertical = rectangle(
-        picker.content, FIELD_X, FIELD_Y, 1, MARKER_SIZE, WHITE
-    )
-    self.hueMarkerShadow = rectangle(
-        picker.content, HUE_X - 3, HUE_Y, HUE_WIDTH + 6, 4, BLACK
-    )
-    self.hueMarker = rectangle(
-        picker.content, HUE_X - 3, HUE_Y, HUE_WIDTH + 6, 2, WHITE
-    )
+    self.fieldMarkerHorizontal = rectangle(picker.content, FIELD_X, FIELD_Y, MARKER_SIZE, 1, WHITE)
+    self.fieldMarkerVertical = rectangle(picker.content, FIELD_X, FIELD_Y, 1, MARKER_SIZE, WHITE)
+    self.hueMarkerShadow = rectangle(picker.content, HUE_X - 3, HUE_Y, HUE_WIDTH + 6, 4, BLACK)
+    self.hueMarker = rectangle(picker.content, HUE_X - 3, HUE_Y, HUE_WIDTH + 6, 2, WHITE)
     if self.alphaSlider then
-        self.alphaMarkerShadow = rectangle(
-            picker.content, ALPHA_X, ALPHA_Y - 3, 4, ALPHA_HEIGHT + 6, BLACK
-        )
-        self.alphaMarker = rectangle(
-            picker.content, ALPHA_X, ALPHA_Y - 3, 2, ALPHA_HEIGHT + 6, WHITE
-        )
+        self.alphaMarkerShadow = rectangle(picker.content, ALPHA_X, ALPHA_Y - 3, 4, ALPHA_HEIGHT + 6, BLACK)
+        self.alphaMarker = rectangle(picker.content, ALPHA_X, ALPHA_Y - 3, 2, ALPHA_HEIGHT + 6, WHITE)
     end
 
     self:_AddPreview(picker, PREVIEW_Y + pickerYOffset)
@@ -703,17 +657,13 @@ function ColourPicker:Open()
 end
 
 function ColourPicker:_AddPreview(picker, y)
-    self.previewButton = picker:AddSimpleButton(
-        Sprites.CLOSE,
-        nil,
-        {
-            absolute = true,
-            x = math.floor((picker.content.width - PREVIEW_BUTTON_SIZE) / 2),
-            y = y,
-            width = PREVIEW_BUTTON_SIZE,
-            height = PREVIEW_BUTTON_SIZE,
-        }
-    )
+    self.previewButton = picker:AddSimpleButton(Sprites.CLOSE, nil, {
+        absolute = true,
+        x = math.floor((picker.content.width - PREVIEW_BUTTON_SIZE) / 2),
+        y = y,
+        width = PREVIEW_BUTTON_SIZE,
+        height = PREVIEW_BUTTON_SIZE,
+    })
     if self.previewButton.content then self.previewButton.content:Destroy() end
     local previewInset = math.floor((PREVIEW_BUTTON_SIZE - PREVIEW_SWATCH_SIZE) / 2)
     self.preview = rectangle(

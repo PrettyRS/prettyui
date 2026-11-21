@@ -33,9 +33,11 @@ local function resolveVariant(variant)
 end
 
 local function measureText(text)
-    local succeeded, width = pcall(function()
-        return config.Font.CINZEL_13PT_BOLD:GetStringWidth(text, false)
-    end)
+    local succeeded, width = pcall(
+        function()
+            return config.Font.CINZEL_13PT_BOLD:GetStringWidth(text, false)
+        end
+    )
     return succeeded and width or #text * 9
 end
 

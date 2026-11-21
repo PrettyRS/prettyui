@@ -51,17 +51,23 @@ end
 local function component(parent, categoryID, dynamicID)
     local result = { children = {}, x = 0, y = 0, width = 0, height = 0 }
 
-    function result:SetPos(x, y) self.x, self.y = x, y end
-    function result:SetSize(width, height) self.width, self.height = width, height end
+    function result:SetPos(x, y)
+        self.x, self.y = x, y
+    end
+    function result:SetSize(width, height)
+        self.width, self.height = width, height
+    end
     function result:MoveToBack() self.movedToBack = true end
 
     function result:Destroy()
         if self.destroyed then return end
         self.destroyed = true
-        for _, child in ipairs(self.children) do child:Destroy() end
+        for _, child in ipairs(self.children) do
+            child:Destroy()
+        end
     end
 
-    if parent then 
+    if parent then
         parent.children[#parent.children + 1] = result
     end
 
@@ -93,8 +99,8 @@ id = {
 local layoutResizes = {}
 
 package.loaded["src/core/layout"] = {
-    resize = function(owner, component, height)
-        layoutResizes[#layoutResizes + 1] = { owner = owner, component = component, height = height }
+    resize = function(owner, child, height)
+        layoutResizes[#layoutResizes + 1] = { owner = owner, component = child, height = height }
     end,
 }
 
@@ -110,7 +116,7 @@ package.loaded["src/simple_view"] = {
             _onScrollWheel = options._onScrollWheel,
         }
         view.content = ui.Layer.new(view.root)
-        view.interfaceID = view.root.interfaceID 
+        view.interfaceID = view.root.interfaceID
 
         local function clamp(self)
             local maxScroll = math.max(0, self.contentHeight - self.height)
@@ -182,8 +188,7 @@ expect(headers[1].content, "Name", "headers are in column order")
 expect(headers[3].content, "Price", "headers are in column order")
 expect(t.headerBackground.movedToBack, true, "header background sits behind the labels")
 
-expect(childrenOfKind(t.scrollView.content, "Text")[1].content, "Nothing to show.",
-    "empty table shows the empty text")
+expect(childrenOfKind(t.scrollView.content, "Text")[1].content, "Nothing to show.", "empty table shows the empty text")
 expect(#liveRows(t), 0, "empty table builds no rows")
 
 local s = Table.new(newParent(), { columns = COLUMNS, width = 400, stretch = true })
@@ -212,7 +217,7 @@ expect(rowShowing(t, "Item 12"), nil, "row 12 is not built")
 expect(rowShowing(t, "Nothing to show."), nil, "empty text is gone once there are rows")
 
 local row1 = rowShowing(t, "Item 1")
-t.scrollView:SetScrollPosition(49 * 44) 
+t.scrollView:SetScrollPosition(49 * 44)
 
 expect(row1.destroyed, true, "rows scrolled out of view are destroyed")
 expect(#liveRows(t), 13, "still only a handful of rows built")
@@ -248,20 +253,30 @@ local wheelHandler = function() end
 local cells = Table.new(newParent(), {
     columns = {
         { key = "name", label = "Name", width = 120 },
-        { key = "price", label = "Price", width = 80,
-          format = function(value) 
-            return value .. "gp" 
-        end },
-        { label = "Action", width = 60,
-          render = function(cell, rowData, width, height, rowIndex)
-            renderCalls[#renderCalls + 1] = {
-                cell = cell, rowData = rowData, width = width, rowIndex = rowIndex
-            }
+        {
+            key = "price",
+            label = "Price",
+            width = 80,
+            format = function(value)
+                return value .. "gp"
+            end,
+        },
+        {
+            label = "Action",
+            width = 60,
+            render = function(cell, rowData, width, _, rowIndex)
+                renderCalls[#renderCalls + 1] = {
+                    cell = cell,
+                    rowData = rowData,
+                    width = width,
+                    rowIndex = rowIndex,
+                }
 
-            return function()
-                cleaned = cleaned + 1
-             end
-          end },
+                return function()
+                    cleaned = cleaned + 1
+                end
+            end,
+        },
     },
     rows = { { name = "sheep", price = 500 }, { name = "dragon", price = 900 } },
     _onScrollWheel = wheelHandler,
@@ -274,8 +289,11 @@ expect(texts[2].content, "500gp", "format changes the displayed text")
 expect(cells:GetRows()[1].price, 500, "format doesn't change the data")
 
 expect(childrenOfKind(sheep, "Rectangle")[1].rgba, cells.colours.rowOdd, "row 1 uses the odd colour")
-expect(childrenOfKind(rowShowing(cells, "dragon"), "Rectangle")[1].rgba, cells.colours.rowEven,
-    "row 2 uses the even colour")
+expect(
+    childrenOfKind(rowShowing(cells, "dragon"), "Rectangle")[1].rgba,
+    cells.colours.rowEven,
+    "row 2 uses the even colour"
+)
 
 expect(#renderCalls, 2, "render is called once per row")
 expect(renderCalls[2].rowData.name, "dragon", "render gets the row data")
@@ -302,7 +320,6 @@ t.scrollView:SetScrollPosition(1000)
 t:SetRows(makeRows(100), true)
 expect(t.scrollView.scrollY, 1000, "SetRows(rows, true) keeps the scroll position")
 
-
 t:SetPos(25, 40)
 local root, view = t.root, t.scrollView
 local row30 = rowShowing(t, "Item 30")
@@ -317,7 +334,6 @@ expect(t.root.x, 25, "SetSize keeps the position")
 expect(t.scrollView.scrollY, 1000, "SetSize keeps the scroll position")
 expect(rowShowing(t, "Item 36") ~= nil, true, "growing taller builds the newly visible rows")
 
-
 t.root.height = 1
 t:SetSize(700, 500)
 expect(t.root.height, 1, "same size: SetSize returns early")
@@ -328,13 +344,19 @@ cleaned = 0
 local r = Table.new(newParent(), {
     columns = {
         { key = "name", label = "Name", width = 100 },
-        { label = "Btn", width = 60, render = function(cell, rowData, width)
-            renders = renders + 1
-            lastWidth = width
-            return function() cleaned = cleaned + 1 end
-        end },
+        {
+            label = "Btn",
+            width = 60,
+            render = function(_, _, width)
+                renders = renders + 1
+                lastWidth = width
+                return function() cleaned = cleaned + 1 end
+            end,
+        },
     },
-    rows = makeRows(2), width = 200, stretch = true,
+    rows = makeRows(2),
+    width = 200,
+    stretch = true,
 })
 
 r:SetSize(300, 400)
@@ -350,7 +372,9 @@ local fixed = Table.new(newParent(), {
         { key = "name", label = "Name", width = 100 },
         { label = "Btn", width = 60, stretch = false, render = function() renders = renders + 1 end },
     },
-    rows = makeRows(2), width = 218, stretch = true,
+    rows = makeRows(2),
+    width = 218,
+    stretch = true,
 })
 local fixedRow = rowShowing(fixed, "Item 1")
 
@@ -361,7 +385,6 @@ expect(childrenOfKind(fixedRow, "Text")[1].width, 240 - 16, "text cell resized i
 expect(fixedRow.width, 300, "row resized to the new width")
 fixed:Destroy()
 
-
 local someRow = liveRows(t)[1]
 
 t:SetStretch(true)
@@ -370,7 +393,6 @@ expect(childrenOfKind(t.headerArea, "Text")[3].x, 316 + 50 + 8, "headers move to
 expect(someRow.width, 682, "existing rows widen")
 t:SetStretch(false)
 expect(someRow.width, 250, "SetStretch(false) restores natural widths")
-
 
 t:SetRowHeight(20, 40)
 expect(root.destroyed, true, "SetRowHeight rebuilds")
@@ -391,19 +413,23 @@ t:Rebuild()
 expect(t.root.x, 77, "Rebuild keeps a position set by someone else")
 expect(t.scrollView.scrollY, 0, "Rebuild without keepScroll goes to the top")
 
-
 local shouldFail = false
 cleaned = 0
 
 local e = Table.new(newParent(), {
-    columns = { 
-        { label = "X", width = 50, render = function(cell, rowData, width, height, rowIndex)
-            if shouldFail and rowIndex == 3 then
-                error("render bboke")
-            end
+    columns = {
+        {
+            label = "X",
+            width = 50,
+            render = function(_, _, _, _, rowIndex)
+                if shouldFail and rowIndex == 3 then
+                    error("render bboke")
+                end
 
-            return function() cleaned = cleaned + 1 end
-        end } },
+                return function() cleaned = cleaned + 1 end
+            end,
+        },
+    },
     rows = makeRows(5),
 })
 
@@ -428,14 +454,17 @@ t:SetSize(100, 100)
 
 cleaned = 0
 local late = Table.new(newParent(), {
-    columns = { 
-        { label = "X", width = 50, render = function() 
-            return function() 
+    columns = {
+        {
+            label = "X",
+            width = 50,
+            render = function()
+                return function()
                     cleaned = cleaned + 1
                 end
-            end
-        } 
+            end,
         },
+    },
     rows = makeRows(3),
 })
 

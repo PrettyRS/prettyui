@@ -17,8 +17,15 @@ local TEXT_COLOUR = 0xFFFFFFFF
 local DISABLED_TEXT_COLOUR = 0x777777FF
 
 local PIECES = {
-    "topRight", "topLeft", "top", "left", "centre", "right",
-    "bottomLeft", "bottom", "bottomRight",
+    "topRight",
+    "topLeft",
+    "top",
+    "left",
+    "centre",
+    "right",
+    "bottomLeft",
+    "bottom",
+    "bottomRight",
 }
 
 local function validateContent(content)
@@ -30,9 +37,11 @@ local function validateContent(content)
 end
 
 local function measureText(text)
-    local succeeded, width = pcall(function()
-        return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(text, false)
-    end)
+    local succeeded, width = pcall(
+        function()
+            return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(text, false)
+        end
+    )
     return succeeded and width or #text * 7
 end
 
@@ -83,9 +92,10 @@ function SimpleButton.new(parent, content, action, options)
 
     self.parts = {}
     for _, name in ipairs(PIECES) do
-        self.parts[name] = backgroundSprite(self.root,
-            name == "top" or name == "left" or name == "centre" or
-            name == "right" or name == "bottom")
+        self.parts[name] = backgroundSprite(
+            self.root,
+            name == "top" or name == "left" or name == "centre" or name == "right" or name == "bottom"
+        )
     end
 
     self.parts.topLeft:SetSize(TILE_SIZE, TILE_SIZE)
@@ -116,10 +126,7 @@ function SimpleButton.new(parent, content, action, options)
         local iconHeight = math.max(1, math.floor(requestedHeight * scale))
         self.content = Components.new(ui.Sprite, self.root)
         self.content:SetSize(iconWidth, iconHeight)
-        self.content:SetPos(
-            math.floor((width - iconWidth) / 2),
-            math.floor((height - iconHeight) / 2)
-        )
+        self.content:SetPos(math.floor((width - iconWidth) / 2), math.floor((height - iconHeight) / 2))
         self.content.spriteID = content
     else
         self.content = Components.new(ui.Text, self.root)
@@ -182,7 +189,9 @@ function SimpleButton:_UpdateState()
     if self.contentType == "string" then
         self.content.rgba = self.disabled and self.disabledTextColour or self.textColour
     end
-    for _, name in ipairs(PIECES) do self.parts[name].spriteID = sprites[name] end
+    for _, name in ipairs(PIECES) do
+        self.parts[name].spriteID = sprites[name]
+    end
 end
 
 function SimpleButton:SetDisabled(disabled)

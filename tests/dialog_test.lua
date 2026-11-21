@@ -2,8 +2,7 @@ local Interfaces = require("tests/interface_fixture")
 
 local function expect(actual, expected, message)
     if actual ~= expected then
-        error(message .. ": expected " .. tostring(expected)
-            .. ", got " .. tostring(actual))
+        error(message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
     end
 end
 
@@ -31,8 +30,8 @@ local function fakeLayer(parent, categoryID, dynamicID)
         destroyed = false,
         raiseCount = 0,
     }
-    function layer:SetPos() end
-    function layer:SetSize() end
+    function layer.SetPos() end
+    function layer.SetSize() end
     function layer:MoveToFront()
         self.raiseCount = (self.raiseCount or 0) + 1
     end
@@ -45,8 +44,8 @@ end
 
 local function fakeRect(parent, categoryID, dynamicID)
     local rect = { parent = parent, fill = false, clickthrough = false, colour = nil }
-    function rect:SetPos() end
-    function rect:SetSize() end
+    function rect.SetPos() end
+    function rect.SetSize() end
     return Interfaces.component(rect, parent, categoryID, dynamicID)
 end
 
@@ -72,8 +71,8 @@ local function fakeWindow(parent, options)
     function window:AddFancyButton(label, action, opts)
         opts = opts or {}
         local button = { label = label, action = action, opts = opts, disabled = opts.disabled == true }
-        function button:SetDisabled(disabled)
-            self.disabled = disabled == true
+        function button.SetDisabled(buttonSelf, disabled)
+            buttonSelf.disabled = disabled == true
         end
         self.buttons[#self.buttons + 1] = button
         return button
@@ -298,8 +297,7 @@ local legacyModal = Dialog.new(modalHost, {
     title = "Legacy modal",
     actions = { { label = "Close" } },
 })
-expect(legacyModal.window.root.categoryID, 0,
-    "later modal retains its own native allocation policy")
+expect(legacyModal.window.root.categoryID, 0, "later modal retains its own native allocation policy")
 button(legacyModal.window, "Close").action()
 expectFalse(dim.destroyed, "shared dim stays until the last modal closes")
 button(firstModal.window, "Close").action()

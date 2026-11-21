@@ -12,23 +12,21 @@ local function staticParentOf(component)
     return component.parentStatic or component
 end
 
+local function blockIsFree(occupied, start, count)
+    for step = 0, count - 1 do
+        if occupied[start + step] then return false end
+    end
+    return true
+end
+
 local function findBlock(staticParent, occupied, cursor, count)
     for offset = 0, CAPACITY - 1 do
         local start = (cursor + offset) % CAPACITY
         local firstID = start % IDS_PER_CATEGORY
-        if firstID + count <= IDS_PER_CATEGORY then
+        if firstID + count <= IDS_PER_CATEGORY and blockIsFree(occupied, start, count) then
             local categoryID = 1 + math.floor(start / IDS_PER_CATEGORY)
-            local free = true
-            for step = 0, count - 1 do
-                if occupied[start + step] then
-                    free = false
-                    break
-                end
-            end
-            if free then
-                local token = Components.reserve(staticParent, categoryID, firstID, count)
-                if token then return start, categoryID, firstID, token end
-            end
+            local token = Components.reserve(staticParent, categoryID, firstID, count)
+            if token then return start, categoryID, firstID, token end
         end
     end
     return nil
@@ -53,14 +51,15 @@ function CategoryGroups.withBatch(parent, callback)
         occupied = Components.occupiedIDs(staticParent)
         Components.useSnapshot(staticParent, occupied)
         local function build(count, builder)
-            assert(type(count) == "number" and count % 1 == 0 and count >= 1 and
-                count <= IDS_PER_CATEGORY, "PrettyUI: category group size must be 1..235")
+            assert(
+                type(count) == "number" and count % 1 == 0 and count >= 1 and count <= IDS_PER_CATEGORY,
+                "PrettyUI: category group size must be 1..235"
+            )
             if occupied == nil then
                 occupied = Components.occupiedIDs(staticParent)
                 Components.useSnapshot(staticParent, occupied)
             end
-            local start, categoryID, firstID, token = findBlock(staticParent, occupied,
-                state.cursor, count)
+            local start, categoryID, firstID, token = findBlock(staticParent, occupied, state.cursor, count)
             if start == nil then error(EXHAUSTED, 2) end
 
             local created = {}
@@ -97,7 +96,9 @@ function CategoryGroups.withBatch(parent, callback)
                 if not built then error(value, 0) end
                 error("PrettyUI: category group created fewer components than reserved", 2)
             end
-            for step = 0, count - 1 do occupied[start + step] = true end
+            for step = 0, count - 1 do
+                occupied[start + step] = true
+            end
             state.cursor = (start + count) % CAPACITY
             return value
         end

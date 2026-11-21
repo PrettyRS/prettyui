@@ -7,7 +7,8 @@ local function sidebar(f)
     local top = scene.node(4088, 51, nil, 0, 0, 1200, 800)
     local viewport = scene.node(4089, 52, nil, 0, 0, 1200, 800)
     local area = scene.node(4089, 53, viewport, 0, 0, 1200, 800)
-    area:SetSize(0, 0, 1, 1); area:SetPos(0, 0, .5, .5, .5, .5)
+    area:SetSize(0, 0, 1, 1)
+    area:SetPos(0, 0, 0.5, 0.5, 0.5, 0.5)
     local view = scene.node(4089, 54, viewport, 0, 0, 1200, 800)
     view:SetSize(0, 0, 1, 1)
     scene.node(4089, 55, area, 988, 488, 212, 312)
@@ -27,7 +28,9 @@ local function sidebar(f)
     local ribbon = require("src/ribbon_bar")
     ribbon.Start()
     return {
-        top = top, area = area, ribbon = ribbon,
+        top = top,
+        area = area,
+        ribbon = ribbon,
         click = function(panel)
             f.fire(assert(find(top, panel.tabIcon), "missing ribbon button"), ui.Hook.ONCLICK)
         end,
@@ -58,7 +61,8 @@ Fixture.run("Classic sidebar clicks mount one page, collapse without disabling, 
     scene.click(a)
     assert(a.content == nil and a:IsActive(), "collapse is not deactivation")
     f.expect(scene.area.width, 1156, "collapse restores rail-only reservation")
-    a:Destroy(); b:Destroy()
+    a:Destroy()
+    b:Destroy()
     f.expect(scene.area.width, 1200, "last panel releases native reservation")
     f.expect(builds, cleanups, "every mounted page is cleaned up")
 end)

@@ -101,7 +101,8 @@ local function gameWindow(x, y, width, height, shown)
 end
 
 local layoutLayer = {
-    interfaceID = 1477, xyGlobal = { x = 0, y = 0 },
+    interfaceID = 1477,
+    xyGlobal = { x = 0, y = 0 },
     children = {
         gameWindow(1533, 48, 387, 334, true),
         gameWindow(1533, 671, 191, 338, false),
@@ -130,9 +131,12 @@ ui = {
 local function prettyWindow(x, y, parent)
     parent = parent or buildLayer
     return {
-        parent = parent, interfaceID = parent.interfaceID, edgeOffsets = TITLED,
+        parent = parent,
+        interfaceID = parent.interfaceID,
+        edgeOffsets = TITLED,
         root = {
-            width = 300, height = 200,
+            width = 300,
+            height = 200,
             xyGlobal = { x = parent.xyGlobal.x + x, y = parent.xyGlobal.y + y },
         },
     }
@@ -159,7 +163,13 @@ local crossParentWindow = prettyWindow(1000, 600, layoutLayer)
 Snap.register(crossParentWindow)
 local crossParent = Snap.start(moving)
 expect(#crossParent.across, 10, "a window in another parent is still a target")
-expectPosition(crossParent.across[4], 1286, 580, 778, "right of a window in another parent, in the build layer's coordinates")
+expectPosition(
+    crossParent.across[4],
+    1286,
+    580,
+    778,
+    "right of a window in another parent, in the build layer's coordinates"
+)
 
 local unloadedLayer = { interfaceID = 1500, xyGlobal = { x = 0, y = 0 } }
 local unloadedWindow = prettyWindow(200, 600, unloadedLayer)
@@ -170,10 +180,11 @@ loadedLayoutLayer = nil
 expect(#Snap.start(moving).across, 6, "without the layout layer, only prettyui windows are targets")
 loadedLayoutLayer = layoutLayer
 
-local forgottenWindow = prettyWindow(300, 300)
-Snap.register(forgottenWindow)
-expect(#Snap.start(moving).across, 14, "a registered window is a target while something still holds it")
-forgottenWindow = nil
+do
+    local forgottenWindow = prettyWindow(300, 300)
+    Snap.register(forgottenWindow)
+    expect(#Snap.start(moving).across, 14, "a registered window is a target while something still holds it")
+end
 collectgarbage()
 expect(#Snap.start(moving).across, 10, "a window nothing else holds drops out of the registry")
 
@@ -216,14 +227,26 @@ local untitledTarget = prettyWindow(500, 400)
 untitledTarget.edgeOffsets = UNTITLED
 Snap.register(untitledTarget)
 local withUntitled = Snap.start(moving)
-expect(hasPosition(withUntitled.across, 796, 402, 598), true,
-    "right of an untitled window, spanning its visible top and bottom")
-expect(hasPosition(withUntitled.down, 598, 502, 798), true,
-    "below an untitled window, the moving window's title bar meets its bottom border")
-expect(hasPosition(withUntitled.down, 204, 502, 798), true,
-    "above an untitled window, the moving window's bottom border meets its top border")
-expect(hasPosition(withUntitled.down, 402, 502, 798), true,
-    "the moving window's title bar lines up with an untitled window's top border")
+expect(
+    hasPosition(withUntitled.across, 796, 402, 598),
+    true,
+    "right of an untitled window, spanning its visible top and bottom"
+)
+expect(
+    hasPosition(withUntitled.down, 598, 502, 798),
+    true,
+    "below an untitled window, the moving window's title bar meets its bottom border"
+)
+expect(
+    hasPosition(withUntitled.down, 204, 502, 798),
+    true,
+    "above an untitled window, the moving window's bottom border meets its top border"
+)
+expect(
+    hasPosition(withUntitled.down, 402, 502, 798),
+    true,
+    "the moving window's title bar lines up with an untitled window's top border"
+)
 Snap.unregister(untitledTarget)
 
 print("snap_test: ok")

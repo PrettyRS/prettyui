@@ -16,7 +16,9 @@ local function component(parent, categoryID, dynamicID)
     end
     function result:Destroy()
         self.destroyed = true
-        for _, child in ipairs(self.children) do child:Destroy() end
+        for _, child in ipairs(self.children) do
+            child:Destroy()
+        end
     end
     if parent then table.insert(parent.children, result) end
     return Interfaces.component(result, parent, categoryID, dynamicID)
@@ -25,7 +27,9 @@ end
 local subscriptions = {}
 local function subscriptionCount()
     local count = 0
-    for _ in pairs(subscriptions) do count = count + 1 end
+    for _ in pairs(subscriptions) do
+        count = count + 1
+    end
     return count
 end
 

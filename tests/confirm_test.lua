@@ -2,8 +2,7 @@ local Interfaces = require("tests/interface_fixture")
 
 local function expect(actual, expected, message)
     if actual ~= expected then
-        error(message .. ": expected " .. tostring(expected)
-            .. ", got " .. tostring(actual))
+        error(message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
     end
 end
 
@@ -19,9 +18,9 @@ local windows = {}
 
 local function fakeLayer(parent, categoryID, dynamicID)
     local layer = { parent = parent, clickthrough = false, destroyed = false }
-    function layer:SetPos() end
-    function layer:SetSize() end
-    function layer:MoveToFront() end
+    function layer.SetPos() end
+    function layer.SetSize() end
+    function layer.MoveToFront() end
     function layer:Destroy()
         self.destroyed = true
     end
@@ -30,8 +29,8 @@ end
 
 local function fakeRect(parent, categoryID, dynamicID)
     local rect = { parent = parent, fill = false, clickthrough = false, colour = nil }
-    function rect:SetPos() end
-    function rect:SetSize() end
+    function rect.SetPos() end
+    function rect.SetSize() end
     return Interfaces.component(rect, parent, categoryID, dynamicID)
 end
 
@@ -57,7 +56,7 @@ local function fakeWindow(parent, options)
         self.buttons[#self.buttons + 1] = button
         return button
     end
-    function window:Show() end
+    function window.Show() end
     function window:Close()
         if self.onClose then self.onClose(self) end
         if self.destroyOnClose then self:Destroy() end
@@ -98,16 +97,15 @@ local parent = { id = "c" }
 local staticHost = Interfaces.component({ id = "confirm-static" })
 local nativeHost = ui.Layer.new(staticHost)
 local autoConfirm = Confirm.new(nativeHost, {
-    body = "Ready?", categoryID = "auto",
+    body = "Ready?",
+    categoryID = "auto",
 })
-expect(autoConfirm.window.root.categoryID > 0, true,
-    "auto Confirm constructs a managed native window root")
+expect(autoConfirm.window.root.categoryID > 0, true, "auto Confirm constructs a managed native window root")
 button(autoConfirm.window, "CONFIRM").action()
 expect(Dialog.depth(nativeHost), 0, "auto confirmation still closes from its action")
 require("src/core/components").new(ui.Layer, nativeHost, { categoryID = "auto" })
 local legacyConfirm = Confirm.new(nativeHost, { body = "Existing consumer" })
-expect(legacyConfirm.window.root.categoryID, 0,
-    "legacy Confirm remains native inherited beside auto components")
+expect(legacyConfirm.window.root.categoryID, 0, "legacy Confirm remains native inherited beside auto components")
 button(legacyConfirm.window, "CANCEL").action()
 
 Dialog.dismissAll(parent)

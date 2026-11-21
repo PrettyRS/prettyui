@@ -28,12 +28,12 @@ function Component:SetWidth(width, widthAnchor)
     if widthAnchor ~= nil then self._widthAnchor = widthAnchor end
 end
 function Component:SetHeight(height) self._height = height end
-function Component:SetScrollSize() end
-function Component:SetScrollPos() end
-function Component:Subscribe() end
-function Component:Unsubscribe() end
-function Component:MoveToBack() end
-function Component:MoveToFront() end
+function Component.SetScrollSize() end
+function Component.SetScrollPos() end
+function Component.Subscribe() end
+function Component.Unsubscribe() end
+function Component.MoveToBack() end
+function Component.MoveToFront() end
 function Component:Destroy() self.destroyed = true end
 local metatable = {
     __index = function(self, key)
@@ -44,9 +44,16 @@ local metatable = {
 
 local function component(parent, categoryID, dynamicID)
     local value = setmetatable({
-        parent = parent, hidden = false,
-        _x = 0, _y = 0, _xAnchor = 0, _yAnchor = 0,
-        _width = 0, _height = 0, _widthAnchor = 0, _heightAnchor = 0,
+        parent = parent,
+        hidden = false,
+        _x = 0,
+        _y = 0,
+        _xAnchor = 0,
+        _yAnchor = 0,
+        _width = 0,
+        _height = 0,
+        _widthAnchor = 0,
+        _heightAnchor = 0,
     }, metatable)
     return Interfaces.component(value, parent, categoryID, dynamicID)
 end
@@ -54,13 +61,23 @@ end
 ui = {
     Sprite = { new = component },
     Layer = { new = component },
-    Hook = { ONCLICK = 1, ONMOUSEOVER = 2, ONMOUSELEAVE = 3, ONRELEASE = 4,
-        ONHOLD = 5, ONDRAG = 6, ONDRAGCOMPLETE = 7 },
+    Hook = {
+        ONCLICK = 1,
+        ONMOUSEOVER = 2,
+        ONMOUSELEAVE = 3,
+        ONRELEASE = 4,
+        ONHOLD = 5,
+        ONDRAG = 6,
+        ONDRAGCOMPLETE = 7,
+    },
 }
 config = { Cursor = { CURSOR_BLANK = 0 } }
 package.loaded["src/core/sprites"] = {
     SLIDER = {
-        backingEnd = 2, backingTile = 3, barEnd = 4, barTile = 5,
+        backingEnd = 2,
+        backingTile = 3,
+        barEnd = 4,
+        barTile = 5,
         thumb = { normal = 6, disabled = 7 },
         decrease = { normal = 8, disabled = 9 },
         increase = { normal = 10, disabled = 11 },
@@ -69,7 +86,8 @@ package.loaded["src/core/sprites"] = {
 -- Hosts register a tooltip context on their content, naming it as the collection.
 local contexts = {}
 package.loaded["src/tooltip"] = {
-    bind = function() end, unbind = function() end,
+    bind = function() end,
+    unbind = function() end,
     getContext = function(collection) return contexts[collection] end,
 }
 package.loaded["src/core/wheel"] = { bind = function() end }
@@ -92,8 +110,7 @@ expect(slider.thumb.x, travel(), "a full slider starts with its marker at the tr
 host:SetSize(500, 200)
 scroll:Refresh()
 expect(slider.thumb.x, travel(), "the marker follows the track end when the host widens")
-expect(slider.thumbDrag.x, slider.root.x + slider.track.x + slider.thumb.x,
-    "the marker's grab area follows it")
+expect(slider.thumbDrag.x, slider.root.x + slider.track.x + slider.thumb.x, "the marker's grab area follows it")
 
 host:SetSize(260, 200)
 scroll:Refresh()
@@ -107,7 +124,11 @@ expect(slider.thumb.x, math.floor(travel() / 2 + 0.5), "a scrollbar appearing re
 local frame = component(scroll.content)
 frame:SetSize(-28, 120, 1.0)
 local inner = Scroll.new(frame, {
-    width = 0, height = 0, widthAnchor = 1.0, heightAnchor = 1.0, parentContext = outerContext,
+    width = 0,
+    height = 0,
+    widthAnchor = 1.0,
+    heightAnchor = 1.0,
+    parentContext = outerContext,
 })
 expect(inner.parentScroll, scroll, "a nested scroll finds the scroll around it through its host's context")
 local innerContext = { collection = inner.content, parentContext = outerContext }

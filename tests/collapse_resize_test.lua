@@ -8,26 +8,50 @@ local function moveInRenderOrder(component, front)
     local siblings = component.parent and component.parent.renderOrder
     if not siblings then return end
     for index, sibling in ipairs(siblings) do
-        if sibling == component then table.remove(siblings, index); break end
+        if sibling == component then
+            table.remove(siblings, index)
+            break
+        end
     end
     table.insert(siblings, front and #siblings + 1 or 1, component)
 end
 
 -- Resolve native size anchors on access, including after an ancestor changes size.
 local function component(parent, categoryID, dynamicID)
-    local value = { parent = parent, x = 0, y = 0, hidden = false, subscriptions = {},
-        opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end }, cursorConfig = {} }
-    setmetatable(value, { __index = function(self, key)
-        if key == "width" then return (self.w or 0) + (parent and parent.width or 0) * (self.wa or 0) end
-        if key == "height" then return (self.h or 0) + (parent and parent.height or 0) * (self.ha or 0) end
-    end })
-    function value:SetPos(x, y) self.x, self.y = x, y end
+    local value = {
+        parent = parent,
+        x = 0,
+        y = 0,
+        hidden = false,
+        subscriptions = {},
+        opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
+        cursorConfig = {},
+    }
+    setmetatable(value, {
+        __index = function(self, key)
+            if key == "width" then return (self.w or 0) + (parent and parent.width or 0) * (self.wa or 0) end
+            if key == "height" then return (self.h or 0) + (parent and parent.height or 0) * (self.ha or 0) end
+        end,
+    })
+    function value:SetPos(x, y)
+        self.x, self.y = x, y
+    end
     function value:SetY(y) self.y = y end
-    function value:SetSize(w, h, wa, ha) self.w, self.h, self.wa, self.ha = w, h, wa, ha end
-    function value:SetWidth(w, wa) self.w, self.wa = w, wa end
-    function value:SetHeight(h, ha) self.h, self.ha = h, ha end
-    function value:SetScrollSize(w, h) self.scrollWidth, self.scrollHeight = w, h end
-    function value:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
+    function value:SetSize(w, h, wa, ha)
+        self.w, self.h, self.wa, self.ha = w, h, wa, ha
+    end
+    function value:SetWidth(w, wa)
+        self.w, self.wa = w, wa
+    end
+    function value:SetHeight(h, ha)
+        self.h, self.ha = h, ha
+    end
+    function value:SetScrollSize(w, h)
+        self.scrollWidth, self.scrollHeight = w, h
+    end
+    function value:SetScrollPos(x, y)
+        self.scrollX, self.scrollY = x, y
+    end
     function value:Subscribe(hook, name, callback) self.subscriptions[hook] = callback or name end
     function value:Unsubscribe(hook) self.subscriptions[hook] = nil end
     function value:MoveToFront() moveInRenderOrder(self, true) end
@@ -41,8 +65,10 @@ local function component(parent, categoryID, dynamicID)
         parent.renderOrder = siblings
         local position = #siblings + 1
         for index, sibling in ipairs(siblings) do
-            if sibling.categoryID > value.categoryID or
-                (sibling.categoryID == value.categoryID and sibling.dynamicID > value.dynamicID) then
+            if
+                sibling.categoryID > value.categoryID
+                or (sibling.categoryID == value.categoryID and sibling.dynamicID > value.dynamicID)
+            then
                 position = index
                 break
             end
@@ -54,9 +80,12 @@ end
 
 local enum = setmetatable({}, { __index = function(_, key) return key end })
 ui = {
-    Layer = { new = component }, Sprite = { new = component },
-    Text = { new = component }, Rectangle = { new = component },
-    Hook = enum, AlignMode = enum,
+    Layer = { new = component },
+    Sprite = { new = component },
+    Text = { new = component },
+    Rectangle = { new = component },
+    Hook = enum,
+    AlignMode = enum,
 }
 id = { Sprite = enum, Font = enum }
 local font = {
@@ -92,7 +121,10 @@ expect(window.root.height, expandedHeight - 84, "clicking closed shrinks the win
 expect(following.y, expandedY - 84, "following row reflows on close")
 expect(window.scrollbarVisible, false, "closing leaves no stale overflow")
 local collapsedHeight = window.root.height
-for _ = 1, 3 do section:Toggle(); section:Toggle() end
+for _ = 1, 3 do
+    section:Toggle()
+    section:Toggle()
+end
 expect(window.root.height, collapsedHeight, "repeated toggles do not drift")
 
 local fixed = Window.new(parent, { width = 400, height = 300 })
@@ -118,9 +150,12 @@ limitedSection:Toggle()
 expect(limited.root.height, 200, "reopening after clamping does not drift")
 
 local conflicting = Window.new(parent, {
-    width = 400, height = 300,
-    minWidth = 220, maxWidth = 100,
-    minHeight = 140, maxHeight = 80,
+    width = 400,
+    height = 300,
+    minWidth = 220,
+    maxWidth = 100,
+    minHeight = 140,
+    maxHeight = 80,
 })
 expect(conflicting.root.width, 220, "minimum width wins over a conflicting maximum at construction")
 expect(conflicting.root.height, 140, "minimum height wins over a conflicting maximum at construction")
@@ -154,8 +189,8 @@ expect(inline.root.height, inlineHeight, "closing a shorter inline child preserv
 
 local panel = Panel.new(parent, { width = 320, height = 200, popout = true })
 local toggles = 0
-local panelSection = panel:AddCollapseButton("Panel", { resizeParent = true,
-    onToggle = function() toggles = toggles + 1 end })
+local panelSection =
+    panel:AddCollapseButton("Panel", { resizeParent = true, onToggle = function() toggles = toggles + 1 end })
 panelSection:AddText({ text = "Panel body", height = 60 })
 panelSection:Toggle()
 local panelHeight = panel.height
@@ -189,21 +224,16 @@ expect(window.root.height, outerHeight, "resizing the immediate host leaves ance
 
 local Components = require("src/core/components")
 local autoWindow = Window.new(parent, { title = "Auto", categoryID = "auto" })
-expect(ui.Layer.new(autoWindow.content).categoryID, 0,
-    "raw window child inherits category zero")
+expect(ui.Layer.new(autoWindow.content).categoryID, 0, "raw window child inherits category zero")
 local autoSection = autoWindow:AddCollapseButton("Auto section")
-expect(ui.Layer.new(autoSection.content).categoryID, 0,
-    "raw collapse extension inherits zero")
+expect(ui.Layer.new(autoSection.content).categoryID, 0, "raw collapse extension inherits zero")
 
 local autoView = SimpleView.new(parent, { categoryID = "auto" })
-expect(ui.Layer.new(autoView.content).categoryID, 0,
-    "raw SimpleView content accepts native children")
-expect(autoView.upArrow.categoryID > 0, true,
-    "auto SimpleView controls use managed categories")
+expect(ui.Layer.new(autoView.content).categoryID, 0, "raw SimpleView content accepts native children")
+expect(autoView.upArrow.categoryID > 0, true, "auto SimpleView controls use managed categories")
 local autoPanel = Panel.new(parent, { categoryID = "auto", popout = true })
 expect(ui.Layer.new(autoPanel.content).categoryID, 0, "raw dock child inherits zero")
-expect(ui.Layer.new(autoPanel.overlayContent).categoryID, 0,
-    "raw popout child inherits zero")
+expect(ui.Layer.new(autoPanel.overlayContent).categoryID, 0, "raw popout child inherits zero")
 local function expectPanelForeground(panel_, pairedLabel)
     local surface = panel_.poppedOut and panel_.overlay or panel_.dock
     local label = panel_.poppedOut and pairedLabel.overlay or pairedLabel.dock
@@ -211,7 +241,9 @@ local function expectPanelForeground(panel_, pairedLabel)
     local function paint(component_)
         if component_.hidden or component_.destroyed then return end
         painted[#painted + 1] = component_
-        for _, child in ipairs(component_.renderOrder or {}) do paint(child) end
+        for _, child in ipairs(component_.renderOrder or {}) do
+            paint(child)
+        end
     end
     paint(surface.root)
     local backgroundIndex, labelIndex
@@ -237,7 +269,9 @@ legacyOrderPanel:Destroy()
 local managedParent = Components.new(ui.Layer, autoWindow.root)
 local mountedWindow = pcall(Window.new, managedParent, { categoryID = "auto" })
 local mountedPanel = pcall(Panel.new, parent, {
-    categoryID = "auto", overlayParent = managedParent, popout = true,
+    categoryID = "auto",
+    overlayParent = managedParent,
+    popout = true,
 })
 expect(mountedWindow, false, "auto Window rejects a nonzero dynamic parent")
 expect(mountedPanel, false, "auto Panel rejects a nonzero overlay parent")
@@ -251,14 +285,16 @@ ui.Layer.new = function(owner, categoryID, dynamicID)
     if owner == parent then partialCollapse = layer end
     return layer
 end
-local collapseBuilt, collapseError = pcall(
-    require("src/collapse_button").new, parent, "Failure", { categoryID = "auto" })
+local collapseBuilt, collapseError =
+    pcall(require("src/collapse_button").new, parent, "Failure", { categoryID = "auto" })
 ui.Layer.new = originalLayer
 expect(collapseBuilt, false, "late collapse content failure propagates")
-expect(collapseError:find("late collapse content failure", 1, true) ~= nil,
-    true, "collapse failure retains the original constructor error")
-expect(partialCollapse.destroyed, true,
-    "failed direct CollapseButton construction destroys its partial root")
+expect(
+    collapseError:find("late collapse content failure", 1, true) ~= nil,
+    true,
+    "collapse failure retains the original constructor error"
+)
+expect(partialCollapse.destroyed, true, "failed direct CollapseButton construction destroys its partial root")
 
 autoPanel:Destroy()
 autoView:Destroy()

@@ -153,12 +153,9 @@ local function restoreNativeMouseLeaveLayer(menuOverlay)
         position.xParentPc,
         position.yParentPc,
         position.xSelfPc,
-        position.ySelfPc)
-    nativeHitbox.component:SetSize(
-        size.width,
-        size.height,
-        size.widthParentPc,
-        size.heightParentPc)
+        position.ySelfPc
+    )
+    nativeHitbox.component:SetSize(size.width, size.height, size.widthParentPc, size.heightParentPc)
 end
 
 local function extendNativeMouseLeaveLayer(menuOverlay, state)
@@ -194,12 +191,8 @@ local function extendNativeMouseLeaveLayer(menuOverlay, state)
     }
     local left = math.min(componentOrigin.x, submenuX - NATIVE_HITBOX_PADDING)
     local top = math.min(componentOrigin.y, submenuY - NATIVE_HITBOX_PADDING)
-    local right = math.max(
-        componentOrigin.x + component.width,
-        submenuX + menuOverlay.width + NATIVE_HITBOX_PADDING)
-    local bottom = math.max(
-        componentOrigin.y + component.height,
-        submenuY + menuOverlay.height + NATIVE_HITBOX_PADDING)
+    local right = math.max(componentOrigin.x + component.width, submenuX + menuOverlay.width + NATIVE_HITBOX_PADDING)
+    local bottom = math.max(componentOrigin.y + component.height, submenuY + menuOverlay.height + NATIVE_HITBOX_PADDING)
     component:SetPos(left - parentOrigin.x, top - parentOrigin.y)
     component:SetSize(right - left, bottom - top)
 end
@@ -225,8 +218,7 @@ end
 
 local function reset()
     local state = activeMenu
-    if state ~= nil and state.pointerLayer ~= nil
-            and nativeComponent(state.pointerLayerID) == state.pointerLayer then
+    if state ~= nil and state.pointerLayer ~= nil and nativeComponent(state.pointerLayerID) == state.pointerLayer then
         state.pointerLayer:Unsubscribe(ui.Hook.ONMOUSEOVER, EVENT_ID)
         state.pointerLayer:Unsubscribe(ui.Hook.ONMOUSEREPEAT, EVENT_ID)
     end
@@ -295,8 +287,10 @@ local function mountOverlay(menuOverlay, state)
 
     local rootParent = state.parent
     local rootX, rootY = x, y
-    if menuOverlay.nativeHitbox ~= nil
-            and menuOverlay.nativeHitbox.componentID == id.Component.MINIMENU__MENU_BLOCKING_LAYER then
+    if
+        menuOverlay.nativeHitbox ~= nil
+        and menuOverlay.nativeHitbox.componentID == id.Component.MINIMENU__MENU_BLOCKING_LAYER
+    then
         -- A top-level sibling would render and receive input below this blocker.
         -- Hosting inside it also requires converting viewport to blocker-local coordinates.
         rootParent = menuOverlay.nativeHitbox.component
@@ -369,12 +363,17 @@ local function mountOverlay(menuOverlay, state)
         rowRoot:Subscribe(ui.Hook.ONCLICK, function()
             return selectChild(menuOverlay, row)
         end)
-        rowRoot:Subscribe(ui.Hook.ONSCROLLWHEEL, function(_, delta)
-            return scrollRows(menuOverlay, delta)
-        end)
+        rowRoot:Subscribe(
+            ui.Hook.ONSCROLLWHEEL,
+            function(_, delta)
+                return scrollRows(menuOverlay, delta)
+            end
+        )
     end
 
-    for _, edge in ipairs(frameEdges) do edge:MoveToFront() end
+    for _, edge in ipairs(frameEdges) do
+        edge:MoveToFront()
+    end
 
     root:Subscribe(ui.Hook.ONSCROLLWHEEL, function(_, delta)
         return scrollRows(menuOverlay, delta)
@@ -388,8 +387,7 @@ local function createOverlay(registration, parentRow)
 
     local state = activeMenu
     local width = math.min(submenuWidth(registration), state.viewportWidth)
-    local maximumRows = math.max(1,
-        math.floor((state.viewportHeight - HEADER_HEIGHT - BOTTOM_PADDING) / ITEM_HEIGHT))
+    local maximumRows = math.max(1, math.floor((state.viewportHeight - HEADER_HEIGHT - BOTTOM_PADDING) / ITEM_HEIGHT))
     local visibleRows = math.min(#registration.children, maximumRows)
     local height = math.max(46, HEADER_HEIGHT + visibleRows * ITEM_HEIGHT + BOTTOM_PADDING)
 
@@ -441,8 +439,7 @@ local function menuDimensions(entries, viewportHeight)
         width = math.max(width, measureNativeText(entryText(entry)))
     end
     width = math.max(MINIMUM_WIDTH, math.ceil(width) + MENU_WIDTH_PADDING)
-    local maximumRows = math.max(1,
-        math.floor((viewportHeight - HEADER_HEIGHT - BOTTOM_PADDING) / ITEM_HEIGHT))
+    local maximumRows = math.max(1, math.floor((viewportHeight - HEADER_HEIGHT - BOTTOM_PADDING) / ITEM_HEIGHT))
     local visibleRows = math.min(#entries, maximumRows)
     local height = math.max(46, HEADER_HEIGHT + visibleRows * ITEM_HEIGHT + BOTTOM_PADDING)
     return width, height, visibleRows
@@ -452,8 +449,7 @@ local function placeNativeMenu(state, mouse)
     local origin = state.parent.xyGlobal or { x = 0, y = 0 }
     local mouseX = mouse.x - origin.x
     local mouseY = mouse.y - origin.y
-    state.rootX = clamp(math.floor(mouseX - state.rootWidth / 2),
-        0, state.viewportWidth - state.rootWidth)
+    state.rootX = clamp(math.floor(mouseX - state.rootWidth / 2), 0, state.viewportWidth - state.rootWidth)
     state.rootY = clamp(math.floor(mouseY), 0, state.viewportHeight - state.rootHeight)
 end
 
@@ -548,10 +544,8 @@ local function onLogic()
     local origin = state.parent.xyGlobal or { x = 0, y = 0 }
     local x = mouse.x - origin.x
     local y = mouse.y - origin.y
-    local insideNative = inside(
-        x, y, state.rootX, state.rootY, state.rootWidth, state.rootHeight)
-    local insideSubmenu = overlay ~= nil and inside(
-        x, y, overlay.x, overlay.y, overlay.width, overlay.height)
+    local insideNative = inside(x, y, state.rootX, state.rootY, state.rootWidth, state.rootHeight)
+    local insideSubmenu = overlay ~= nil and inside(x, y, overlay.x, overlay.y, overlay.width, overlay.height)
     if overlay ~= nil and not insideNative and not insideSubmenu then
         destroyOverlay()
         return
@@ -577,10 +571,10 @@ end
 
 local function validatePosition(position)
     if position == nil or position == "top" or position == "bottom" then return end
-    assert(type(position) == "number"
-            and position >= 2
-            and position == math.floor(position),
-        "MiniMenu submenu position must be \"top\", \"bottom\", or an integer of 2 or greater")
+    assert(
+        type(position) == "number" and position >= 2 and position == math.floor(position),
+        'MiniMenu submenu position must be "top", "bottom", or an integer of 2 or greater'
+    )
 end
 
 local function targetEntryIndex(position, entryCount)
@@ -618,12 +612,10 @@ end
 -- Read once before and after Add, and find the parent by text
 local function addParentEntry(miniMenu, label, action)
     local key = textKey(label)
-    assert(parentsByText[key] == nil,
-        "MiniMenu submenu labels must be unique within the current menu")
+    assert(parentsByText[key] == nil, "MiniMenu submenu labels must be unique within the current menu")
     local entries = miniMenu.entries
     for _, entry in ipairs(entries) do
-        assert(textKey(entryText(entry)) ~= key,
-            "MiniMenu submenu label conflicts with an existing menu entry")
+        assert(textKey(entryText(entry)) ~= key, "MiniMenu submenu label conflicts with an existing menu entry")
     end
     local entryCount = #entries + 1
     miniMenu:Add(label, action)
@@ -635,35 +627,37 @@ local function addParentEntry(miniMenu, label, action)
 end
 
 function PrettyMiniMenu.AddSubmenu(miniMenu, label, children, options)
-    assert(miniMenu ~= nil and type(miniMenu.Add) == "function",
-        "MiniMenu.AddSubmenu requires a writable MiniMenu from Event.MiniMenuReady")
+    assert(
+        miniMenu ~= nil and type(miniMenu.Add) == "function",
+        "MiniMenu.AddSubmenu requires a writable MiniMenu from Event.MiniMenuReady"
+    )
     assert(type(label) == "string" and label ~= "", "MiniMenu submenu label must be a non-empty string")
     assert(type(children) == "table" and #children > 0, "MiniMenu submenu requires child entries")
     for index, child in ipairs(children) do
         assert(type(child) == "table", "MiniMenu child " .. index .. " must be a table")
-        assert(type(child.label) == "string" and child.label ~= "",
-            "MiniMenu child " .. index .. " requires a non-empty label")
+        assert(
+            type(child.label) == "string" and child.label ~= "",
+            "MiniMenu child " .. index .. " requires a non-empty label"
+        )
         assert(type(child.action) == "function", "MiniMenu child " .. index .. " requires an action")
         local arguments = child.arguments or child.args
-        assert(arguments == nil or type(arguments) == "table",
-            "MiniMenu child " .. index .. " arguments must be a table")
+        assert(
+            arguments == nil or type(arguments) == "table",
+            "MiniMenu child " .. index .. " arguments must be a table"
+        )
     end
 
     options = options or {}
     assert(type(options) == "table", "MiniMenu submenu options must be a table")
-    assert(options.parentAction == nil or type(options.parentAction) == "function",
-        "MiniMenu submenu parentAction must be a function")
+    assert(
+        options.parentAction == nil or type(options.parentAction) == "function",
+        "MiniMenu submenu parentAction must be a function"
+    )
     validatePosition(options.position)
     local parentLabel = label
     if options.arrow ~= false then parentLabel = parentLabel .. " <col=ffffff><gt></col>" end
-    local entry, entryIndex, entryCount = addParentEntry(
-        miniMenu,
-        parentLabel,
-        options.parentAction or NOOP)
-    moveEntry(
-        miniMenu,
-        entryIndex,
-        targetEntryIndex(options.position, entryCount))
+    local entry, entryIndex, entryCount = addParentEntry(miniMenu, parentLabel, options.parentAction or NOOP)
+    moveEntry(miniMenu, entryIndex, targetEntryIndex(options.position, entryCount))
     local registration = {
         children = children,
         title = options.title,

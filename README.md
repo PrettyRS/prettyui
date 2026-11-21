@@ -32,3 +32,20 @@ When contributing to PrettyUI we permit the use of AI tools to assist in writing
 - Let LLMs generate your documentation for you
 - Submit Pull Requests generated solely by LLMs without human review
 - Have an LLM generate your Pull Request body.
+
+### Lua style and checks
+
+- Use four spaces, LF, and double quotes unless single quotes avoid escaping. Let StyLua wrap at 120 columns.
+- Keep helpers and state `local`. Use `lowerCamelCase` for helpers and `UPPER_SNAKE_CASE` for constants. Preserve public signatures and `require` order.
+- Comments explain why. Document non-obvious defaults, units, callback arguments, and cleanup responsibilities.
+- We permit up to three levels of lua control-flow nesting. If an operation requires deeper nesting, consider refactoring into helper functions.
+- Fix lint warnings rather than suppressing them. Release owned components and subscriptions on teardown. Run the relevant Lua 5.4 regression test for behavior changes.
+
+Install Python 3, [StyLua 2.6.0](https://github.com/JohnnyMorganz/StyLua/releases/tag/v2.6.0) with Lua 5.4 support, and [Luacheck 1.2.0](https://github.com/lunarmodules/luacheck/releases/tag/v1.2.0). From the repo root, run CI’s check against your PR’s target branch:
+
+```sh
+git fetch origin
+python3 .github/scripts/check_lua_quality.py --base origin/main
+```
+
+The check covers new and changed Lua files in full. To fix formatting, run `stylua --config-path stylua.toml --verify -- path/to/changed.lua`.

@@ -4,10 +4,14 @@ local run, rect = Fixture.run, Fixture.rect
 run("lock, transparency and resizing preserve mounted content", function(f)
     local builds = 0
     f:lock(true)
-    local panel = f:panel({ buildContent = function(owner)
-        builds = builds + 1
-        for index = 1, 16 do owner:AddText("Row " .. index) end
-    end })
+    local panel = f:panel({
+        buildContent = function(owner)
+            builds = builds + 1
+            for index = 1, 16 do
+                owner:AddText("Row " .. index)
+            end
+        end,
+    })
     local content = panel.content
     assert(panel.scrollbarVisible)
     assert(not panel.dragLayer.enabled and not panel.resize.handles.e.enabled)
@@ -33,20 +37,25 @@ end)
 run("hide unmounts scoped resources; show rebuilds and restores scrolling", function(f)
     local signal, order = f.event("Content"), {}
     local rowA, rowB
-    local a = f:panel({ contentHeight = 500, buildContent = function(owner)
-        rowA = owner:AddText("A")
-        owner:OnCleanup(function()
-            assert(not rowA.destroyed, "cleanup must run before controls are destroyed")
-            order[#order + 1] = "first"
-        end)
-        owner:Subscribe(signal, function(value) rowA.content = value end)
-        owner:OnCleanup(function() order[#order + 1] = "last" end)
-        return function() order[#order + 1] = "returned" end
-    end })
-    local b = f:panel({ buildContent = function(owner)
-        rowB = owner:AddText("B")
-        owner:Subscribe(signal, function(value) rowB.content = value end)
-    end })
+    local a = f:panel({
+        contentHeight = 500,
+        buildContent = function(owner)
+            rowA = owner:AddText("A")
+            owner:OnCleanup(function()
+                assert(not rowA.destroyed, "cleanup must run before controls are destroyed")
+                order[#order + 1] = "first"
+            end)
+            owner:Subscribe(signal, function(value) rowA.content = value end)
+            owner:OnCleanup(function() order[#order + 1] = "last" end)
+            return function() order[#order + 1] = "returned" end
+        end,
+    })
+    local b = f:panel({
+        buildContent = function(owner)
+            rowB = owner:AddText("B")
+            owner:Subscribe(signal, function(value) rowB.content = value end)
+        end,
+    })
     a:SetScrollPosition(64)
     local oldRow, oldThumb = rowA, a._scroll.thumbDrag
     a:Hide()
@@ -58,47 +67,57 @@ run("hide unmounts scoped resources; show rebuilds and restores scrolling", func
     a:Show()
     assert(rowA ~= oldRow and not rowA.destroyed)
     f.expect(a.scrollY, 64, "remount restores scroll position")
-    a:Destroy(); b:Destroy()
+    a:Destroy()
+    b:Destroy()
     assert(next(f.events.Content) == nil, "destroy must release every scoped subscription")
 end)
 
 run("builder and cleanup failures still release controls and subscriptions", function(f)
     local signal, partial = f.event("Failure"), nil
     local ok, problem = pcall(function()
-        f:panel({ buildContent = function(owner)
-            partial = owner:AddText("Partial")
-            owner:Subscribe(signal, function() error("leaked subscription") end)
-            owner:OnCleanup(function() error("secondary cleanup failure") end)
-            error("builder failure")
-        end })
+        f:panel({
+            buildContent = function(owner)
+                partial = owner:AddText("Partial")
+                owner:Subscribe(signal, function() error("leaked subscription") end)
+                owner:OnCleanup(function() error("secondary cleanup failure") end)
+                error("builder failure")
+            end,
+        })
     end)
     assert(not ok and problem:find("builder failure", 1, true), "rollback must preserve the original error")
     assert(partial.destroyed and next(f.events.Failure) == nil)
 
     local cleaned = false
-    local panel = f:panel({ buildContent = function(owner)
-        partial = owner:AddText("Mounted")
-        owner:Subscribe(signal, function() end)
-        owner:OnCleanup(function() cleaned = true end)
-        owner:OnCleanup(function() error("cleanup failure") end)
-    end })
+    local panel = f:panel({
+        buildContent = function(owner)
+            partial = owner:AddText("Mounted")
+            owner:Subscribe(signal, function() end)
+            owner:OnCleanup(function() cleaned = true end)
+            owner:OnCleanup(function() error("cleanup failure") end)
+        end,
+    })
     ok, problem = pcall(panel.Hide, panel)
     assert(not ok and problem:find("cleanup failure", 1, true))
-    assert(cleaned and partial.destroyed and next(f.events.Failure) == nil,
-        "one failed cleanup must not prevent the remaining cleanup")
+    assert(
+        cleaned and partial.destroyed and next(f.events.Failure) == nil,
+        "one failed cleanup must not prevent the remaining cleanup"
+    )
 end)
 
 run("inactive construction, close and destroy have distinct lifecycles", function(f)
     local builds, closes = 0, 0
-    local panel = f:panel({ active = false,
+    local panel = f:panel({
+        active = false,
         buildContent = function() builds = builds + 1 end,
-        onClose = function() closes = closes + 1 end })
+        onClose = function() closes = closes + 1 end,
+    })
     assert(panel.content == nil and builds == 0)
     panel:Show()
     assert(panel:IsActive() and builds == 1)
     panel:Hide()
     f.expect(closes, 0, "Hide is not Close")
-    panel:Show(); panel:Close()
+    panel:Show()
+    panel:Close()
     assert(not panel:IsActive() and panel.root ~= nil and closes == 1)
     local disposable = f:panel({ destroyOnClose = true })
     disposable:Close()
@@ -108,10 +127,14 @@ end)
 run("default mount supports large content without mutating caller options", function(f)
     id.Component.TOPLEVEL_V2__GAME_AREA = (f.parent.interfaceID << 16) | f.parent.staticID
     local first, last
-    local options = { buildContent = function(owner)
-        first = owner:AddText("First")
-        for index = 1, 260 do last = owner:AddText("Row " .. index) end
-    end }
+    local options = {
+        buildContent = function(owner)
+            first = owner:AddText("First")
+            for index = 1, 260 do
+                last = owner:AddText("Row " .. index)
+            end
+        end,
+    }
     local panel = f.NisPanel.new(options)
     assert(panel.parent == f.parent and first.categoryID ~= last.categoryID)
     assert(options.categoryID == nil)
@@ -122,7 +145,8 @@ end)
 
 run("interface unload releases an active gesture without touching dead handles", function(f)
     local panel = f:panel()
-    f:begin(panel); f:move(panel, 460, 450)
+    f:begin(panel)
+    f:move(panel, 460, 450)
     f.Interfaces.unload(panel.interfaceID)
     f:emit("Logic")
     assert(panel.root == nil and panel.dragState == nil and panel.dragFeedback == nil)
@@ -144,11 +168,15 @@ run("wrapping reflows following rows and scrolling without rebuilding", function
         return count
     end
     local title, body, tail
-    local panel = f:panel({ width = 300, height = 160, buildContent = function(owner)
-        title = owner:AddTitle("word word word word word word")
-        body = owner:AddText("<col=ff0000>word word word word word word</col>")
-        tail = owner:AddText("End")
-    end })
+    local panel = f:panel({
+        width = 300,
+        height = 160,
+        buildContent = function(owner)
+            title = owner:AddTitle("word word word word word word")
+            body = owner:AddText("<col=ff0000>word word word word word word</col>")
+            tail = owner:AddText("End")
+        end,
+    })
     local content = panel.content
     panel:SetSize(110, 160)
     f.expect(title.height, 114, "title wraps to available width")

@@ -35,7 +35,8 @@ local function refreshPanelRows(panel, surface, owner, key)
         surface.container.height,
         owner,
         panel.rowBackgroundColours,
-        panel.rowBackgroundEdgeToEdge)
+        panel.rowBackgroundEdgeToEdge
+    )
 end
 
 function PanelContent:RefreshRowBackgrounds()
@@ -45,7 +46,6 @@ function PanelContent:RefreshRowBackgrounds()
     if panel == nil or surface == nil or key == nil then return end
     refreshPanelRows(panel, surface, self, key)
 end
-
 
 local BORDER_SIZE = 4
 local TOGGLE_SIZE = 20
@@ -88,12 +88,12 @@ end
 local function copyOptions(value)
     local copy = {}
     if type(value) == "table" then
-        for key, option in pairs(value) do copy[key] = option end
+        for key, option in pairs(value) do
+            copy[key] = option
+        end
     end
     return copy
 end
-
-
 
 local function createToggle(surface, panel, popoutMode)
     local button = Components.new(ui.Sprite, surface.root)
@@ -186,18 +186,25 @@ local function pairObjects(panel, dock, overlay)
             if type(value) ~= "function" then return value end
             if key == "AddKeybindField" then
                 return function(_, options)
-                    return addPairedKeybindField(panel, function(copied)
-                        return pairObjects(panel, dock:AddKeybindField(copied), overlay:AddKeybindField(copied))
-                    end, options)
+                    return addPairedKeybindField(
+                        panel,
+                        function(copied)
+                            return pairObjects(panel, dock:AddKeybindField(copied), overlay:AddKeybindField(copied))
+                        end,
+                        options
+                    )
                 end
             end
             return function(_, ...)
                 local dockResult = dock[key](dock, ...)
                 local overlayResult = overlay[key](overlay, ...)
                 local result = panel.poppedOut and overlayResult or dockResult
-                if dockResult ~= nil and overlayResult ~= nil and
-                    (type(dockResult) == "table" or type(dockResult) == "userdata") and
-                    (type(overlayResult) == "table" or type(overlayResult) == "userdata") then
+                if
+                    dockResult ~= nil
+                    and overlayResult ~= nil
+                    and (type(dockResult) == "table" or type(dockResult) == "userdata")
+                    and (type(overlayResult) == "table" or type(overlayResult) == "userdata")
+                then
                     return pairObjects(panel, dockResult, overlayResult)
                 end
                 return result
@@ -269,7 +276,9 @@ local function configureOwner(surface, options, context, overlayParent)
         position = function(scrollRoot)
             local rootX = surface.root.x or 0
             local rootY = surface.root.y or 0
-            if context then rootX, rootY = context.position(surface.root) end
+            if context then
+                rootX, rootY = context.position(surface.root)
+            end
             return rootX + (surface.container.x or 0) + (scrollRoot.x or 0),
                 rootY + (surface.container.y or 0) + (scrollRoot.y or 0)
         end,
@@ -324,9 +333,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.onPositionChange = options.onPositionChange
     self.onClose = options.onClose
     self.destroyOnClose = options.destroyOnClose == true
-    self.rowBackgroundColours = options.rowBackgroundColours
-        or options.rowBackgroundColors
-        or {}
+    self.rowBackgroundColours = options.rowBackgroundColours or options.rowBackgroundColors or {}
     self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
     self.dockRowBackgrounds = {}
     self.overlayRowBackgrounds = {}
@@ -382,13 +389,11 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
 
     self.dockTooltipContext = Tooltip.registerContext(self.dock.content, dockTooltipParent, function(target)
         local rootX, rootY = self.dock.scroll:_AbsolutePosition()
-        return rootX + (target.x or 0),
-            rootY + (target.y or 0) - self.dock.scroll.scrollY
+        return rootX + (target.x or 0), rootY + (target.y or 0) - self.dock.scroll.scrollY
     end, parentContext)
     self.overlayTooltipContext = Tooltip.registerContext(self.overlay.content, overlayParent, function(target)
         local rootX, rootY = self.overlay.scroll:_AbsolutePosition()
-        return rootX + (target.x or 0),
-            rootY + (target.y or 0) - self.overlay.scroll.scrollY
+        return rootX + (target.x or 0), rootY + (target.y or 0) - self.overlay.scroll.scrollY
     end, nil)
 
     if self._canPopout then
@@ -408,8 +413,8 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self:SetPoppedOut(self.poppedOut, false)
     self:_SetAltDragActive(isAltDown())
     registerAltDrag(self)
-    local function watchBounds(parent, surface, layer)
-        return DragBounds.new(parent, surface.root, function(dx, dy)
+    local function watchBounds(boundsParent, surface, layer)
+        return DragBounds.new(boundsParent, surface.root, function(dx, dy)
             local dragging = self.dragState and self.dragState.surface == surface
             if dragging then
                 self.dragState.panelX = self.dragState.panelX + dx
@@ -434,8 +439,8 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     if self.dockBounds then self.dockBounds:Clamp() end
     if self.overlayBounds then self.overlayBounds:Clamp() end
     if options.resizable == true then
-        local function createResize(parent, surface)
-            return Resize.new(parent, surface.root, {
+        local function createResize(resizeParent, surface)
+            return Resize.new(resizeParent, surface.root, {
                 minWidth = self.minWidth,
                 minHeight = self.minHeight,
                 maxWidth = self.maxWidth,
@@ -447,18 +452,18 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
                     self:_StopDrag()
                     surface.root:MoveToFront()
                 end,
-                setRect = function(x, y, width, height)
+                setRect = function(x, y, newWidth, newHeight)
                     if surface == self.overlay then
                         surface.root:SetPos(x, y)
-                        self:_SetPopoutSize(width, height)
+                        self:_SetPopoutSize(newWidth, newHeight)
                     else
-                        local widthChanged = width ~= surface.root.width
+                        local widthChanged = newWidth ~= surface.root.width
                         if self.flowOwner then
-                            Layout.resizeRect(self.flowOwner, self, x, y, width, height)
+                            Layout.resizeRect(self.flowOwner, self, x, y, newWidth, newHeight)
                         else
                             surface.root:SetPos(x, y)
                         end
-                        self:_SetDockSize(widthChanged and width or surface.root.width, height)
+                        self:_SetDockSize(widthChanged and newWidth or surface.root.width, newHeight)
                     end
                     self:_RefreshSize()
                 end,
@@ -488,9 +493,12 @@ end
 
 function Panel:_WatchNativeTransparency()
     if self.useNativeTransparency then
-        NativeInterfaceSettings.watchTransparency(self, function(transparency)
-            self:_SetBackgroundTransparency(transparency)
-        end)
+        NativeInterfaceSettings.watchTransparency(
+            self,
+            function(transparency)
+                self:_SetBackgroundTransparency(transparency)
+            end
+        )
     else
         NativeInterfaceSettings.unwatchTransparency(self)
     end
@@ -548,9 +556,12 @@ function Panel.new(parent, options, flowManaged)
         Components.checkContentParent(overlayParent, policyOptions)
     end
     local panel = Components.withBatch(parent, function()
-        return Components.withBatch(overlayParent, function()
-            return buildPanel(parent, options, flowManaged, overlayParent, policy)
-        end)
+        return Components.withBatch(
+            overlayParent,
+            function()
+                return buildPanel(parent, options, flowManaged, overlayParent, policy)
+            end
+        )
     end)
     if context and flowManaged ~= true then
         context.ownedWidgets = context.ownedWidgets or {}
@@ -584,8 +595,9 @@ function Panel:_SetAltDragActive(active, notify)
     self.altDragSurface = activeSurface
 
     local function updateLayer(layer, surface)
-        if layer == nil or surface.root == nil or
-            ui.Interfaces:GetInterface(surface.interfaceID) == nil then return end
+        if layer == nil or surface.root == nil or ui.Interfaces:GetInterface(surface.interfaceID) == nil then
+            return
+        end
         local enabled = activeSurface == surface
         layer.enabled = enabled
         layer.clickthrough = not enabled
@@ -656,10 +668,8 @@ function Panel:_MoveDrag(component, x, y)
             component:SetSize(0, 0, 1.0, 1.0)
             component:MoveToFront()
         end
-        local nextX = clamp(drag.panelX + mouse.x - drag.mouseX,
-            0, parent.width - drag.surface.root.width)
-        local nextY = clamp(drag.panelY + mouse.y - drag.mouseY,
-            0, parent.height - drag.surface.root.height)
+        local nextX = clamp(drag.panelX + mouse.x - drag.mouseX, 0, parent.width - drag.surface.root.width)
+        local nextY = clamp(drag.panelY + mouse.y - drag.mouseY, 0, parent.height - drag.surface.root.height)
         if drag.surface.root.x ~= nextX or drag.surface.root.y ~= nextY then
             drag.surface.root:SetPos(nextX, nextY)
             local bounds = drag.surface == self.overlay and self.overlayBounds or self.dockBounds
@@ -681,14 +691,19 @@ function Panel:_StopDrag(notify)
     local dragLayer = surface == self.overlay and self.overlayDragLayer or self.dockDragLayer
     InterfaceMouse.EndCapture(dragLayer)
     self.dragState = nil
-    if surface and surface.root and dragLayer and
-        ui.Interfaces:GetInterface(surface.interfaceID) ~= nil then
+    if surface and surface.root and dragLayer and ui.Interfaces:GetInterface(surface.interfaceID) ~= nil then
         dragLayer:SetPos(surface.root.x, surface.root.y)
         dragLayer:SetSize(surface.root.width, surface.root.height)
     end
     self:_UpdateResizeEnabled()
-    if notify == true and drag and drag.positionChanged and self.onPositionChange and
-        surface.root and ui.Interfaces:GetInterface(surface.interfaceID) ~= nil then
+    if
+        notify == true
+        and drag
+        and drag.positionChanged
+        and self.onPositionChange
+        and surface.root
+        and ui.Interfaces:GetInterface(surface.interfaceID) ~= nil
+    then
         self.onPositionChange(self, surface.root.x, surface.root.y, surface == self.overlay)
     end
     return false
@@ -741,7 +756,10 @@ function Panel:SetPoppedOut(poppedOut, notify)
     end
     local listening
     for field in pairs(self._keybindFields or {}) do
-        if field:IsListening() then listening = field; break end
+        if field:IsListening() then
+            listening = field
+            break
+        end
     end
     self.poppedOut = self._canPopout and poppedOut == true
     self:_UpdateVisibility()
@@ -878,12 +896,16 @@ end
 
 -- Install the shared Add... API against both panel surfaces. The stateful methods
 -- below overwrite their generated counterparts to keep dock and popout state in sync.
-ContentMethods.installPaired(Panel, function(panel)
-    return {
-        { owner = panel.dockOwner, content = panel.dock.content },
-        { owner = panel.overlayOwner, content = panel.overlay.content },
-    }
-end, pairObjects)
+ContentMethods.installPaired(
+    Panel,
+    function(panel)
+        return {
+            { owner = panel.dockOwner, content = panel.dock.content },
+            { owner = panel.overlayOwner, content = panel.overlay.content },
+        }
+    end,
+    pairObjects
+)
 
 local addKeybindField = Panel.AddKeybindField
 
@@ -983,9 +1005,11 @@ function Panel:AddTabs(tabs, options)
 
     local dockOptions = placedOptions(self.dockOwner)
     local overlayOptions = placedOptions(self.overlayOwner)
-    proxy = pairObjects(self,
+    proxy = pairObjects(
+        self,
         Layout.manage(self.dockOwner, Tabs.new(self.dock.content, tabs, dockOptions), dockOptions),
-        Layout.manage(self.overlayOwner, Tabs.new(self.overlay.content, tabs, overlayOptions), overlayOptions))
+        Layout.manage(self.overlayOwner, Tabs.new(self.overlay.content, tabs, overlayOptions), overlayOptions)
+    )
     proxy.dock:BindFlow(self.dockOwner)
     proxy.overlay:BindFlow(self.overlayOwner)
     return proxy
@@ -1009,17 +1033,11 @@ function Panel:AddColourPicker(options)
     end
     local dockOptions = placedOptions(self.dockOwner)
     local overlayOptions = placedOptions(self.overlayOwner)
-    proxy = pairObjects(self,
-        Layout.manage(
-            self.dockOwner,
-            ColourPicker.new(self.dock.content, dockOptions),
-            dockOptions
-        ),
-        Layout.manage(
-            self.overlayOwner,
-            ColourPicker.new(self.overlay.content, overlayOptions),
-            overlayOptions
-        ))
+    proxy = pairObjects(
+        self,
+        Layout.manage(self.dockOwner, ColourPicker.new(self.dock.content, dockOptions), dockOptions),
+        Layout.manage(self.overlayOwner, ColourPicker.new(self.overlay.content, overlayOptions), overlayOptions)
+    )
     rawset(proxy, "Open", function()
         local active = self.poppedOut and proxy.overlay or proxy.dock
         return active:Open()
@@ -1160,9 +1178,11 @@ function Panel:AddSlider(options)
     end
     local dockOptions = placedOptions(self.dockOwner)
     local overlayOptions = placedOptions(self.overlayOwner)
-    proxy = pairObjects(self,
+    proxy = pairObjects(
+        self,
         Layout.manage(self.dockOwner, Slider.new(self.dock.content, dockOptions), dockOptions),
-        Layout.manage(self.overlayOwner, Slider.new(self.overlay.content, overlayOptions), overlayOptions))
+        Layout.manage(self.overlayOwner, Slider.new(self.overlay.content, overlayOptions), overlayOptions)
+    )
     return proxy
 end
 
@@ -1175,14 +1195,26 @@ function Panel:Destroy()
     WorldMap.unwatch(self)
     NativeInterfaceSettings.unwatchTransparency(self)
     NativeInterfaceSettings.unwatchLock(self)
-    if self.dockResize then self.dockResize:Destroy(); self.dockResize = nil end
-    if self.overlayResize then self.overlayResize:Destroy(); self.overlayResize = nil end
-    if self.dockBounds then self.dockBounds:Destroy(); self.dockBounds = nil end
-    if self.overlayBounds then self.overlayBounds:Destroy(); self.overlayBounds = nil end
+    if self.dockResize then
+        self.dockResize:Destroy()
+        self.dockResize = nil
+    end
+    if self.overlayResize then
+        self.overlayResize:Destroy()
+        self.overlayResize = nil
+    end
+    if self.dockBounds then
+        self.dockBounds:Destroy()
+        self.dockBounds = nil
+    end
+    if self.overlayBounds then
+        self.overlayBounds:Destroy()
+        self.overlayBounds = nil
+    end
     unregisterAltDrag(self)
     self:_StopDrag()
-    if self.dock and self.dock.content then Tooltip.unregisterContext(self.dock.content) end
-    if self.overlay and self.overlay.content then Tooltip.unregisterContext(self.overlay.content) end
+    if self.dock.content then Tooltip.unregisterContext(self.dock.content) end
+    if self.overlay.content then Tooltip.unregisterContext(self.overlay.content) end
     Layout.destroyManaged(self.dockOwner)
     Layout.destroyManaged(self.overlayOwner)
     Tooltip.unbind(self, "dockTooltip")
@@ -1191,16 +1223,16 @@ function Panel:Destroy()
     self.dockRowBackgrounds = {}
     self.overlayRowBackgrounds = {}
     Tooltip.unbind(self, "overlayTooltip")
-    if self.dock and self.dock.scroll then
+    if self.dock.scroll then
         self.dock.scroll:Destroy()
         self.dock.scroll = nil
     end
-    if self.overlay and self.overlay.scroll then
+    if self.overlay.scroll then
         self.overlay.scroll:Destroy()
         self.overlay.scroll = nil
     end
-    local dockLoaded = self.dock and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil
-    local overlayLoaded = self.overlay and ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil
+    local dockLoaded = ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil
+    local overlayLoaded = ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil
     if self.dockDragLayer then
         WorldMap.untrack(self.dockDragLayer)
         if dockLoaded then self.dockDragLayer:Destroy() end
@@ -1211,12 +1243,12 @@ function Panel:Destroy()
         if overlayLoaded then self.overlayDragLayer:Destroy() end
         self.overlayDragLayer = nil
     end
-    if self.dock and self.dock.root then
+    if self.dock.root then
         WorldMap.untrack(self.dock.root)
         if dockLoaded then self.dock.root:Destroy() end
         self.dock.root = nil
     end
-    if self.overlay and self.overlay.root then
+    if self.overlay.root then
         WorldMap.untrack(self.overlay.root)
         if overlayLoaded then self.overlay.root:Destroy() end
         self.overlay.root = nil

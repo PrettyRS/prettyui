@@ -6,23 +6,23 @@ local Wheel = require("src/core/wheel")
 local Table = {}
 Table.__index = Table
 
---[[ 
+--[[
     I've left some comments in the code mainly explaining some things for anyone that will edit this file,
-    I plan to add more comments soon when I get around to it. 
+    I plan to add more comments soon when I get around to it.
 
     Theres also other features that could be added in like maybe row selecting (Highlight selected row?)
-    But this is a solid foundation for tables for the time being. 
+    But this is a solid foundation for tables for the time being.
 ]]
 
 --[[
-    Table is a scrollable column based grid with sizeable columns 
+    Table is a scrollable column based grid with sizeable columns
 
     Features Lazy loading (Maybe we need a better name for this?)
-        Lazy Loading: Your scroll content is sized for every row (Ensures the Scrollbar is right) 
+        Lazy Loading: Your scroll content is sized for every row (Ensures the Scrollbar is right)
         but only rows inside the viewable area + overscan are acutally built.
         As you scroll rows that leave the viewable area are destroyed and rows that enter it
         are built. This allows ComponentIDs to get reused after rows are Destroyed, so the tables
-        component count stays roughtly the same no matter how many rows it has. 
+        component count stays roughtly the same no matter how many rows it has.
 
     Columns Explained:
         key      - Refrence Key for data to be applied to the right columns (Renders Do not need keys)
@@ -31,7 +31,7 @@ Table.__index = Table
         stretch  - False keeps this column at its width when the table stretches (default true)
         format   - optional function(value, rowData, rowIndex) -> Allows
                     you to modify the Text without changing the underlying data (Text Columns only)
-        render   - optional function(cell, rowData, width, height, rowIndex) -> 
+        render   - optional function(cell, rowData, width, height, rowIndex) ->
                    Builds custom content (buttons, sprites etc.) inside the cell layer.
 ]]
 
@@ -49,13 +49,16 @@ local DEFAULT_COLOURS = {
 local DEFAULT_FONT = id.Font.MUSEO_SANS_13PT_REGULAR
 local HEADER_FONT = id.Font.MUSEO_SANS_15PT_BOLD
 
-
 local function mergeColours(overrides)
     local colours = {}
 
-    for key, value in pairs(DEFAULT_COLOURS) do colours[key] = value end
+    for key, value in pairs(DEFAULT_COLOURS) do
+        colours[key] = value
+    end
 
-    for key, value in pairs(overrides or {}) do colours[key] = value end
+    for key, value in pairs(overrides or {}) do
+        colours[key] = value
+    end
 
     return colours
 end
@@ -90,7 +93,6 @@ local function columnWidth(col)
     return col.width or 100
 end
 
-
 local function layoutColumns(columns, available, stretch)
     local widths, total, stretchTotal = {}, 0, 0
 
@@ -98,8 +100,8 @@ local function layoutColumns(columns, available, stretch)
         widths[i] = columnWidth(col)
         total = total + widths[i]
 
-        if col.stretch ~= false then 
-            stretchTotal = stretchTotal + widths[i] 
+        if col.stretch ~= false then
+            stretchTotal = stretchTotal + widths[i]
         end
     end
 
@@ -107,7 +109,7 @@ local function layoutColumns(columns, available, stretch)
 
     if not stretch or spare <= 0 or stretchTotal <= 0 then return widths, total end
 
-    --We spread out the spare space among the columns based on there original width. 
+    --We spread out the spare space among the columns based on there original width.
 
     local given, lastStretchable = 0, nil
 
@@ -138,20 +140,19 @@ local function cleanupHandle(handle)
     end
 end
 
-
 function Table.getSize(options)
     options = options or {}
 
     return options.width or 600, options.height or 400
 end
 
---[[ 
+--[[
     Constructor
     parent  - Parent we attach to same for all UI.
 
     options
         columns        - See Column options above.
-        rows           - initial row data. 
+        rows           - initial row data.
         x, y           - position (default 0, 0)
         width, height  - size (default 600 x 400). Without stretch table shrinks scroll bar & table to
                             max column width.
@@ -206,7 +207,7 @@ end
 
 function Table:SetRows(rows, keepScroll)
     self.rows = rows or {}
-    
+
     if self:_NeedsScrollbar() ~= self.hasScrollbar then
         self:_Relayout()
     end
@@ -303,7 +304,7 @@ end
     Applies the current width/height/stretch to the existing components.
     Text cells are moved and resized where they are. Rows are only rebuilt when a
     render column changed width, because whatever render() built was laid out for
-    the old width. 
+    the old width.
     Growing taller just builds the extra rows that come into view.
 ]]
 function Table:_Relayout()
@@ -348,7 +349,9 @@ function Table:_Relayout()
     if rerender then
         self:_ClearRenderedRows()
     else
-        for _, rendered in pairs(self.renderedRows) do self:_LayoutRow(rendered) end
+        for _, rendered in pairs(self.renderedRows) do
+            self:_LayoutRow(rendered)
+        end
     end
 
     -- Scroll view. Hold rendering until it's fully sized, then build only what's new.
@@ -421,7 +424,8 @@ function Table:_BuildFrame()
     self.headerHighlight = rectangle(self.headerArea, 0, 0, self.rowWidth, 1, self.colours.headerHighlight)
     self.headerHighlight.clickthrough = true
 
-    self.headerBorder = rectangle(self.headerArea, 0, self.headerHeight - 2, self.rowWidth, 2, self.colours.headerBorder)
+    self.headerBorder =
+        rectangle(self.headerArea, 0, self.headerHeight - 2, self.rowWidth, 2, self.colours.headerBorder)
     self.headerBorder.clickthrough = true
 
     self.bodyArea = Components.newContent(self.root)
@@ -456,7 +460,7 @@ function Table:_BuildFrame()
         currentX = currentX + colWidth
     end
 
-    -- Ensure this stays at the back and doesnt end up at the front. 
+    -- Ensure this stays at the back and doesnt end up at the front.
     headerBackground:MoveToBack()
 end
 
@@ -499,7 +503,7 @@ function Table:_BuildBody(keepScroll)
     view:SetContentHeight(math.max(viewHeight, #self.rows * self.rowHeight))
 
     if not keepScroll then view:SetScrollPosition(0) end
-    
+
     self.suspendRender = false
 
     if #self.rows == 0 then
@@ -563,7 +567,9 @@ function Table:_RenderVisibleRows()
 
     if not ok then
         for _, rowIndex in ipairs(built) do
-            for _, handle in ipairs(self.renderedRows[rowIndex].handles) do cleanupHandle(handle) end
+            for _, handle in ipairs(self.renderedRows[rowIndex].handles) do
+                cleanupHandle(handle)
+            end
             self.renderedRows[rowIndex] = nil
         end
 
@@ -646,7 +652,9 @@ function Table:_DestroyRenderedRow(rowIndex)
 
     if rendered == nil then return end
 
-    for _, handle in ipairs(rendered.handles) do cleanupHandle(handle) end
+    for _, handle in ipairs(rendered.handles) do
+        cleanupHandle(handle)
+    end
 
     if interfaceLoaded(self.interfaceID) then pcall(rendered.layer.Destroy, rendered.layer) end
 

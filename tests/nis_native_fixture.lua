@@ -4,13 +4,19 @@ return function(f)
     local function removeChild(parent, child)
         if not parent then return end
         for index, entry in ipairs(parent.children) do
-            if entry == child then table.remove(parent.children, index); return end
+            if entry == child then
+                table.remove(parent.children, index)
+                return
+            end
         end
     end
     local function removeRenderChild(parent, child)
         if not parent then return false end
         for index, entry in ipairs(parent.renderChildren) do
-            if entry == child then table.remove(parent.renderChildren, index); return true end
+            if entry == child then
+                table.remove(parent.renderChildren, index)
+                return true
+            end
         end
         return false
     end
@@ -36,19 +42,30 @@ return function(f)
         node.size = { width = width, height = height, widthParentPc = 0, heightParentPc = 0 }
         node.nativeShown = true
         local spriteMeta = getmetatable(node)
-        setmetatable(node, { __index = function(self, key)
-            if key == "xyGlobal" then
-                local origin = self.parent and self.parent.xyGlobal or { x = 0, y = 0 }
-                return { x = origin.x + self.x, y = origin.y + self.y }
-            elseif key == "visibleGlobal" then
-                return self.nativeShown and self.visible ~= false and not self.hidden
-                    and (not self.parent or self.parent.visibleGlobal ~= false)
-            end
-            return spriteMeta.__index(self, key)
-        end, __newindex = spriteMeta.__newindex })
+        setmetatable(node, {
+            __index = function(self, key)
+                if key == "xyGlobal" then
+                    local origin = self.parent and self.parent.xyGlobal or { x = 0, y = 0 }
+                    return { x = origin.x + self.x, y = origin.y + self.y }
+                elseif key == "visibleGlobal" then
+                    return self.nativeShown
+                        and self.visible ~= false
+                        and not self.hidden
+                        and (not self.parent or self.parent.visibleGlobal ~= false)
+                end
+                return spriteMeta.__index(self, key)
+            end,
+            __newindex = spriteMeta.__newindex,
+        })
         function node:SetPos(px, py, xp, yp, xs, ys)
-            self.position = { x = px, y = py, xParentPc = xp or 0, yParentPc = yp or 0,
-                xSelfPc = xs or 0, ySelfPc = ys or 0 }
+            self.position = {
+                x = px,
+                y = py,
+                xParentPc = xp or 0,
+                yParentPc = yp or 0,
+                xSelfPc = xs or 0,
+                ySelfPc = ys or 0,
+            }
             self.x = px + (self.parent and self.parent.width or 0) * (xp or 0) - self.width * (xs or 0)
             self.y = py + (self.parent and self.parent.height or 0) * (yp or 0) - self.height * (ys or 0)
         end
@@ -59,7 +76,9 @@ return function(f)
             local pos = self.position
             self.x = pos.x + (self.parent and self.parent.width or 0) * pos.xParentPc - self.width * pos.xSelfPc
             self.y = pos.y + (self.parent and self.parent.height or 0) * pos.yParentPc - self.height * pos.ySelfPc
-            for _, child in ipairs(self.children) do child:Relayout() end
+            for _, child in ipairs(self.children) do
+                child:Relayout()
+            end
             self:EmitResize()
         end
         function node:Relayout()
@@ -94,18 +113,25 @@ return function(f)
     local function paintedAt(node, x, y, transparentSprite)
         if node.hidden or node.visibleGlobal == false then return nil end
         local origin = node.xyGlobal
-        if x < origin.x or x >= origin.x + node.width
-            or y < origin.y or y >= origin.y + node.height then return nil end
+        if x < origin.x or x >= origin.x + node.width or y < origin.y or y >= origin.y + node.height then
+            return nil
+        end
         for index = #node.renderChildren, 1, -1 do
-            local painted = paintedAt(node.renderChildren[index],
-                x + (node.scrollX or 0), y + (node.scrollY or 0), transparentSprite)
+            local painted = paintedAt(
+                node.renderChildren[index],
+                x + (node.scrollX or 0),
+                y + (node.scrollY or 0),
+                transparentSprite
+            )
             if painted then return painted end
         end
         return (node.spriteID or node.runtimeSprite) and node.spriteID ~= transparentSprite and node or nil
     end
     local frames = {}
-    function area:IterateStaticComponents(callback)
-        for _, frame in ipairs(frames) do if callback(frame, frame.visibleGlobal) then break end end
+    function area.IterateStaticComponents(_, callback)
+        for _, frame in ipairs(frames) do
+            if callback(frame, frame.visibleGlobal) then break end
+        end
     end
     local function host(first, name, shown, icons)
         local frame = nativeNode(1477, first, area, 500, 100, 379, 357)
@@ -120,8 +146,8 @@ return function(f)
         local tabControls = nativeNode(1477, first + 9, frame, 4, 16, 371, 28)
         local prefix, suffix = name:match("^(.+_WINDOW)(.*)$")
         if not prefix then
-            prefix, suffix = name == "NOTES" and "NOTES_WINDOW" or "ABILITY_WINDOW",
-                name == "NOTES" and "" or "_" .. name
+            prefix, suffix =
+                name == "NOTES" and "NOTES_WINDOW" or "ABILITY_WINDOW", name == "NOTES" and "" or "_" .. name
         end
         id.Component["TOPLEVEL_V2__" .. prefix .. suffix] = (1477 << 16) | first
         id.Component["TOPLEVEL_V2__" .. prefix .. "_CONTENT" .. suffix] = (1477 << 16) | (first + 2)
@@ -132,7 +158,9 @@ return function(f)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_TAB_BACKGROUND" .. suffix] = (1477 << 16) | (first + 7)
         local result = { frame = frame, body = body, scroll = scroll, tabs = tabs, tabControls = tabControls }
         function result:rebuild(order, selected)
-            for _, child in ipairs({ table.unpack(tabs.children) }) do child:Destroy() end
+            for _, child in ipairs({ table.unpack(tabs.children) }) do
+                child:Destroy()
+            end
             self.backgrounds = {}
             for index, iconID in ipairs(order) do
                 local background = component(tabs, "sprite", 0, (index - 1) * 4)
@@ -142,8 +170,8 @@ return function(f)
                 setmetatable(background, getmetatable(tabs))
                 background:SetPos((index - 1) * 44, 0)
                 background:SetSize(44, 28)
-                background.spriteID = index == selected
-                    and id.Sprite.RS3_CHILD_TAB_SELECTED or id.Sprite.RS3_CHILD_TAB_UNSELECTED
+                background.spriteID = index == selected and id.Sprite.RS3_CHILD_TAB_SELECTED
+                    or id.Sprite.RS3_CHILD_TAB_UNSELECTED
                 self.backgrounds[index] = background
                 local icon = component(tabs, "sprite", 0, (index - 1) * 4 + 1)
                 icon.type, icon.visible, icon.nativeShown = 3, true, true
@@ -165,13 +193,15 @@ return function(f)
     local wrapper = nativeNode(1417, 3, notes.body, 0, 0, 371, 309)
     wrapper:SetSize(0, 0, 1, 1)
     id.Component.NOTES_CHILD__WRAPPER = (1417 << 16) | 3
-    setmetatable(id.Component, { __pairs = function(values)
-        local name
-        return function()
-            name = next(values, name)
-            if name then return values[name], name end
-        end
-    end })
+    setmetatable(id.Component, {
+        __pairs = function(values)
+            local name
+            return function()
+                name = next(values, name)
+                if name then return values[name], name end
+            end
+        end,
+    })
     function ui.Interfaces:GetComponent(first, second, ...)
         if select("#", ...) == 0 then
             local packed = second and ((first << 16) | second) or first
@@ -188,7 +218,15 @@ return function(f)
         return loaded
     end
     f.parent = area
-    return { area = area, notes = notes, ranged = ranged, magic = magic,
-        wrapper = wrapper, node = nativeNode, host = host, nodes = nativeNodes,
-        paintedAt = paintedAt }
+    return {
+        area = area,
+        notes = notes,
+        ranged = ranged,
+        magic = magic,
+        wrapper = wrapper,
+        node = nativeNode,
+        host = host,
+        nodes = nativeNodes,
+        paintedAt = paintedAt,
+    }
 end

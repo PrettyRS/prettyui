@@ -26,27 +26,38 @@ function Host.new(byFrame)
     -- ABILITY_WINDOW_RANGED; NOTES_WINDOW_CONTENT belongs to NOTES_WINDOW.
     local specs, specByID = {}, {}
     local indexed = false
+    local function indexSpec(packed, name)
+        if type(name) ~= "string" or type(packed) ~= "number" then return end
+        for _, kind in ipairs(specKinds) do
+            local base, suffix = name:match("^(.+_WINDOW)_" .. kind .. "(.*)$")
+            if base and (suffix == "" or suffix:sub(1, 1) == "_") then
+                local frameName = base .. suffix
+                local spec = specs[frameName]
+                if not spec then
+                    spec = { name = frameName }
+                    specs[frameName] = spec
+                end
+                spec[kind] = packed
+                break
+            end
+        end
+    end
+
     local function indexSpecs()
         if indexed then return end
         indexed = true
         for packed, name in pairs(id.Component) do
-            if type(name) == "string" and type(packed) == "number" then
-                for _, kind in ipairs(specKinds) do
-                    local base, suffix = name:match("^(.+_WINDOW)_" .. kind .. "(.*)$")
-                    if base and (suffix == "" or suffix:sub(1, 1) == "_") then
-                        local frameName = base .. suffix
-                        local spec = specs[frameName]
-                        if not spec then spec = { name = frameName }; specs[frameName] = spec end
-                        spec[kind] = packed
-                        break
-                    end
-                end
-            end
+            indexSpec(packed, name)
         end
         for name, spec in pairs(specs) do
             spec.frame = id.Component[name]
-            if type(spec.frame) == "number" and spec.frame >= 0
-                and spec.CONTENT and spec.TABS and spec.TAB_BACKGROUND then
+            if
+                type(spec.frame) == "number"
+                and spec.frame >= 0
+                and spec.CONTENT
+                and spec.TABS
+                and spec.TAB_BACKGROUND
+            then
                 specByID[spec.frame] = spec
             else
                 specs[name] = nil
@@ -70,8 +81,9 @@ function Host.new(byFrame)
         if not live(group) or group.area.visibleGlobal == false then return false end
         for _, host in pairs(group.frames) do
             local frame = component(host.spec.frame)
-            if frame and frame.visible ~= false and not frame.hidden
-                and same(frame.parent, group.area) then return true end
+            if frame and frame.visible ~= false and not frame.hidden and same(frame.parent, group.area) then
+                return true
+            end
         end
         return false
     end
@@ -84,8 +96,8 @@ function Host.new(byFrame)
         return false
     end
 
-    local function layout(component)
-        local result, pos, size = {}, component.position, component.size
+    local function layout(node)
+        local result, pos, size = {}, node.position, node.size
         for index, field in ipairs(positions) do
             local value = pos[field]
             if type(value) ~= "number" then return nil end
@@ -99,15 +111,15 @@ function Host.new(byFrame)
         return result
     end
 
-    local function applyLayout(component, saved)
-        component:SetPos(table.unpack(saved, 1, 6))
-        component:SetSize(table.unpack(saved, 7, 10))
+    local function applyLayout(node, saved)
+        node:SetPos(table.unpack(saved, 1, 6))
+        node:SetSize(table.unpack(saved, 7, 10))
     end
 
-    local function spriteID(component)
-        local ok, value = pcall(function() return component.spriteID end)
+    local function spriteID(node)
+        local ok, value = pcall(function() return node.spriteID end)
         if ok and type(value) == "number" then return value, "spriteID" end
-        ok, value = pcall(function() return component.spriteId end)
+        ok, value = pcall(function() return node.spriteId end)
         if ok and type(value) == "number" then return value, "spriteId" end
         return nil
     end
@@ -116,9 +128,15 @@ function Host.new(byFrame)
         local backgrounds, children, seen, overflow, count = {}, {}, {}, false, 0
         tabs:IterateDynamicComponents(function(child)
             count = count + 1
-            if count > MAX_TABS then overflow = true; return true end
+            if count > MAX_TABS then
+                overflow = true
+                return true
+            end
             local key = identity(child)
-            if not key then overflow = true; return true end
+            if not key then
+                overflow = true
+                return true
+            end
             if not seen[key] and same(child.parent, tabs) then
                 children[#children + 1] = child
                 seen[key] = true
@@ -140,13 +158,21 @@ function Host.new(byFrame)
         for _, saved in ipairs(nativeLayout) do
             byKey[saved.key] = saved
             local child = saved.component
-            if saved.width == 24 and saved.height == 24 and child.visible
-                and child.hidden ~= true and child.y == 2 and not icons[saved.x] then
+            if
+                saved.width == 24
+                and saved.height == 24
+                and child.visible
+                and child.hidden ~= true
+                and child.y == 2
+                and not icons[saved.x]
+            then
                 local value = seen[saved.key]
                 if type(value) == "number" then icons[saved.x] = value end
             end
         end
-        for _, entry in ipairs(backgrounds) do entry.layout = byKey[entry.key] end
+        for _, entry in ipairs(backgrounds) do
+            entry.layout = byKey[entry.key]
+        end
         table.sort(backgrounds, function(a, b) return a.layout.x < b.layout.x end)
         local signature, right = {}, 0
         for _, entry in ipairs(backgrounds) do
@@ -175,52 +201,98 @@ function Host.new(byFrame)
         return host.overflow and host.overflow.scrollX or host.grouped and host.tabs.scrollX or 0
     end
 
+    local function standaloneIcon(spec, tabs, frameKey)
+        -- Standalone strips stay client-hidden, but their single native tab
+        -- usually still exposes the correct icon. Notes may have no children.
+        local entries = strip(tabs)
+        local icon
+        if entries and #entries == 1 then
+            icon = entries[1].icon
+        elseif spec.name == "TOPLEVEL_V2__NOTES_WINDOW" then
+            icon = id.Sprite.CHILD_TAB_ICON_NOTES
+        end
+        -- A lock rebuild can clear a hidden strip. Retain only an icon already
+        -- captured for this bound frame; new hosts still require discovery.
+        local bound = byFrame[frameKey]
+        if icon or not bound or bound.grouped then return icon end
+        for _, previous in ipairs(bound.hosts) do
+            if previous.key == frameKey then return previous.nativeIcon end
+        end
+        return nil
+    end
+
+    local function groupedStrip(tabs, content, backdrop)
+        if
+            tabs.height ~= HEIGHT
+            or tabs.width <= 0
+            or tabs.x < content.x
+            or tabs.x + tabs.width > content.x + content.width
+            or backdrop.y ~= tabs.y
+        then
+            return nil
+        end
+        local backgrounds, children, signature, used, nativeLayout, nativeByKey = strip(tabs)
+        if not backgrounds or content.y < tabs.y + HEIGHT then return nil end
+        return backgrounds, children, signature, used, nativeLayout, nativeByKey
+    end
+
+    local function captureParts(spec, frame, allowHidden)
+        local content, scroll, tabs, backdrop =
+            component(spec.CONTENT), component(spec.SCROLL), component(spec.TABS), component(spec.TAB_BACKGROUND)
+        if
+            not content
+            or not tabs
+            or not backdrop
+            or spec.SCROLL and not scroll
+            or not same(content.parent, frame)
+            or scroll and not same(scroll.parent, frame)
+            or not same(tabs.parent, frame)
+            or not same(backdrop.parent, frame)
+            or content.width <= 0
+            or content.height <= HEIGHT
+            or not allowHidden and (content.hidden or scroll and scroll.hidden)
+        then
+            return nil
+        end
+        return content, scroll, tabs, backdrop
+    end
+
     local function capture(spec, area, allowHidden)
         local frame = component(spec.frame)
         if not frame or not same(frame.parent, area) or frame.hidden then return nil end
-        local content, scroll, tabs, backdrop = component(spec.CONTENT), component(spec.SCROLL),
-            component(spec.TABS), component(spec.TAB_BACKGROUND)
-        if not content or not tabs or not backdrop or spec.SCROLL and not scroll
-            or not same(content.parent, frame) or scroll and not same(scroll.parent, frame)
-            or not same(tabs.parent, frame) or not same(backdrop.parent, frame)
-            or content.width <= 0 or content.height <= HEIGHT
-            or not allowHidden and (content.hidden or scroll and scroll.hidden) then return nil end
+        local content, scroll, tabs, backdrop = captureParts(spec, frame, allowHidden)
+        if not content then return nil end
         local grouped = tabs.visible == true
         local frameKey = identity(frame)
         local backgrounds, children, signature, used, nativeIcon, nativeLayout, nativeByKey
         if grouped then
-            if tabs.height ~= HEIGHT or tabs.width <= 0
-                or tabs.x < content.x or tabs.x + tabs.width > content.x + content.width
-                or backdrop.y ~= tabs.y then return nil end
-            backgrounds, children, signature, used, nativeLayout, nativeByKey = strip(tabs)
-            if not backgrounds or content.y < tabs.y + HEIGHT then return nil end
+            backgrounds, children, signature, used, nativeLayout, nativeByKey = groupedStrip(tabs, content, backdrop)
+            if not backgrounds then return nil end
         else
             if not frame.visibleGlobal or content.width < WIDTH then return nil end
-            -- Standalone strips stay client-hidden, but their single native tab
-            -- usually still exposes the correct icon. Notes may have no children.
-            local entries = strip(tabs)
-            if entries and #entries == 1 then
-                nativeIcon = entries[1].icon
-            elseif spec.name == "TOPLEVEL_V2__NOTES_WINDOW" then
-                nativeIcon = id.Sprite.CHILD_TAB_ICON_NOTES
-            end
-            -- A lock rebuild can clear a hidden strip. Retain only an icon already
-            -- captured for this bound frame; new hosts still require discovery.
-            local bound = byFrame[frameKey]
-            if not nativeIcon and bound and not bound.grouped then
-                for _, previous in ipairs(bound.hosts) do
-                    if previous.key == frameKey then nativeIcon = previous.nativeIcon; break end
-                end
-            end
+            nativeIcon = standaloneIcon(spec, tabs, frameKey)
             if not nativeIcon then return nil end
             backgrounds, children, signature, used = {}, {}, "", WIDTH
         end
-        return { frame = frame, content = content, scroll = scroll, tabs = tabs,
-            backdrop = backdrop, key = frameKey, owner = frame.interfaceID,
+        return {
+            frame = frame,
+            content = content,
+            scroll = scroll,
+            tabs = tabs,
+            backdrop = backdrop,
+            key = frameKey,
+            owner = frame.interfaceID,
             tabControls = component(spec.TABS_SCROLL),
-            backgrounds = backgrounds, children = children, signature = signature,
-            used = used, grouped = grouped, spec = spec,
-            nativeIcon = nativeIcon, nativeLayout = nativeLayout, nativeByKey = nativeByKey }
+            backgrounds = backgrounds,
+            children = children,
+            signature = signature,
+            used = used,
+            grouped = grouped,
+            spec = spec,
+            nativeIcon = nativeIcon,
+            nativeLayout = nativeLayout,
+            nativeByKey = nativeByKey,
+        }
     end
 
     -- Whole rendered roots captured from standalone hosts. Prayer's separate
@@ -257,9 +329,16 @@ function Host.new(byFrame)
     }
 
     local function snapshotRoot(child, original, inset)
-        return { component = child, owner = child.interfaceID, key = identity(child),
+        return {
+            component = child,
+            owner = child.interfaceID,
+            key = identity(child),
             packed = (child.interfaceID << 16) | child.staticID,
-            original = original, inset = inset, hidden = child.hidden, changed = false }
+            original = original,
+            inset = inset,
+            hidden = child.hidden,
+            changed = false,
+        }
     end
 
     -- Familiar availability swaps an embedded page for native edit-block children.
@@ -272,7 +351,9 @@ function Host.new(byFrame)
 
     local function familiarRootsFor(host, previous)
         local roots, retained = {}, {}
-        for _, saved in ipairs(previous or {}) do retained[saved.key] = saved end
+        for _, saved in ipairs(previous or {}) do
+            retained[saved.key] = saved
+        end
         local function include(child, expected, parent, kind)
             if not child then return true end
             if not same(child.parent, parent) or kind and child.type ~= kind then return false end
@@ -287,8 +368,9 @@ function Host.new(byFrame)
                 end
                 local inset = { table.unpack(original) }
                 inset[2], inset[8] = inset[2] + HEIGHT, inset[8] - HEIGHT * inset[10]
-                if parent.width * inset[9] + inset[7] <= 0
-                    or parent.height * inset[10] + inset[8] <= 0 then return false end
+                if parent.width * inset[9] + inset[7] <= 0 or parent.height * inset[10] + inset[8] <= 0 then
+                    return false
+                end
                 saved = snapshotRoot(child, original, inset)
             end
             roots[#roots + 1] = saved
@@ -319,36 +401,48 @@ function Host.new(byFrame)
     -- A standalone inset requires actual parentage and full-size anchored content,
     -- not a matching rectangle or an unrendered interface with a similar name.
     local wrappers
-    local function nativeRootsFor(host)
-        if host.spec.name == "TOPLEVEL_V2__LORE_WINDOW" then return familiarRootsFor(host) end
-        local schema = splitRoots[host.spec.name]
-        if schema then
-            local roots = {}
-            for _, entry in ipairs(schema) do
-                local packed = id.Component[entry.name]
-                if type(packed) ~= "number" or packed < 0 then return nil end
-                local child = component(packed)
-                if not child or child.hidden or not same(child.parent, host.content) then return nil end
-                local original = layout(child)
-                if not original then return nil end
-                for index, value in ipairs(entry.layout) do
-                    if original[index] ~= value then return nil end
-                end
-                local inset = { table.unpack(original) }
-                inset[2] = inset[2] + HEIGHT
-                inset[8] = inset[8] - HEIGHT * inset[10]
-                if host.content.width * inset[9] + inset[7] <= 0
-                    or host.content.height * inset[10] + inset[8] <= 0 then return nil end
-                roots[#roots + 1] = snapshotRoot(child, original, inset)
-            end
-            return roots
+    local function splitRoot(host, entry)
+        local packed = id.Component[entry.name]
+        if type(packed) ~= "number" or packed < 0 then return nil end
+        local child = component(packed)
+        if not child or child.hidden or not same(child.parent, host.content) then return nil end
+        local original = layout(child)
+        if not original then return nil end
+        for index, value in ipairs(entry.layout) do
+            if original[index] ~= value then return nil end
         end
+        local inset = { table.unpack(original) }
+        inset[2] = inset[2] + HEIGHT
+        inset[8] = inset[8] - HEIGHT * inset[10]
+        if host.content.width * inset[9] + inset[7] <= 0 or host.content.height * inset[10] + inset[8] <= 0 then
+            return nil
+        end
+        return snapshotRoot(child, original, inset)
+    end
+
+    local function splitRootList(host, schema)
+        local roots = {}
+        for _, entry in ipairs(schema) do
+            local root = splitRoot(host, entry)
+            if not root then return nil end
+            roots[#roots + 1] = root
+        end
+        return roots
+    end
+
+    local function findWrapper(host)
         if not wrappers then
             wrappers = {}
             for packed, name in pairs(id.Component) do
-                if type(name) == "string" and type(packed) == "number"
-                    and (name:match("_WRAPPER$") or standaloneRoots[name]
-                        or name:match("^TOPLEVEL_V2_WINDOW_ABILITY_BOOK_.+__MAIN_LAYER$")) then
+                if
+                    type(name) == "string"
+                    and type(packed) == "number"
+                    and (
+                        name:match("_WRAPPER$")
+                        or standaloneRoots[name]
+                        or name:match("^TOPLEVEL_V2_WINDOW_ABILITY_BOOK_.+__MAIN_LAYER$")
+                    )
+                then
                     wrappers[#wrappers + 1] = packed
                 end
             end
@@ -361,14 +455,42 @@ function Host.new(byFrame)
                 chosen = child
             end
         end
-        if not chosen or chosen.hidden or chosen.x ~= 0 or chosen.y ~= 0
-            or chosen.width ~= host.content.width or chosen.height ~= host.content.height then return nil end
+        return chosen
+    end
+
+    local function standaloneRoot(host)
+        local chosen = findWrapper(host)
+        if
+            not chosen
+            or chosen.hidden
+            or chosen.x ~= 0
+            or chosen.y ~= 0
+            or chosen.width ~= host.content.width
+            or chosen.height ~= host.content.height
+        then
+            return nil
+        end
         local saved = layout(chosen)
-        if not saved or saved[1] ~= 0 or saved[2] ~= 0
-            or saved[7] ~= 0 or saved[8] ~= 0
-            or saved[9] ~= 1 or saved[10] ~= 1 then return nil end
+        if
+            not saved
+            or saved[1] ~= 0
+            or saved[2] ~= 0
+            or saved[7] ~= 0
+            or saved[8] ~= 0
+            or saved[9] ~= 1
+            or saved[10] ~= 1
+        then
+            return nil
+        end
         -- Normalizing full-size roots also handles Equipment's centered anchors.
         return { snapshotRoot(chosen, saved, { 0, HEIGHT, 0, 0, 0, 0, 0, -HEIGHT, 1, 1 }) }
+    end
+
+    local function nativeRootsFor(host)
+        if host.spec.name == "TOPLEVEL_V2__LORE_WINDOW" then return familiarRootsFor(host) end
+        local schema = splitRoots[host.spec.name]
+        if schema then return splitRootList(host, schema) end
+        return standaloneRoot(host)
     end
 
     local function discover(area)
@@ -385,7 +507,9 @@ function Host.new(byFrame)
         if not host.grouped then return host.key == other.key end
         -- Hidden frame copies may keep their previous bounds while the visible
         -- frame moves/resizes. Membership is the native tab signature, not geometry.
-        return other.grouped and other.owner == host.owner and other.signature == host.signature
+        return other.grouped
+            and other.owner == host.owner
+            and other.signature == host.signature
             and (other.key == host.key or not (host.frame.visibleGlobal and other.frame.visibleGlobal))
     end
 
@@ -431,15 +555,13 @@ function Host.new(byFrame)
         return index
     end
 
-    local function rectInParent(panel, component)
-        local origin, parentOrigin = component.xyGlobal, panel.parent.xyGlobal
-        return math.floor(origin.x - parentOrigin.x), math.floor(origin.y - parentOrigin.y),
-            component.width, component.height
+    local function rectInParent(panel, node)
+        local origin, parentOrigin = node.xyGlobal, panel.parent.xyGlobal
+        return math.floor(origin.x - parentOrigin.x), math.floor(origin.y - parentOrigin.y), node.width, node.height
     end
 
     local function freeRect(panel)
-        return { x = panel.root.x, y = panel.root.y,
-            width = panel.root.width, height = panel.root.height }
+        return { x = panel.root.x, y = panel.root.y, width = panel.root.width, height = panel.root.height }
     end
 
     -- Cheap broad phase: dragging over free space or a native body must not
@@ -470,9 +592,14 @@ function Host.new(byFrame)
         if host.content.width < WIDTH or host.content.height <= HEIGHT then return false end
         local height = host.content.height - (group.grouped and 0 or HEIGHT)
         for _, panel in ipairs(group.members) do
-            if host.content.width < panel.minWidth or height < panel.minHeight
+            if
+                host.content.width < panel.minWidth
+                or height < panel.minHeight
                 or host.content.width > (panel.maxWidth or math.huge)
-                or height > (panel.maxHeight or math.huge) then return false end
+                or height > (panel.maxHeight or math.huge)
+            then
+                return false
+            end
         end
         return true
     end
@@ -487,29 +614,55 @@ function Host.new(byFrame)
     end
 
     local function validHost(group, host)
-        if not (live(group) and identity(host.frame) == host.key
-            and same(host.frame.parent, group.area)
-            and same(host.content.parent, host.frame)
-            and (not host.scroll or same(host.scroll.parent, host.frame))
-            and same(host.tabs.parent, host.frame) and host.tabs.visible == host.grouped
-            and host.content.width >= WIDTH) then return false end
+        if
+            not (
+                live(group)
+                and identity(host.frame) == host.key
+                and same(host.frame.parent, group.area)
+                and same(host.content.parent, host.frame)
+                and (not host.scroll or same(host.scroll.parent, host.frame))
+                and same(host.tabs.parent, host.frame)
+                and host.tabs.visible == host.grouped
+                and host.content.width >= WIDTH
+            )
+        then
+            return false
+        end
         if not group.grouped then return true end
         return host.content.y >= host.tabs.y + HEIGHT
     end
 
     return {
-        identity = identity, component = component, same = same, live = live,
-        mapReady = mapReady, editingLocked = editingLocked,
-        applyLayout = applyLayout, spriteID = spriteID,
-        tabBand = tabBand, tabOrigin = tabOrigin, tabScroll = tabScroll,
-        capture = capture, familiarRootsFor = familiarRootsFor, nativeRootsFor = nativeRootsFor,
-        discover = discover, related = related, resolve = resolve,
-        frameGroup = frameGroup, selectedFrame = selectedFrame,
-        rectInParent = rectInParent, freeRect = freeRect,
-        captureAt = captureAt, captureHiddenGroup = captureHiddenGroup,
-        indexSpecs = indexSpecs, checkCapacity = checkCapacity,
-        validHost = validHost, specByID = specByID,
-        HEIGHT = HEIGHT, WIDTH = WIDTH, SEAM = SEAM,
+        identity = identity,
+        component = component,
+        same = same,
+        live = live,
+        mapReady = mapReady,
+        editingLocked = editingLocked,
+        applyLayout = applyLayout,
+        spriteID = spriteID,
+        tabBand = tabBand,
+        tabOrigin = tabOrigin,
+        tabScroll = tabScroll,
+        capture = capture,
+        familiarRootsFor = familiarRootsFor,
+        nativeRootsFor = nativeRootsFor,
+        discover = discover,
+        related = related,
+        resolve = resolve,
+        frameGroup = frameGroup,
+        selectedFrame = selectedFrame,
+        rectInParent = rectInParent,
+        freeRect = freeRect,
+        captureAt = captureAt,
+        captureHiddenGroup = captureHiddenGroup,
+        indexSpecs = indexSpecs,
+        checkCapacity = checkCapacity,
+        validHost = validHost,
+        specByID = specByID,
+        HEIGHT = HEIGHT,
+        WIDTH = WIDTH,
+        SEAM = SEAM,
     }
 end
 

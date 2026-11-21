@@ -17,8 +17,12 @@ function Histogram.new(parent, options)
     assert(Data.finite(origin), "histogram origin must be finite")
     local bins, sampleCount = Data.samples(options.samples == nil and {} or options.samples, binWidth, origin)
     local self = setmetatable({
-        kind = "histogram", orientation = "vertical", rows = bins,
-        binWidth = binWidth, origin = origin, sampleCount = sampleCount,
+        kind = "histogram",
+        orientation = "vertical",
+        rows = bins,
+        binWidth = binWidth,
+        origin = origin,
+        sampleCount = sampleCount,
     }, Histogram)
     return Renderer.init(self, parent, options)
 end
@@ -43,8 +47,11 @@ end
 
 function Histogram:GetSnapshot()
     return {
-        label = self.label, binWidth = self.binWidth, origin = self.origin,
-        sampleCount = self.sampleCount, bins = Data.copyRows(self.rows, true),
+        label = self.label,
+        binWidth = self.binWidth,
+        origin = self.origin,
+        sampleCount = self.sampleCount,
+        bins = Data.copyRows(self.rows, true),
     }
 end
 

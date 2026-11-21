@@ -12,15 +12,18 @@ local nextOrder = 0
 local previewTarget, previewSource
 
 local function loaded(panel)
-    return panel and not panel._destroyed and panel.root ~= nil
-        and ui.Interfaces:GetInterface(panel.interfaceID) ~= nil
+    return panel and not panel._destroyed and panel.root ~= nil and ui.Interfaces:GetInterface(panel.interfaceID) ~= nil
 end
 
 local function visible(panel, allowLocked)
     local ghost = panel and panel.dragState and panel.dragState.previewHidden
-    return loaded(panel) and not panel._nisHidden and (allowLocked or not panel.locked)
-        and (ghost and panel.parent.visibleGlobal ~= false
-            or not panel.root.hidden and panel.root.visibleGlobal ~= false)
+    return loaded(panel)
+        and not panel._nisHidden
+        and (allowLocked or not panel.locked)
+        and (
+            ghost and panel.parent.visibleGlobal ~= false
+            or not panel.root.hidden and panel.root.visibleGlobal ~= false
+        )
 end
 
 local function limits(list)
@@ -35,6 +38,29 @@ local function limits(list)
     return minWidth, minHeight, maxWidth, maxHeight
 end
 
+local function refreshMember(panel, group)
+    if not loaded(panel) then return end
+    if panel._nisClassic then
+        Components.setHidden(panel.root, true)
+        return
+    end
+
+    local active = panel == group.active and not panel._nisHidden
+    if not active then
+        if panel.content then Tooltip.hideContextTooltips(panel.content) end
+        panel._nisTabs:Refresh(nil)
+    end
+    Components.setHidden(panel.root, not active)
+    panel:_SyncContent(active)
+    panel:_SyncChrome()
+    panel:_SyncOverlays(not active)
+    if active then
+        panel._nisTabs:Refresh(group.members, group.active)
+        panel.root:MoveToFront()
+        panel:_SyncOverlays(false)
+    end
+end
+
 local function refresh(group)
     -- Release every outgoing page before allocating the selected page's controls.
     for _, panel in ipairs(group.members) do
@@ -43,26 +69,7 @@ local function refresh(group)
         end
     end
     for _, panel in ipairs(group.members) do
-        if loaded(panel) then
-            if panel._nisClassic then
-                Components.setHidden(panel.root, true)
-            else
-                local active = panel == group.active and not panel._nisHidden
-                if not active then
-                    if panel.content then Tooltip.hideContextTooltips(panel.content) end
-                    panel._nisTabs:Refresh(nil)
-                end
-                Components.setHidden(panel.root, not active)
-                panel:_SyncContent(active)
-                panel:_SyncChrome()
-                panel:_SyncOverlays(not active)
-                if active then
-                    panel._nisTabs:Refresh(group.members, group.active)
-                    panel.root:MoveToFront()
-                    panel:_SyncOverlays(false)
-                end
-            end
-        end
+        refreshMember(panel, group)
     end
 end
 
@@ -106,7 +113,9 @@ local function apply(group, x, y, width, height, notifyCallbacks)
         panel._updatingBounds = true
         if loaded(panel) then panel:_ApplyRectSingle(x, y, width, height) end
     end
-    for index, panel in ipairs(group.members) do panel._updatingBounds = updating[index] end
+    for index, panel in ipairs(group.members) do
+        panel._updatingBounds = updating[index]
+    end
     group.applying = nil
     if notifyCallbacks then notify(group) end
 end
@@ -139,29 +148,43 @@ function NisGroup.clearPreview(source)
     previewTarget, previewSource = nil, nil
     if loaded(target) and not target._nisClassic then
         local group = target._nisGroup
-        target._nisTabs:Refresh(group and group.members or nil,
-            group and group.active or target)
+        target._nisTabs:Refresh(group and group.members or nil, group and group.active or target)
     end
 end
 
 function NisGroup.clearPanel(panel)
-    if previewTarget == panel or previewSource == panel
+    if
+        previewTarget == panel
+        or previewSource == panel
         or previewTarget and previewTarget._nisGroup and previewTarget._nisGroup == panel._nisGroup
-        or previewSource and previewSource._nisGroup and previewSource._nisGroup == panel._nisGroup then
+        or previewSource and previewSource._nisGroup and previewSource._nisGroup == panel._nisGroup
+    then
         NisGroup.clearPreview()
     end
 end
 
-local function eligible(source, target, includeMembers, allowLocked)
-    if source._nisNative or target._nisNative
-        or not visible(source, allowLocked) or not visible(target, allowLocked) or source == target
+local function canDock(source, target, allowLocked)
+    if
+        source._nisNative
+        or target._nisNative
+        or not visible(source, allowLocked)
+        or not visible(target, allowLocked)
+        or source == target
         or not sameComponent(source.parent, target.parent)
-        or source._nisGroup == target._nisGroup and source._nisGroup then
+        or source._nisGroup == target._nisGroup and source._nisGroup
+    then
         return false
     end
     local sourceGroup, targetGroup = source._nisGroup, target._nisGroup
-    if sourceGroup and sourceGroup.active ~= source then return false end
-    if targetGroup and targetGroup.active ~= target then return false end
+    return not (sourceGroup and sourceGroup.active ~= source or targetGroup and targetGroup.active ~= target)
+end
+
+local function availableMember(panel, allowLocked)
+    return loaded(panel) and (allowLocked or not panel.locked) and not panel._nisHidden
+end
+
+local function eligible(source, target, includeMembers, allowLocked)
+    if not canDock(source, target, allowLocked) then return false end
     local combined = includeMembers and {} or nil
     local minWidth, minHeight, maxWidth, maxHeight = 64, 49, math.huge, math.huge
     for side = 1, 2 do
@@ -169,7 +192,7 @@ local function eligible(source, target, includeMembers, allowLocked)
         local list = owner._nisGroup and owner._nisGroup.members
         for index = 1, list and #list or 1 do
             local panel = list and list[index] or owner
-            if not loaded(panel) or not allowLocked and panel.locked or panel._nisHidden then return false end
+            if not availableMember(panel, allowLocked) then return false end
             minWidth = math.max(minWidth, panel.minWidth)
             minHeight = math.max(minHeight, panel.minHeight)
             maxWidth = math.min(maxWidth, panel.maxWidth or math.huge)
@@ -179,16 +202,22 @@ local function eligible(source, target, includeMembers, allowLocked)
     end
     if minWidth > maxWidth or minHeight > maxHeight then return false end
     local root = target.root
-    if root.width < minWidth or root.width > maxWidth
-        or root.height < minHeight or root.height > maxHeight then return false end
+    if root.width < minWidth or root.width > maxWidth or root.height < minHeight or root.height > maxHeight then
+        return false
+    end
     return true, combined
 end
 
 function NisGroup.candidate(source, x, y)
     local best, order
     for target in pairs(panels) do
-        if target ~= source and target._nisOrder > (order or 0)
-            and visible(target) and target._nisTabs:Contains(x, y) and eligible(source, target) then
+        if
+            target ~= source
+            and target._nisOrder > (order or 0)
+            and visible(target)
+            and target._nisTabs:Contains(x, y)
+            and eligible(source, target)
+        then
             best, order = target, target._nisOrder
         end
     end
@@ -201,8 +230,11 @@ function NisGroup.preview(source, target)
     NisGroup.clearPreview()
     if not target or not eligible(source, target) then return end
     previewTarget, previewSource = target, source
-    target._nisTabs:Refresh(target._nisGroup and target._nisGroup.members or nil,
-        target._nisGroup and target._nisGroup.active or target, source)
+    target._nisTabs:Refresh(
+        target._nisGroup and target._nisGroup.members or nil,
+        target._nisGroup and target._nisGroup.active or target,
+        source
+    )
 end
 
 function NisGroup.select(panel)
@@ -260,7 +292,9 @@ function NisGroup.dock(source, target, notifyCallbacks, allowLocked)
     local targetRoot = target.root
     local x, y, width, height = targetRoot.x, targetRoot.y, targetRoot.width, targetRoot.height
     if sourceGroup then
-        for _, panel in ipairs(sourceGroup.members) do panel._nisGroup = nil end
+        for _, panel in ipairs(sourceGroup.members) do
+            panel._nisGroup = nil
+        end
         sourceGroup.members = {}
         sourceGroup.active = nil
     end
@@ -282,23 +316,38 @@ end
 
 -- Activation is not a layout gesture: it can group panels while locked.
 function NisGroup.dockOverlapping(source)
-    if source._nisClassic or source._nisGroup or source._nisNative or source._nisNativePending
-        or WorldMap.isSuspended() or not visible(source, true) then return false end
+    if
+        source._nisClassic
+        or source._nisGroup
+        or source._nisNative
+        or source._nisNativePending
+        or WorldMap.isSuspended()
+        or not visible(source, true)
+    then
+        return false
+    end
     local root = source.root
     local best, bestArea = nil, root.width * root.height / 2
     for target in pairs(panels) do
-        if target ~= source and not target._nisClassic and visible(target, true)
-            and not target.dragState and not target._nisTabPress
-            and not (target.resize and target.resize.dragState) then
+        if
+            target ~= source
+            and not target._nisClassic
+            and visible(target, true)
+            and not target.dragState
+            and not target._nisTabPress
+            and not (target.resize and target.resize.dragState)
+        then
             local other = target.root
             local width = math.min(root.x + root.width, other.x + other.width) - math.max(root.x, other.x)
             local height = math.min(root.y + root.height, other.y + other.height) - math.max(root.y, other.y)
-            if width > 0 and height > 0 then
-                local area = width * height
-                if (area > bestArea or best and area == bestArea and target._nisOrder > best._nisOrder)
-                    and eligible(source, target, false, true) then
-                    best, bestArea = target, area
-                end
+            local area = width * height
+            if
+                width > 0
+                and height > 0
+                and (area > bestArea or best and area == bestArea and target._nisOrder > best._nisOrder)
+                and eligible(source, target, false, true)
+            then
+                best, bestArea = target, area
             end
         end
     end
@@ -311,7 +360,10 @@ function NisGroup.undock(panel)
     if not group then return end
     NisGroup.clearPanel(panel)
     for index, member in ipairs(group.members) do
-        if member == panel then table.remove(group.members, index); break end
+        if member == panel then
+            table.remove(group.members, index)
+            break
+        end
     end
     panel._nisGroup = nil
     restoreLimits(panel)
@@ -363,7 +415,6 @@ function NisGroup.notify(panel)
     if panel._nisGroup then notify(panel._nisGroup) end
 end
 
-
 function NisGroup.snapshot(panel)
     local group = panel._nisGroup
     if not group then return nil end
@@ -371,7 +422,10 @@ function NisGroup.snapshot(panel)
     return {
         members = { table.unpack(group.members) },
         active = group.active,
-        x = root.x, y = root.y, width = root.width, height = root.height,
+        x = root.x,
+        y = root.y,
+        width = root.width,
+        height = root.height,
     }
 end
 
@@ -380,8 +434,13 @@ end
 function NisGroup.resume(panel, snapshot)
     local anchor
     for _, peer in ipairs(snapshot.members) do
-        if peer ~= panel and loaded(peer) and not peer._nisHidden and not peer._nisNative
-            and sameComponent(peer.parent, panel.parent) then
+        if
+            peer ~= panel
+            and loaded(peer)
+            and not peer._nisHidden
+            and not peer._nisNative
+            and sameComponent(peer.parent, panel.parent)
+        then
             anchor = peer
             break
         end
@@ -389,7 +448,9 @@ function NisGroup.resume(panel, snapshot)
     if not anchor then return false end
     local current = anchor._nisGroup and anchor._nisGroup.members or { anchor }
     local included, ordered = { [panel] = true }, {}
-    for _, peer in ipairs(current) do included[peer] = true end
+    for _, peer in ipairs(current) do
+        included[peer] = true
+    end
     for _, peer in ipairs(snapshot.members) do
         if included[peer] then
             ordered[#ordered + 1] = peer
@@ -401,8 +462,12 @@ function NisGroup.resume(panel, snapshot)
     end
     local root = anchor.root
     return NisGroup.restore({
-        members = ordered, active = panel,
-        x = root.x, y = root.y, width = root.width, height = root.height,
+        members = ordered,
+        active = panel,
+        x = root.x,
+        y = root.y,
+        width = root.width,
+        height = root.height,
     }, false)
 end
 
@@ -420,9 +485,13 @@ function NisGroup.restore(snapshot, notifyCallbacks)
     local height = math.max(minHeight, math.min(maxHeight, snapshot.height))
     local x = math.max(0, math.min(snapshot.x, owner.parent.width - width))
     local y = math.max(0, math.min(snapshot.y, owner.parent.height - height))
-    for _, panel in ipairs(snapshot.members) do NisGroup.undock(panel) end
+    for _, panel in ipairs(snapshot.members) do
+        NisGroup.undock(panel)
+    end
     local group = { members = snapshot.members, active = snapshot.active }
-    for _, panel in ipairs(group.members) do panel._nisGroup = group end
+    for _, panel in ipairs(group.members) do
+        panel._nisGroup = group
+    end
     setLimits(group)
     apply(group, x, y, width, height, false)
     refresh(group)

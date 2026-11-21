@@ -38,7 +38,9 @@ local function normalizeChoices(choices)
         error("Selection button choices must be a non-empty array")
     end
     local normalized = {}
-    for index, choice in ipairs(choices) do normalized[index] = normalizeChoice(choice) end
+    for index, choice in ipairs(choices) do
+        normalized[index] = normalizeChoice(choice)
+    end
     return normalized
 end
 
@@ -52,9 +54,11 @@ end
 
 local function measureChoiceWidth(choice)
     local normalized = normalizeChoice(choice)
-    local succeeded, width = pcall(function()
-        return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(normalized.text, false)
-    end)
+    local succeeded, width = pcall(
+        function()
+            return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(normalized.text, false)
+        end
+    )
     return LABEL_X + (succeeded and width or #normalized.text * 7)
 end
 
@@ -108,8 +112,10 @@ local function buildSelectionButton(kind, parent, choices, options)
         local requested = options.selectedValue
         local hasRequested = requested ~= nil
         for _, item in ipairs(items) do
-            if self.selectedValue == nil and ((hasRequested and item.value == requested) or
-                (not hasRequested and item.selected)) then
+            if
+                self.selectedValue == nil
+                and ((hasRequested and item.value == requested) or (not hasRequested and item.selected))
+            then
                 item.selected = true
                 self.selectedValue = item.value
             else
@@ -135,7 +141,9 @@ local function buildSelectionButton(kind, parent, choices, options)
     self.optionTooltipContext = Tooltip.registerContext(self.root, tooltipParent, function(target)
         local rootX = self.root.x or 0
         local rootY = self.root.y or 0
-        if parentContext then rootX, rootY = parentContext.position(self.root) end
+        if parentContext then
+            rootX, rootY = parentContext.position(self.root)
+        end
         return rootX + (target.x or 0), rootY + (target.y or 0)
     end, parentContext)
 
@@ -203,9 +211,12 @@ local function buildSelectionButton(kind, parent, choices, options)
 end
 
 function SelectionButton.new(kind, parent, choices, options)
-    return Components.withBatch(parent, function()
-        return buildSelectionButton(kind, parent, choices, options)
-    end)
+    return Components.withBatch(
+        parent,
+        function()
+            return buildSelectionButton(kind, parent, choices, options)
+        end
+    )
 end
 
 function SelectionButton:_RebuildSelectedValues()
@@ -243,7 +254,9 @@ function SelectionButton:_UpdateItem(item)
 end
 
 function SelectionButton:_UpdateAll()
-    for _, item in ipairs(self.items) do self:_UpdateItem(item) end
+    for _, item in ipairs(self.items) do
+        self:_UpdateItem(item)
+    end
 end
 
 function SelectionButton:GetSelectedValue()
@@ -255,12 +268,17 @@ function SelectionButton:SetSelectedValue(value, notify)
     local match = nil
     if value ~= nil then
         for _, item in ipairs(self.items) do
-            if item.value == value then match = item break end
+            if item.value == value then
+                match = item
+                break
+            end
         end
         if match == nil then return false end
     end
     if self.selectedValue == value then return true end
-    for _, item in ipairs(self.items) do item.selected = item == match end
+    for _, item in ipairs(self.items) do
+        item.selected = item == match
+    end
     self.selectedValue = value
     self:_UpdateAll()
     if notify ~= false and self.onChange then self.onChange(self, value) end
@@ -269,7 +287,9 @@ end
 
 function SelectionButton:GetSelectedValues()
     local values = {}
-    for index, value in ipairs(self.selectedValues) do values[index] = value end
+    for index, value in ipairs(self.selectedValues) do
+        values[index] = value
+    end
     return values
 end
 
@@ -282,7 +302,10 @@ function SelectionButton:SetSelected(value, selected, notify)
     if self.kind ~= "checkbox" then return false end
     local match = nil
     for _, item in ipairs(self.items) do
-        if item.value == value then match = item break end
+        if item.value == value then
+            match = item
+            break
+        end
     end
     if match == nil then return false end
     selected = selected == true
@@ -298,7 +321,9 @@ end
 
 function SelectionButton:SetDisabled(disabled)
     self.disabled = disabled == true
-    for _, item in ipairs(self.items) do item.hovered = false end
+    for _, item in ipairs(self.items) do
+        item.hovered = false
+    end
     self:_UpdateAll()
 end
 
@@ -317,7 +342,9 @@ function SelectionButton:SetOptionTooltip(value, tooltip)
 end
 
 function SelectionButton:Destroy()
-    for _, item in ipairs(self.items) do Tooltip.unbind(item, "tooltipAttachment") end
+    for _, item in ipairs(self.items) do
+        Tooltip.unbind(item, "tooltipAttachment")
+    end
     if self.root then
         Tooltip.unregisterContext(self.root)
         self.optionTooltipContext = nil

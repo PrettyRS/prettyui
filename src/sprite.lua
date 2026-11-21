@@ -9,8 +9,7 @@ local DEFAULT_SIZE = 24
 
 function Sprite.getSize(options)
     options = options or {}
-    return options.width or options.size or DEFAULT_SIZE,
-        options.height or options.size or DEFAULT_SIZE
+    return options.width or options.size or DEFAULT_SIZE, options.height or options.size or DEFAULT_SIZE
 end
 
 function Sprite.new(parent, sprite, options)
@@ -20,12 +19,7 @@ function Sprite.new(parent, sprite, options)
 
     self.interfaceID = parent.interfaceID
     self.root = Components.new(ui.Sprite, parent, options)
-    self.root:SetPos(
-        options.x or 0,
-        options.y or 0,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
+    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, height, options.widthAnchor or 0, options.heightAnchor or 0)
     self.root.sprite = sprite
     self.root.rgba = options.colour or options.color or 0xFFFFFFFF

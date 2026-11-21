@@ -10,8 +10,7 @@ BarChart.getSize = Renderer.getSize
 function BarChart.new(parent, options)
     options = options or {}
     local orientation = options.orientation == nil and "horizontal" or options.orientation
-    assert(orientation == "horizontal" or orientation == "vertical",
-        "bar orientation must be horizontal or vertical")
+    assert(orientation == "horizontal" or orientation == "vertical", "bar orientation must be horizontal or vertical")
     local rows = Data.rows(options.data == nil and {} or options.data, options.rgba)
     local self = setmetatable({ kind = "bar", orientation = orientation, rows = rows }, BarChart)
     return Renderer.init(self, parent, options)

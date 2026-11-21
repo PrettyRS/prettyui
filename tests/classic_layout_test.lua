@@ -14,77 +14,111 @@ local function size(w, h, wp, hp)
 end
 local function copy(descriptor, fields)
     local result = {}
-    for _, field in ipairs(fields) do result[field] = descriptor[field] end
+    for _, field in ipairs(fields) do
+        result[field] = descriptor[field]
+    end
     return result
 end
 local function assertDescriptor(actual, expected, fields, message)
-    for _, field in ipairs(fields) do expect(actual[field], expected[field], message .. "." .. field) end
+    for _, field in ipairs(fields) do
+        expect(actual[field], expected[field], message .. "." .. field)
+    end
 end
 
 local live, components = {}, {}
 ui = { Interfaces = {} }
-function ui.Interfaces:GetInterface(interfaceID) return live[interfaceID] end
-function ui.Interfaces:GetComponent(packed) return components[packed] end
-id = { Component = {}, VarPlayer = {
-    TOPLEVEL_V2_CUSTOMIZATION_LOCK = 101,
-    TOPLEVEL_V2_SKINS_VARP = 102,
-    TOPLEVEL_V2_TRANSPARENCY = 103,
-} }
+function ui.Interfaces.GetInterface(_, interfaceID) return live[interfaceID] end
+function ui.Interfaces.GetComponent(_, packed) return components[packed] end
+id = {
+    Component = {},
+    VarPlayer = {
+        TOPLEVEL_V2_CUSTOMIZATION_LOCK = 101,
+        TOPLEVEL_V2_SKINS_VARP = 102,
+        TOPLEVEL_V2_TRANSPARENCY = 103,
+    },
+}
 local classicValue = 1
-var = { VarPlayer = {
-    TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, { __index = function(_, field)
-        if field == "value" then return classicValue end
-    end }),
-    TOPLEVEL_V2_CUSTOMIZATION_LOCK = { value = 0 },
-    TOPLEVEL_V2_TRANSPARENCY = { value = 0 },
-} }
-local warnings = {}
-log = function(message)
+var = {
+    VarPlayer = {
+        TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, {
+            __index = function(_, field)
+                if field == "value" then return classicValue end
+            end,
+        }),
+        TOPLEVEL_V2_CUSTOMIZATION_LOCK = { value = 0 },
+        TOPLEVEL_V2_TRANSPARENCY = { value = 0 },
+    },
+}
+log = function()
     -- The native binding aborts instead of raising a catchable Lua error when
     -- invoked directly by C pcall without a Lua caller environment.
     assert(debug.getinfo(2, "S").what ~= "C", "native log requires a Lua caller")
-    warnings[#warnings + 1] = message
-end
-local function warningCount(message)
-    local count = 0
-    for _, warning in ipairs(warnings) do
-        if tostring(warning):find(message, 1, true) then count = count + 1 end
-    end
-    return count
 end
 
 local function component(interfaceID, staticID, parent, position, dimensions)
     local item = {
-        interfaceID = interfaceID, staticID = staticID, categoryID = -1, dynamicID = -1,
-        parent = parent, children = {}, position = position, size = dimensions, posWrites = 0, sizeWrites = 0,
+        interfaceID = interfaceID,
+        staticID = staticID,
+        categoryID = -1,
+        dynamicID = -1,
+        parent = parent,
+        children = {},
+        position = position,
+        size = dimensions,
+        posWrites = 0,
+        sizeWrites = 0,
     }
-    setmetatable(item, { __index = function(self, field)
-        if field == "width" then return self.size.width + (parent and parent.width or 0) * self.size.widthParentPc end
-        if field == "height" then return self.size.height + (parent and parent.height or 0) * self.size.heightParentPc end
-        if field == "x" then
-            return self.position.x + (parent and parent.width or 0) * self.position.xParentPc
-                - self.width * self.position.xSelfPc
-        end
-        if field == "y" then
-            return self.position.y + (parent and parent.height or 0) * self.position.yParentPc
-                - self.height * self.position.ySelfPc
-        end
-    end })
+    setmetatable(item, {
+        __index = function(self, field)
+            if field == "width" then
+                return self.size.width + (parent and parent.width or 0) * self.size.widthParentPc
+            end
+            if field == "height" then
+                return self.size.height + (parent and parent.height or 0) * self.size.heightParentPc
+            end
+            if field == "x" then
+                return self.position.x
+                    + (parent and parent.width or 0) * self.position.xParentPc
+                    - self.width * self.position.xSelfPc
+            end
+            if field == "y" then
+                return self.position.y
+                    + (parent and parent.height or 0) * self.position.yParentPc
+                    - self.height * self.position.ySelfPc
+            end
+        end,
+    })
     function item:SetPos(x, y, xp, yp, xs, ys)
         if self.isRestricted then error("restricted native component") end
         self.posWrites = self.posWrites + 1
-        if self.failPos == "before" then self.failPos = nil; error("native position setter failed") end
+        if self.failPos == "before" then
+            self.failPos = nil
+            error("native position setter failed")
+        end
         local nextPosition = pos(x, y, xp, yp, xs, ys)
-        for _, field in ipairs(positionFields) do self.position[field] = nextPosition[field] end
-        if self.failPos == "after" then self.failPos = nil; error("native position setter failed") end
+        for _, field in ipairs(positionFields) do
+            self.position[field] = nextPosition[field]
+        end
+        if self.failPos == "after" then
+            self.failPos = nil
+            error("native position setter failed")
+        end
     end
     function item:SetSize(w, h, wp, hp)
         if self.isRestricted then error("restricted native component") end
         self.sizeWrites = self.sizeWrites + 1
-        if self.failSize == "before" then self.failSize = nil; error("native size setter failed") end
+        if self.failSize == "before" then
+            self.failSize = nil
+            error("native size setter failed")
+        end
         local nextSize = size(w, h, wp, hp)
-        for _, field in ipairs(sizeFields) do self.size[field] = nextSize[field] end
-        if self.failSize == "after" then self.failSize = nil; error("native size setter failed") end
+        for _, field in ipairs(sizeFields) do
+            self.size[field] = nextSize[field]
+        end
+        if self.failSize == "after" then
+            self.failSize = nil
+            error("native size setter failed")
+        end
     end
     function item:GetChild(childStaticID)
         return self.children[childStaticID]
@@ -100,7 +134,7 @@ local function scene(options)
     components, live = {}, {}
     local top = component(4201, 71, nil, pos(0, 0, 0, 0, 0, 0), size(3440, 1440, 0, 0))
     local viewport = component(4202, 75, nil, pos(0, 0, 0, 0, 0, 0), size(3440, 1440, 0, 0))
-    local area = component(4202, 81, viewport, pos(0, 0, .5, .5, .5, .5), size(0, 0, 1, 1))
+    local area = component(4202, 81, viewport, pos(0, 0, 0.5, 0.5, 0.5, 0.5), size(0, 0, 1, 1))
     local gameview
     if not options.noGameview then
         gameview = component(4202, 87, viewport, pos(0, 0, 0, 0, 0, 0), size(0, 0, 1, 1))
@@ -111,11 +145,11 @@ local function scene(options)
     local buttons = component(4202, nil, area, pos(-520, 0, 1, 0, 1, 0), size(32, 34, 0, 0))
     -- Captured Slayer HUD: VIEWPORT -> GAMEPLAY_HUDS -> SLAYER_COUNTER_WINDOW.
     -- Its mounted interface follows the window rather than GAME_AREA.
-    local hud = component(4202, 91, viewport, pos(0, 0, .5, .5, .5, .5), size(0, 0, 1, 1))
+    local hud = component(4202, 91, viewport, pos(0, 0, 0.5, 0.5, 0.5, 0.5), size(0, 0, 1, 1))
     local slayer, slayerContent
     if not options.noSlayer then
-        slayer = component(4202, 93, options.slayerInArea and area or hud,
-            pos(-245, 2, 1, 0, 1, 0), size(180, 80, 0, 0))
+        slayer =
+            component(4202, 93, options.slayerInArea and area or hud, pos(-245, 2, 1, 0, 1, 0), size(180, 80, 0, 0))
         slayerContent = component(4203, 7, slayer, pos(12, 4, 0, 0, 0, 0), size(120, 40, 0, 0))
     end
     id.Component = {
@@ -127,11 +161,18 @@ local function scene(options)
         TOPLEVEL_V2__SLAYER_COUNTER_WINDOW = (4202 << 16) | 93,
     }
     return {
-        top = top, viewport = viewport, area = area, gameview = gameview,
-        minimap = minimap, buttons = buttons,
-        hud = hud, slayer = slayer, slayerContent = slayerContent,
+        top = top,
+        viewport = viewport,
+        area = area,
+        gameview = gameview,
+        minimap = minimap,
+        buttons = buttons,
+        hud = hud,
+        slayer = slayer,
+        slayerContent = slayerContent,
         slayerPosition = slayer and copy(slayer.position, positionFields),
-        position = copy(area.position, positionFields), dimensions = copy(area.size, sizeFields),
+        position = copy(area.position, positionFields),
+        dimensions = copy(area.size, sizeFields),
         gameviewPosition = gameview and copy(gameview.position, positionFields),
         gameviewSize = gameview and copy(gameview.size, sizeFields),
     }
@@ -144,40 +185,61 @@ local function assertArea(sceneValue, width, message)
     expect(area.x, 0, message .. " native left edge")
     expect(area.width, sceneValue.viewport.width - width, message .. " native width")
     expect(area.height, sceneValue.viewport.height, message .. " native height")
-    expect(globalX(sceneValue.minimap), sceneValue.viewport.width - width - 275,
-        message .. " right-anchored minimap")
-    expect(globalX(sceneValue.buttons), sceneValue.viewport.width - width - 552,
-        message .. " native ribbon button/input")
+    expect(globalX(sceneValue.minimap), sceneValue.viewport.width - width - 275, message .. " right-anchored minimap")
+    expect(
+        globalX(sceneValue.buttons),
+        sceneValue.viewport.width - width - 552,
+        message .. " native ribbon button/input"
+    )
     if sceneValue.slayer then
-        expect(globalX(sceneValue.slayer), sceneValue.viewport.width - width - 425,
-            message .. " Slayer containing window")
-        expect(globalX(sceneValue.slayerContent), globalX(sceneValue.slayer) + 12,
-            message .. " Slayer child render/input position")
+        expect(
+            globalX(sceneValue.slayer),
+            sceneValue.viewport.width - width - 425,
+            message .. " Slayer containing window"
+        )
+        expect(
+            globalX(sceneValue.slayerContent),
+            globalX(sceneValue.slayer) + 12,
+            message .. " Slayer child render/input position"
+        )
         expect(sceneValue.slayerContent.position.x, 12, message .. " unchanged Slayer child offset")
     end
     if sceneValue.gameview then
         expect(sceneValue.gameview.width, sceneValue.viewport.width - width, message .. " gameview width")
-        assertDescriptor(sceneValue.gameview.position, sceneValue.gameviewPosition, positionFields,
-            message .. " unchanged gameview position")
+        assertDescriptor(
+            sceneValue.gameview.position,
+            sceneValue.gameviewPosition,
+            positionFields,
+            message .. " unchanged gameview position"
+        )
     end
 end
 local function assertRestored(sceneValue, message)
     assertDescriptor(sceneValue.area.position, sceneValue.position, positionFields, message .. " position")
     assertDescriptor(sceneValue.area.size, sceneValue.dimensions, sizeFields, message .. " size")
     if sceneValue.slayer then
-        assertDescriptor(sceneValue.slayer.position, sceneValue.slayerPosition, positionFields,
-            message .. " Slayer position")
+        assertDescriptor(
+            sceneValue.slayer.position,
+            sceneValue.slayerPosition,
+            positionFields,
+            message .. " Slayer position"
+        )
     end
     if sceneValue.gameview then
-        assertDescriptor(sceneValue.gameview.position, sceneValue.gameviewPosition, positionFields,
-            message .. " gameview position")
-        assertDescriptor(sceneValue.gameview.size, sceneValue.gameviewSize, sizeFields,
-            message .. " gameview size")
+        assertDescriptor(
+            sceneValue.gameview.position,
+            sceneValue.gameviewPosition,
+            positionFields,
+            message .. " gameview position"
+        )
+        assertDescriptor(sceneValue.gameview.size, sceneValue.gameviewSize, sizeFields, message .. " gameview size")
     end
 end
 local function writes(item) return item.posWrites, item.sizeWrites end
 local function poison(item)
-    for key in pairs(item) do item[key] = nil end
+    for key in pairs(item) do
+        item[key] = nil
+    end
     setmetatable(item, {
         __index = function(_, key) error("read after interface unload: " .. tostring(key)) end,
         __newindex = function(_, key) error("write after interface unload: " .. tostring(key)) end,
@@ -190,8 +252,12 @@ local function reservationFollowsRailAndRestoresOriginalLayout()
     local view = scene()
     expect(ClassicLayout.update(44), true, "collapsed rail reserves native width")
     assertArea(view, 44, "collapsed rail")
-    assertDescriptor(view.area.position, pos(0, 0, 0, 0, 0, 0), positionFields,
-        "reservation removes centered native anchors")
+    assertDescriptor(
+        view.area.position,
+        pos(0, 0, 0, 0, 0, 0),
+        positionFields,
+        "reservation removes centered native anchors"
+    )
     local positionWrites, sizeWrites = writes(view.area)
     ClassicLayout.update(44)
     expect(view.area.posWrites, positionWrites, "idle update does not reposition native area")
@@ -231,8 +297,12 @@ local function slayerPositionIsOptionalAndNeverShiftedTwice()
     unavailable.slayer.failPos = "after"
     expect(ClassicLayout.update(44), true, "Slayer setter failure does not block game area")
     expect(unavailable.area.width, 3396, "mandatory reservation survives Slayer failure")
-    assertDescriptor(unavailable.slayer.position, unavailable.slayerPosition, positionFields,
-        "failed Slayer shift rolls back")
+    assertDescriptor(
+        unavailable.slayer.position,
+        unavailable.slayerPosition,
+        positionFields,
+        "failed Slayer shift rolls back"
+    )
     ClassicLayout.restore()
 
     local foreign = scene()
@@ -256,8 +326,12 @@ local function optionalGameviewCannotBlockMandatoryReservation()
     failed.gameview.failSize = "after"
     expect(ClassicLayout.update(404), true, "gameview setter failure does not block expansion")
     expect(failed.area.width, 3036, "native area still reserves full sidebar")
-    assertDescriptor(failed.gameview.size, failed.gameviewSize, sizeFields,
-        "partially applied optional size rolls back")
+    assertDescriptor(
+        failed.gameview.size,
+        failed.gameviewSize,
+        sizeFields,
+        "partially applied optional size rolls back"
+    )
     ClassicLayout.restore()
     assertRestored(failed, "optional setter failure teardown")
 
@@ -275,7 +349,7 @@ end
 
 local function unsafeNativeLayoutsDoNotClaimReservation()
     local incompatible = scene()
-    incompatible.area.size.widthParentPc = .9
+    incompatible.area.size.widthParentPc = 0.9
     expect(ClassicLayout.update(44), false, "non-full-size game area rejects reservation")
     expect(incompatible.area.sizeWrites, 0, "incompatible area receives no native write")
     ClassicLayout.restore()
@@ -308,19 +382,19 @@ local function foreignDescriptorsRemainClientOwned()
 
     local foreignAnchor = scene()
     ClassicLayout.update(44)
-    foreignAnchor.area.position.yParentPc = .25
+    foreignAnchor.area.position.yParentPc = 0.25
     local positionWrites = foreignAnchor.area.posWrites
     ClassicLayout.restore()
     expect(foreignAnchor.area.posWrites, positionWrites, "teardown never writes foreign anchor")
-    expect(foreignAnchor.area.position.yParentPc, .25, "foreign anchor survives teardown")
+    expect(foreignAnchor.area.position.yParentPc, 0.25, "foreign anchor survives teardown")
     expect(foreignAnchor.area.size.width, 0, "independently owned size restores")
 end
 
 local function remountNeverTouchesRetiredNativeHandles()
     local first = scene()
     ClassicLayout.update(44)
-    local replacement = component(4202, first.area.staticID, first.viewport,
-        pos(29, 0, 0, 0, 0, 0), size(-120, 0, 1, 1))
+    local replacement =
+        component(4202, first.area.staticID, first.viewport, pos(29, 0, 0, 0, 0, 0), size(-120, 0, 1, 1))
     poison(first.area)
     ClassicLayout.restore()
     expect(replacement.posWrites + replacement.sizeWrites, 0, "same-ID replacement is not owned")
@@ -329,7 +403,10 @@ local function remountNeverTouchesRetiredNativeHandles()
     ClassicLayout.update(404)
     live[4202] = nil
     for packed, item in pairs(components) do
-        if packed >> 16 == 4202 then components[packed] = nil; poison(item) end
+        if packed >> 16 == 4202 then
+            components[packed] = nil
+            poison(item)
+        end
     end
     ClassicLayout.restore()
 
@@ -348,7 +425,9 @@ end
 local function viewportResizeRecapturesBaselineButRepeatedResetSuspends()
     local view = scene()
     ClassicLayout.update(44)
-    for _, field in ipairs(positionFields) do view.area.position[field] = view.position[field] end
+    for _, field in ipairs(positionFields) do
+        view.area.position[field] = view.position[field]
+    end
     for _, field in ipairs(sizeFields) do
         view.area.size[field] = view.dimensions[field]
         view.gameview.size[field] = view.gameviewSize[field]
@@ -357,8 +436,12 @@ local function viewportResizeRecapturesBaselineButRepeatedResetSuspends()
     view.top:SetSize(3000, 900, 0, 0)
     expect(ClassicLayout.update(44), true, "viewport resize permits recapturing reset baseline")
     assertArea(view, 44, "resized viewport")
-    for _, field in ipairs(positionFields) do view.area.position[field] = view.position[field] end
-    for _, field in ipairs(sizeFields) do view.area.size[field] = view.dimensions[field] end
+    for _, field in ipairs(positionFields) do
+        view.area.position[field] = view.position[field]
+    end
+    for _, field in ipairs(sizeFields) do
+        view.area.size[field] = view.dimensions[field]
+    end
     local positionWrites, sizeWrites = writes(view.area)
     expect(ClassicLayout.update(44), false, "unconfirmed native reset suspends reservation")
     expect(view.area.posWrites, positionWrites, "reset anchor is not overwritten")
@@ -376,8 +459,7 @@ local function combatScene()
     view.chat.visibleGlobal, view.strip.visibleGlobal = true, true
     id.Component.TOPLEVEL_V2__CHAT_WINDOW = (4202 << 16) | 110
     id.Component.TOPLEVEL_V2__BUTTONS_WINDOW = (4202 << 16) | 111
-    view.privateChat = component(4202, 118, view.hud,
-        pos(0, -188, 0, 1, 0, 1), size(550, 275, 0, 0))
+    view.privateChat = component(4202, 118, view.hud, pos(0, -188, 0, 1, 0, 1), size(550, 275, 0, 0))
     view.privateChat.visibleGlobal = false
     view.privatePosition = copy(view.privateChat.position, positionFields)
     id.Component.TOPLEVEL_V2__SPLITPM_WINDOW = (4202 << 16) | 118
@@ -385,8 +467,13 @@ local function combatScene()
     for index = 1, 5 do
         local suffix = index == 1 and "" or "_" .. index
         local offset = index == 1 and -76 or index == 2 and -38 or 0
-        local action = component(4202, 111 + index, view.area,
-            pos(0, offset, .5, 1, .5, 1), size(550, index == 1 and 76 or 38, 0, 0))
+        local action = component(
+            4202,
+            111 + index,
+            view.area,
+            pos(0, offset, 0.5, 1, 0.5, 1),
+            size(550, index == 1 and 76 or 38, 0, 0)
+        )
         action.visibleGlobal = index <= 3
         view.actions[index] = action
         view.actionPositions[index] = copy(action.position, positionFields)
@@ -411,8 +498,8 @@ local function combatStacksAndRestoresWithoutOscillating()
         assertDescriptor(action.position, view.actionPositions[index], positionFields, "restored bar")
     end
     expect(ClassicLayout.update(404), true, "reopening stacks again")
-    view.actions[4]:SetPos(0, -152, .5, 1, .5, 1)
-    view.actions[5]:SetPos(0, -190, .5, 1, .5, 1)
+    view.actions[4]:SetPos(0, -152, 0.5, 1, 0.5, 1)
+    view.actions[5]:SetPos(0, -190, 0.5, 1, 0.5, 1)
     view.actionPositions[4] = copy(view.actions[4].position, positionFields)
     view.actionPositions[5] = copy(view.actions[5].position, positionFields)
     view.actions[4].visibleGlobal, view.actions[5].visibleGlobal = true, true
@@ -438,8 +525,12 @@ local function additionalButtonTriggersCompactLayout()
     expect(view.actions[3].y + view.actions[3].height, view.chat.y, "stack joins chat")
     view.actions[3].visibleGlobal = false
     expect(ClassicLayout.update(262), true, "hiding the bottom bar frees the horizontal lane")
-    assertDescriptor(view.actions[2].position, view.actionPositions[2], positionFields,
-        "remaining bars return to native placement when clear")
+    assertDescriptor(
+        view.actions[2].position,
+        view.actionPositions[2],
+        positionFields,
+        "remaining bars return to native placement when clear"
+    )
     assertDescriptor(view.actions[3].position, view.actionPositions[3], positionFields, "hidden bar restored")
     view.actions[3].visibleGlobal = true
     expect(ClassicLayout.update(262), true, "showing the colliding bar stacks the cluster again")
@@ -485,7 +576,9 @@ local function combatOwnershipAndFailuresAreSafe()
     local retired = combatScene()
     ClassicLayout.update(404)
     local fresh = combatScene()
-    for _, action in ipairs(retired.actions) do poison(action) end
+    for _, action in ipairs(retired.actions) do
+        poison(action)
+    end
     expect(ClassicLayout.update(404), true, "remount resolves fresh combat handles")
     expect(fresh.actions[1].x, fresh.chat.x, "remounted combat bars stack")
     ClassicLayout.restore()

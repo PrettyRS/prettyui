@@ -30,14 +30,26 @@ function DragBounds.new(parent, root, onResize, edgeOffsets, isSuspended)
 end
 
 function DragBounds:Refresh()
-    if WorldMap.isSuspended() or self.isSuspended and self.isSuspended()
-        or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    if
+        WorldMap.isSuspended()
+        or self.isSuspended and self.isSuspended()
+        or ui.Interfaces:GetInterface(self.interfaceID) == nil
+    then
+        return
+    end
     local root, parent = self.root, self.parent
     local parentWidth, parentHeight = parent.width, parent.height
     local rootWidth, rootHeight = root.width, root.height
-    if parentWidth == self.parentWidth and parentHeight == self.parentHeight and
-        rootWidth == self.rootWidth and rootHeight == self.rootHeight and
-        root.x == self.lastX and root.y == self.lastY then return end
+    if
+        parentWidth == self.parentWidth
+        and parentHeight == self.parentHeight
+        and rootWidth == self.rootWidth
+        and rootHeight == self.rootHeight
+        and root.x == self.lastX
+        and root.y == self.lastY
+    then
+        return
+    end
 
     self.parentWidth, self.parentHeight = parentWidth, parentHeight
     self.rootWidth, self.rootHeight = rootWidth, rootHeight
@@ -65,8 +77,13 @@ function DragBounds:RememberPosition()
 end
 
 function DragBounds:Clamp()
-    if WorldMap.isSuspended() or self.isSuspended and self.isSuspended()
-        or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    if
+        WorldMap.isSuspended()
+        or self.isSuspended and self.isSuspended()
+        or ui.Interfaces:GetInterface(self.interfaceID) == nil
+    then
+        return
+    end
     local root, parent = self.root, self.parent
     local offsets = self.edgeOffsets
     local x = clamp(root.x, -offsets.left, parent.width - root.width + offsets.right)

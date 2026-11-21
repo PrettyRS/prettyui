@@ -21,12 +21,7 @@ function RibbonButton.new(parent, spriteID, action, options)
 
     self.interfaceID = parent.interfaceID
     self.root = Components.new(ui.Layer, parent, options)
-    self.root:SetPos(
-        options.x or 0,
-        options.y or 0,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
+    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(BUTTON_SIZE, BUTTON_SIZE)
     self.root.enabled = not self.disabled
     self.root.clickthrough = self.disabled

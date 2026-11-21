@@ -11,7 +11,9 @@ local HEIGHT = 60
 function Divider.flowOptions(options)
     local copied = {}
     if type(options) == "table" then
-        for key, value in pairs(options) do copied[key] = value end
+        for key, value in pairs(options) do
+            copied[key] = value
+        end
     end
     if copied.rowBackground == nil then copied.rowBackground = false end
     if copied.x == nil and copied.width == nil and copied.widthAnchor == nil then
@@ -32,12 +34,7 @@ function Divider.new(parent, options)
 
     self.interfaceID = parent.interfaceID
     self.root = Components.new(ui.Sprite, parent, options)
-    self.root:SetPos(
-        options.x or 0,
-        options.y or 0,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
+    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(width, HEIGHT, widthAnchor, 0)
     self.root.spriteID = Sprites.DIVIDER
     self.root.isTiling = true

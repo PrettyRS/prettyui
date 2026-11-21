@@ -157,12 +157,18 @@ function Slider.new(parent, options)
         self:_UpdateState()
         return false
     end)
-    self.thumbDrag:Subscribe(ui.Hook.ONHOLD, function(component, x, y)
-        return self:_UpdateDrag(component, x, y)
-    end)
-    self.thumbDrag:Subscribe(ui.Hook.ONDRAG, function(component, x, y)
-        return self:_UpdateDrag(component, x, y)
-    end)
+    self.thumbDrag:Subscribe(
+        ui.Hook.ONHOLD,
+        function(component, x, y)
+            return self:_UpdateDrag(component, x, y)
+        end
+    )
+    self.thumbDrag:Subscribe(
+        ui.Hook.ONDRAG,
+        function(component, x, y)
+            return self:_UpdateDrag(component, x, y)
+        end
+    )
     self.thumbDrag:Subscribe(ui.Hook.ONRELEASE, function()
         return self:_StopDrag()
     end)
@@ -197,8 +203,13 @@ function Slider:_BindButton(component, direction)
         return true
     end)
     component:Subscribe(ui.Hook.ONCLICK, function()
-        if self.disabled or (direction < 0 and self.value <= self.min) or
-            (direction > 0 and self.value >= self.max) then return false end
+        if
+            self.disabled
+            or (direction < 0 and self.value <= self.min)
+            or (direction > 0 and self.value >= self.max)
+        then
+            return false
+        end
         state.pressed = true
         self:SetValue(self.value + direction * self.step)
         return false
