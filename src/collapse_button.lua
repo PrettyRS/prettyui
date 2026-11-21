@@ -3,6 +3,7 @@ local Cursor = require("src/core/cursor")
 local FancyButton = require("src/fancy_button")
 local ComboBox = require("src/combo_box")
 local List = require("src/list")
+local SelectionButtons = require("src/selection_button")
 local SimpleButton = require("src/simple_button")
 local Slider = require("src/slider")
 local TextField = require("src/text_field")
@@ -23,24 +24,6 @@ local ITEM_GAP = 4
 local DEFAULT_INDENT = 20
 local TEXT_COLOUR = 0xE7D7B0FF
 local DISABLED_TEXT_COLOUR = 0x777777FF
-local BODY_LINE_HEIGHT = 18
-
-local function bodyFont(options)
-    if options.font ~= nil and config.Font.FromID ~= nil then
-        local succeeded, font = pcall(function() return config.Font.FromID(options.font) end)
-        if succeeded and font ~= nil then return font end
-    end
-    return config.Font.MUSEO_SANS_15PT_REGULAR
-end
-
-local function bodyLineHeight(font, options)
-    if options.lineSpacing ~= nil then return options.lineSpacing end
-    if options.font ~= nil then
-        local succeeded, baseline = pcall(function() return font.baseline end)
-        if succeeded and baseline ~= nil then return baseline end
-    end
-    return BODY_LINE_HEIGHT
-end
 
 local function copyOptions(value)
     local copy = {}
@@ -84,7 +67,6 @@ local function buildCollapseButton(parent, text, options)
     self.indent = options.indent or DEFAULT_INDENT
     self.contentHeight = 0
     self.children = {}
-    self.labels = {}
     self.equalizedButtons = {}
     self.onToggle = options.onToggle
     self._onScrollWheel = options._onScrollWheel
@@ -205,6 +187,45 @@ function CollapseButton:_NextContentY(options)
     return self.contentHeight + (options.marginTop or ITEM_GAP)
 end
 
+local function childRoot(entry)
+    if entry.isNative then return entry.component end
+    return entry.component.root
+end
+
+local function rowBottom(children, limit)
+    local bottom = 0
+    for _, entry in ipairs(children) do
+        local root = childRoot(entry)
+        if root ~= nil and root.y < limit then bottom = math.max(bottom, root.y + entry.height) end
+    end
+    return bottom
+end
+
+function CollapseButton:_ResizeChild(wrapped, height)
+    if height == wrapped.height then return end
+    local wrappedRoot = childRoot(wrapped)
+    local oldBottom = wrappedRoot.y + wrapped.height
+    local oldRowBottom = rowBottom(self.children, oldBottom)
+    wrapped.height = height
+    wrappedRoot:SetHeight(height)
+    local change = rowBottom(self.children, oldBottom) - oldRowBottom
+    local bottom = 0
+    for _, entry in ipairs(self.children) do
+        local root = childRoot(entry)
+        if root ~= nil then
+            if root.y >= oldBottom then root:SetY(root.y + change) end
+            bottom = math.max(bottom, root.y + entry.height)
+        end
+    end
+    self.contentHeight = bottom
+    self.content:SetHeight(bottom)
+    if self.expanded then self:_Resize() end
+end
+
+function CollapseButton:_WrapPaused()
+    return self.root == nil or (self.flowOwner ~= nil and self.flowOwner._destroyingManagedFlow == true)
+end
+
 function CollapseButton:BindFlow(owner)
     self.flowOwner = owner
     self:_Resize()
@@ -238,7 +259,7 @@ function CollapseButton:AddSimpleButton(content, action, options)
     options.x = options.x or 0
     options.y = self:_NextContentY(options)
     local button = SimpleButton.new(self.content, content, action, options)
-    table.insert(self.children, button)
+    table.insert(self.children, { component = button, height = height })
     if type(content) == "string" then self:_RegisterEqualizedButton(button, width) end
     self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
     return button
@@ -251,7 +272,7 @@ function CollapseButton:AddFancyButton(text, action, options)
     options.x = options.x or 0
     options.y = self:_NextContentY(options)
     local button = FancyButton.new(self.content, text, action, options)
-    table.insert(self.children, button)
+    table.insert(self.children, { component = button, height = height })
     self:_RegisterEqualizedButton(button, width)
     self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
     return button
@@ -267,7 +288,7 @@ function CollapseButton:AddSlider(options)
     options.width = options.width or 0
     options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
     local slider = Slider.new(self.content, options)
-    table.insert(self.children, slider)
+    table.insert(self.children, { component = slider, height = height })
     self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
     return slider
 end
@@ -284,9 +305,37 @@ local function addFullWidthControl(self, module, options)
     options.width = options.width or 0
     options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
     local component = module.new(self.content, options)
-    table.insert(self.children, component)
+    table.insert(self.children, { component = component, height = height })
     self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
     return component
+end
+
+local function addSelectionButton(self, module, choices, options)
+    options = copyOptions(options)
+    if options._onScrollWheel == nil then options._onScrollWheel = self._onScrollWheel end
+    local _, height = module.getSize(choices, options)
+    options.x = options.x or 0
+    options.y = self:_NextContentY(options)
+    if options.inline ~= true then
+        options.width = options.width or 0
+        options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
+    end
+    local list = module.new(self.content, choices, options)
+    local entry = { component = list, height = height }
+    table.insert(self.children, entry)
+    self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
+    return list:_BindWrapping(
+        function() return self:_WrapPaused() end,
+        function(newHeight) self:_ResizeChild(entry, newHeight) end
+    )
+end
+
+function CollapseButton:AddCheckboxButton(choices, options)
+    return addSelectionButton(self, SelectionButtons.CheckboxButton, choices, options)
+end
+
+function CollapseButton:AddRadioButton(choices, options)
+    return addSelectionButton(self, SelectionButtons.RadioButton, choices, options)
 end
 
 function CollapseButton:AddTextField(options)
@@ -311,21 +360,22 @@ function CollapseButton:AddText(value)
     options.text = tostring(options.text or "")
     options.x = options.x or 0
     options.y = self:_NextContentY(options)
-    local availableWidth = math.max(1, (self.root.width or MIN_WIDTH) - self.indent)
-    if options.height == nil then
-        local font = bodyFont(options)
-        local succeeded, lines = pcall(function()
-            return font:GetStringLineCount(
-                options.text, availableWidth, false, false, false
-            )
-        end)
-        options.height = math.max(24, (succeeded and lines or 1) * bodyLineHeight(font, options) + 6)
-    end
+    local autoHeight = options.height == nil and (options.heightAnchor or 0) == 0
     options.width = options.width or 0
     options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
     local label = Text.new(self.content, options)
-    table.insert(self.labels, label)
-    self:_SetContentHeight(math.max(self.contentHeight, options.y + options.height))
+    local entry = { component = label, isNative = true, height = label.height }
+    table.insert(self.children, entry)
+    self:_SetContentHeight(math.max(self.contentHeight, options.y + entry.height))
+    if autoHeight then
+        Text._bindWrapping(
+            label,
+            options,
+            false,
+            function() return self:_WrapPaused() end,
+            function(height) self:_ResizeChild(entry, height) end
+        )
+    end
     return label
 end
 
@@ -394,19 +444,10 @@ function CollapseButton:Destroy()
         self.contentTooltipContext = nil
     end
     for index = #self.children, 1, -1 do
-        local child = self.children[index]
-        if child then
-            child:Destroy()
-        end
+        local entry = self.children[index]
+        if not entry.isNative or loaded then entry.component:Destroy() end
     end
     self.children = {}
-    if loaded then
-        for index = #self.labels, 1, -1 do
-            local label = self.labels[index]
-            if label then label:Destroy() end
-        end
-    end
-    self.labels = {}
     self.equalizedButtons = {}
     Tooltip.unbind(self)
     if self.root then

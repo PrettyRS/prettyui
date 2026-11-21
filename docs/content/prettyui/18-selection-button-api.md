@@ -58,6 +58,11 @@ local selectedFeatures = features:GetSelectedValues()
 : Lays radio or checkbox choices out side by side on one row. It also retains
   the shared flow behavior and joins the current content row when one exists.
 
+`maxLines`
+: The most lines a choice's label may wrap onto. Defaults to **1**.
+  Use **0** for no limit. Labels are truncated with elipses after maxLines.
+  Ignored if **inLine** is set.
+
 `disabled`
 : Disables the entire group.
 

@@ -65,6 +65,12 @@ section:AddSimpleButton("A much longer action", secondAction)
 `AddTextField`, `AddComboBox`, `AddList`
 : Add full-width field controls.
 
+`AddCheckboxButton`, `AddRadioButton`
+: Add [radio and checkbox buttons](#selection-button-api).
+
+Text wrapping
+: Text added without specifying a **height** wraps as the section's width changes.
+
 Button widths
 : Textual buttons in one section equalize to the widest button.
 
