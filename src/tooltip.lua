@@ -1,6 +1,7 @@
 local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
+local WorldMap = require("src/core/world_map")
 
 local Tooltip = {}
 
@@ -53,11 +54,26 @@ local function measure(text, options)
     return width, math.max(BORDER_SIZE * 2 + 1, height)
 end
 
-local function placementOrder(preferred)
-    if preferred == "left" then return { "left", "right", "below", "above" } end
-    if preferred == "below" then return { "below", "above", "right", "left" } end
-    if preferred == "above" then return { "above", "below", "right", "left" } end
-    return { "right", "left", "below", "above" }
+local RIGHT_ORDER = { "right", "left", "below", "above" }
+local LEFT_ORDER = { "left", "right", "below", "above" }
+local BELOW_ORDER = { "below", "above", "right", "left" }
+local ABOVE_ORDER = { "above", "below", "right", "left" }
+local RIGHT_ONLY = { "right" }
+local LEFT_ONLY = { "left" }
+local BELOW_ONLY = { "below" }
+local ABOVE_ONLY = { "above" }
+
+local function placementOrder(preferred, fallback)
+    if fallback == false then
+        if preferred == "left" then return LEFT_ONLY end
+        if preferred == "below" then return BELOW_ONLY end
+        if preferred == "above" then return ABOVE_ONLY end
+        return RIGHT_ONLY
+    end
+    if preferred == "left" then return LEFT_ORDER end
+    if preferred == "below" then return BELOW_ORDER end
+    if preferred == "above" then return ABOVE_ORDER end
+    return RIGHT_ORDER
 end
 
 local function placedPosition(placement, targetX, targetY, targetWidth, targetHeight, width, height, offset)
@@ -101,9 +117,23 @@ local function destroyContext(context)
     for index = #context.tooltips, 1, -1 do
         context.tooltips[index]:Destroy()
     end
+    if context.ownedWidgets then
+        for widget in pairs(context.ownedWidgets) do widget:Destroy() end
+        context.ownedWidgets = nil
+    end
     context.children = {}
     context.tooltips = {}
     context.ownerWindow = nil
+    local parentContext = context.parentContext
+    if parentContext then
+        for index = #parentContext.children, 1, -1 do
+            if parentContext.children[index] == context then
+                table.remove(parentContext.children, index)
+                break
+            end
+        end
+        context.parentContext = nil
+    end
 end
 
 function Tooltip.unregisterContext(collection)
@@ -189,7 +219,7 @@ local function buildParts(self)
     local parts = {}
     parts.root = Components.newContent(self.parent, { _categoryPolicy = self._categoryPolicy })
     parts.root:SetSize(self.width, self.height)
-    parts.root.hidden = true
+    Components.setHidden(parts.root, true)
     parts.root.clickthrough = true
 
     local frame = Sprites.CONTENT_FRAME
@@ -253,6 +283,7 @@ end
 
 local function release(self)
     if self._parts == nil then return end
+    WorldMap.untrack(self._parts.root)
     if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self._parts.root:Destroy() end
     self._parts = nil
 end
@@ -364,7 +395,7 @@ function Tooltip:Show()
     local parentHeight = self.parent and (self.parent.height or 0) or 0
     local margin = self.options.boundsMargin or OFFSET
     local x, y
-    for _, placement in ipairs(placementOrder(self.options.placement)) do
+    for _, placement in ipairs(placementOrder(self.options.placement, self.options.placementFallback)) do
         local candidateX, candidateY = placedPosition(
             placement, targetX, targetY, targetWidth, targetHeight, self.width, self.height, offset
         )
@@ -383,7 +414,7 @@ function Tooltip:Show()
         y = clamp(y, margin, maxY)
     end
     self._parts.root:SetPos(x, y)
-    self._parts.root.hidden = false
+    Components.setHidden(self._parts.root, false)
     self._parts.root:MoveToFront()
 end
 
@@ -407,7 +438,7 @@ function Tooltip:Hide()
     if not self.keepBuilt then
         release(self)
     elseif self._parts ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
-        self._parts.root.hidden = true
+        Components.setHidden(self._parts.root, true)
     end
 end
 

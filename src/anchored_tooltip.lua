@@ -1,6 +1,7 @@
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local AnchoredTooltip = {}
 AnchoredTooltip.__index = AnchoredTooltip
@@ -183,7 +184,7 @@ local function buildAnchoredTooltip(parent, options)
     self.root = Components.newContent(parent, options)
     self.root:SetSize(self.width, self.height)
     self.root.clickthrough = options.clickthrough ~= false
-    self.root.hidden = true
+    Components.setHidden(self.root, true)
 
     self.background = Components.new(ui.Rectangle, self.root)
     self.background:SetPos(EDGE_SIZE, EDGE_SIZE)
@@ -289,12 +290,12 @@ end
 function AnchoredTooltip:Update()
     if self.root == nil then return false end
     if not self.visible then
-        self.root.hidden = true
+        Components.setHidden(self.root, true)
         return false
     end
     local succeeded, screenPosition = pcall(function() return self:_ResolveScreenPosition() end)
     if not succeeded or screenPosition == nil then
-        self.root.hidden = true
+        Components.setHidden(self.root, true)
         return false
     end
 
@@ -302,7 +303,7 @@ function AnchoredTooltip:Update()
     local parentHeight = self.parent.height or 0
     if screenPosition.x < 0 or screenPosition.y < 0 or
         screenPosition.x > parentWidth or screenPosition.y > parentHeight then
-        self.root.hidden = true
+        Components.setHidden(self.root, true)
         return false
     end
 
@@ -311,7 +312,7 @@ function AnchoredTooltip:Update()
     x = clamp(x, 0, math.max(0, parentWidth - self.width))
     y = clamp(y, 0, math.max(0, parentHeight - self.height))
     self.root:SetPos(x, y)
-    self.root.hidden = false
+    Components.setHidden(self.root, false)
     self.root:MoveToBack()
     return true
 end
@@ -341,12 +342,13 @@ end
 
 function AnchoredTooltip:Hide()
     self.visible = false
-    if self.root then self.root.hidden = true end
+    if self.root then Components.setHidden(self.root, true) end
 end
 
 function AnchoredTooltip:Destroy()
     Event.Logic.Unsubscribe(self.eventID)
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

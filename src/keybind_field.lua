@@ -2,13 +2,16 @@ local TextField = require("src/text_field")
 local Palette = require("src/core/control_palette")
 local Wheel = require("src/core/wheel")
 local Components = require("src/core/components")
+local Tooltip = require("src/tooltip")
+local WorldMap = require("src/core/world_map")
 
 local KeybindField = {}
 KeybindField.__index = KeybindField
 
 local EVENT_ID = "prettyui_keybind_field"
+local DEFAULT_HEIGHT = 24
 local CLEAR_SIZE = 16
-local CLEAR_INSET = 8
+local CLEAR_INSET = 4
 local instances = {}
 local active, hovered
 local started = false
@@ -118,16 +121,18 @@ local function startEvents()
         menu:Add("Reset to default", function()
             if available(field) then field:SetValue(field.defaultValue, true) end
         end)
-        -- Keep reset below an explicit left-click action.
-        local clear = field.clearHovered
-        menu:Add(field.clearHovered and "Clear keybind" or "Change keybind", function()
-            if available(field) then field:_Click(clear) end
-        end)
+        -- Keep reset below the field's left-click action.
+        if not field.clearHovered then
+            menu:Add("Change keybind", function()
+                if available(field) then field:_Click(false) end
+            end)
+        end
     end)
 end
 
 function KeybindField.getSize(options)
-    return TextField.getSize(options)
+    local width = TextField.getSize(options)
+    return width, options and options.height or DEFAULT_HEIGHT
 end
 
 function KeybindField.new(parent, options)
@@ -178,28 +183,60 @@ function KeybindField.new(parent, options)
 
     self.clearSprite = Components.new(ui.Sprite, self.root)
     self.clearSprite:SetSize(CLEAR_SIZE, CLEAR_SIZE)
-    self.clearSprite:SetPos(-CLEAR_INSET, 0, 1, 0.5, -1, -0.5)
-    self.clearSprite.spriteID = id.Sprite.RS3_CONTEXTUAL_INPUT_ERROR
+    self.clearSprite:SetPos(-CLEAR_SIZE - CLEAR_INSET, -CLEAR_SIZE / 2, 1, 0.5)
+    self.clearSprite.sprite = id.Sprite.RS3_CONTEXTUAL_INPUT_ERROR
     self.clearSprite.clickthrough = true
+    self.clearSprite:MoveToFront()
 
-    local function hover(_, x)
+    local parentContext = Tooltip.getContext(parent)
+    self.tooltipContext = Tooltip.registerContext(self.root, parentContext and parentContext.parent or parent, function(target)
+        local x, y
+        if parentContext then x, y = parentContext.position(self.root)
+        else x, y = self.root.x, self.root.y end
+        return x + target.x, y + target.y
+    end, parentContext)
+    self.tooltip = Tooltip.attach(self.input.root, self.root, "change keybind", {
+        followCursor = true,
+        onMouseOver = function(tooltip)
+            if available(self) then tooltip:Show() end
+        end,
+    })
+    self.input.root.clickthrough = self.disabled
+
+    local function overClear(x, y)
+        local left, top = self.clearSprite.x, self.clearSprite.y
+        return x >= left and x < left + CLEAR_SIZE
+            and y >= top and y < top + CLEAR_SIZE
+    end
+
+    local function hover(_, x, y, repeated)
         if self.disabled then return false end
         hovered = self
-        self.hovered = true
-        self.clearHovered = x >= self.input.root.width - CLEAR_SIZE - CLEAR_INSET
-        self:_UpdateState()
+        local clearHovered = overClear(x, y)
+        if not self.hovered or self.clearHovered ~= clearHovered then
+            self.hovered, self.clearHovered = true, clearHovered
+            self:_UpdateState()
+        end
+        self.tooltip.cursorX, self.tooltip.cursorY = x, y
+        local text = clearHovered and "Reset Keybind" or "change keybind"
+        if self.tooltip.options.text ~= text then self.tooltip:SetText(text) end
+        -- The attachment's follow-cursor hook already positions a visible
+        -- tooltip on mouse repeat; do not raise and reposition it twice.
+        if not repeated then self.tooltip:Show() end
         return true
     end
     self.input.root:Subscribe(ui.Hook.ONMOUSEOVER, hover)
-    self.input.root:Subscribe(ui.Hook.ONMOUSEREPEAT, hover)
+    self.input.root:Subscribe(ui.Hook.ONMOUSEREPEAT, function(component, x, y)
+        return hover(component, x, y, true)
+    end)
     self.input.root:Subscribe(ui.Hook.ONMOUSELEAVE, function()
         if hovered == self then hovered = nil end
         self.hovered, self.clearHovered = false, false
         self:_UpdateState()
         return true
     end)
-    self.input.root:Subscribe(ui.Hook.ONCLICK, function(_, x)
-        self:_Click(self.hovered and x >= self.input.root.width - CLEAR_SIZE - CLEAR_INSET)
+    self.input.root:Subscribe(ui.Hook.ONCLICK, function(_, x, y)
+        self:_Click(self.hovered and overClear(x, y))
         return true
     end)
     instances[self] = true
@@ -209,18 +246,22 @@ function KeybindField.new(parent, options)
 end
 
 function KeybindField:_UpdateState()
+    if self.disabled or not self.hovered then self.tooltip:Hide() end
     if not self.root or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     self.label.content = KeybindField.FormatValue(self.pending or self.value)
     self.label.rgba = self.disabled and Palette.DISABLED_TEXT or self.textColour
-    self.clearSprite.hidden = self.disabled or not self.hovered
-    self.focusOutline.hidden = self.disabled or not (self.hovered or active == self)
+    Components.setHidden(self.clearSprite, self.disabled or not self.hovered)
+    Components.setHidden(self.focusOutline, self.disabled or not (self.hovered or active == self))
     self.focusOutline.rgba = active == self and Palette.CARET or Palette.SELECTED
 end
 
 function KeybindField:_Click(clear)
     if not available(self) then return end
-    if clear then self:SetValue({}, #self.value > 0) end
-    self:StartListening()
+    if clear then
+        self:SetValue(self.defaultValue or {}, true)
+    else
+        self:StartListening()
+    end
 end
 
 function KeybindField:StartListening()
@@ -273,8 +314,10 @@ function KeybindField:Destroy()
     self:CancelListening()
     if hovered == self then hovered = nil end
     instances[self] = nil
+    Tooltip.unregisterContext(self.root)
     self.input:Destroy()
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end
@@ -283,6 +326,10 @@ end
 
 function KeybindField.Shutdown()
     if active then active:CancelListening() end
+    if hovered then
+        hovered.hovered, hovered.clearHovered = false, false
+        hovered:_UpdateState()
+    end
     hovered = nil
     stopEvents()
 end

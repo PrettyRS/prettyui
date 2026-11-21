@@ -2,6 +2,7 @@ local ItemSlot = require("src/item_slot")
 local Sprites = require("src/core/sprites")
 local clamp = require("src/core/math").clamp
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local AchievementPopup = {}
 AchievementPopup.__index = AchievementPopup
@@ -203,7 +204,7 @@ function AchievementPopup.new(parent, options)
         if self.elapsedTicks <= FADE_IN_TICKS then
             self.flash.alpha = 1 - self.elapsedTicks / FADE_IN_TICKS
         elseif self.elapsedTicks <= FADE_IN_TICKS + HOLD_TICKS then
-            self.flash.hidden = true
+            Components.setHidden(self.flash, true)
         elseif self.elapsedTicks <= TOTAL_TICKS then
             self:_SetVisualAlpha(1 -
                 (self.elapsedTicks - FADE_IN_TICKS - HOLD_TICKS) / FADE_OUT_TICKS)
@@ -232,6 +233,7 @@ function AchievementPopup:Destroy()
         self.itemSlot = nil
     end
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

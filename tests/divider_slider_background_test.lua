@@ -39,7 +39,9 @@ package.loaded["src/core/sprites"] = {
         increase = { normal = 10, disabled = 11 },
     },
 }
-package.loaded["src/tooltip"] = { bind = function() end, unbind = function() end }
+package.loaded["src/tooltip"] = {
+    bind = function() end, unbind = function() end, getContext = function() return nil end,
+}
 package.loaded["src/core/wheel"] = { bind = function() end }
 package.loaded["src/core/cursor"] = { apply = function() end }
 package.loaded["src/core/mouse"] = { EndCapture = function() end }

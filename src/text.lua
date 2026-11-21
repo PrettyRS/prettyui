@@ -24,11 +24,9 @@ local function fontConfig(fontID, isTitle)
 end
 
 local function lineHeight(font, options)
-    if options.lineSpacing ~= nil then return options.lineSpacing end
-    if options.font ~= nil then
-        local succeeded, baseline = pcall(function() return font.baseline end)
-        if succeeded and baseline ~= nil then return baseline end
-    end
+    if options.lineSpacing ~= nil and options.lineSpacing > 0 then return options.lineSpacing end
+    local succeeded, baseline = pcall(function() return font.baseline end)
+    if succeeded and baseline ~= nil then return baseline end
     return BODY_LINE_HEIGHT
 end
 
@@ -57,7 +55,7 @@ local function create(parent, options, isTitle)
     label.isShadowed = options.shadowed ~= false
     label.alignHorizontal = options.alignHorizontal or ui.AlignMode.TOPLEFT
     label.alignVertical = options.alignVertical or ui.AlignMode.CENTRE
-    label.maxLines = options.maxLines ~= nil and options.maxLines or (isTitle and 1 or 0)
+    label.maxLines = options.maxLines or 0
     if options.lineSpacing ~= nil then label.lineSpacing = options.lineSpacing end
     if options.tooltip ~= nil then label.enabled = true end
     Wheel.bind(label, options)
@@ -74,24 +72,37 @@ local function textOptions(value)
     return copy
 end
 
+local function bindWrapping(owner, label, options, isTitle)
+    local measuredWidth, measuredText
+    local function refresh()
+        if owner._destroyingManagedFlow then return true end
+        local width = math.max(1, label.width)
+        local text = label.content
+        if width == measuredWidth and text == measuredText then return true end
+        local font = fontConfig(label.font, isTitle)
+        local succeeded, count = pcall(function()
+            return font:GetStringLineCount(text, width, false, false, false)
+        end)
+        if not succeeded then return true end
+        measuredWidth, measuredText = width, text
+        if label.maxLines > 0 then count = math.min(count, label.maxLines) end
+        local spacing = lineHeight(font, options)
+        local glyphHeight = (font.maxAscent or spacing) + (font.maxDescent or 0)
+        local height = math.max(isTitle and 28 or 24, (count - 1) * spacing + glyphHeight + 6)
+        -- Cache before resizing: height and scrollbar changes can trigger ONRESIZE again.
+        Layout.resize(owner, label, height)
+        return true
+    end
+    label:Subscribe(ui.Hook.ONRESIZE, "prettyui_text_wrap", refresh)
+    refresh()
+end
+
 function Text.append(owner, value, isTitle)
     local options = textOptions(value)
     options.text = tostring(options.text or "")
+    local autoHeight = options.height == nil and (options.heightAnchor or 0) == 0
     -- Block titles own their row; inline controls belong to the content below.
     options._flowBreakAfter = isTitle and options.inline ~= true
-    if not isTitle and options.height == nil and options.inline ~= true and owner.contentWidth ~= nil then
-        local layout = owner._flowLayout
-        local wrapWidth = options.width
-        if wrapWidth == nil or wrapWidth <= 0 then
-            wrapWidth = owner.contentWidth - layout.paddingLeft - layout.paddingRight
-        end
-        wrapWidth = math.max(1, wrapWidth)
-        local font = fontConfig(options.font, false)
-        local succeeded, lineCount = pcall(function()
-            return font:GetStringLineCount(options.text, wrapWidth, false, false, false)
-        end)
-        if succeeded then options.height = math.max(24, lineCount * lineHeight(font, options) + 6) end
-    end
     if options.width == nil and (not isTitle or options.inline == true) then
         local font = fontConfig(options.font, isTitle)
         local succeeded, width = pcall(function() return font:GetStringWidth(options.text, false) end)
@@ -110,7 +121,9 @@ function Text.append(owner, value, isTitle)
         gap = isTitle and TITLE_GAP or BODY_GAP,
         marginTop = isTitle and TITLE_MARGIN_TOP or 0,
     })
-    return Layout.manage(owner, create(owner.content, options, isTitle), options)
+    local label = Layout.manage(owner, create(owner.content, options, isTitle), options)
+    if autoHeight then bindWrapping(owner, label, options, isTitle) end
+    return label
 end
 
 function Text.new(parent, options)

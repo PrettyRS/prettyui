@@ -1,5 +1,6 @@
 local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
+local WorldMap = require("src/core/world_map")
 
 local DragFeedback = {}
 DragFeedback.__index = DragFeedback
@@ -34,12 +35,13 @@ local function layout(frame, parts, width, height, size)
     parts.right:SetSize(border, height - border * 2)
 end
 
-local function createFrame(parent, root, sprites, size)
+local function createFrame(parent, root, sprites, size, rect)
+    rect = rect or root
     local frame = Components.new(ui.Layer, parent, {
         _categoryPolicy = Components.policyOf(root),
     })
     frame.clickthrough = true
-    frame:SetPos(root.x, root.y)
+    frame:SetPos(rect.x, rect.y)
     local parts = {
         topLeft = sprite(frame, sprites.topLeft),
         topRight = sprite(frame, sprites.topLeft, false, true),
@@ -50,16 +52,16 @@ local function createFrame(parent, root, sprites, size)
         left = sprite(frame, sprites.left, true),
         right = sprite(frame, sprites.left, true, true),
     }
-    layout(frame, parts, root.width, root.height, size)
+    layout(frame, parts, rect.width, rect.height, size)
     frame:MoveToFront()
     return frame, parts
 end
 
-function DragFeedback.new(parent, root)
+function DragFeedback.new(parent, root, rect)
     local self = setmetatable({ root = root, interfaceID = parent.interfaceID }, DragFeedback)
     -- Siblings share the dragged surface's coordinates but not its movement.
-    self.origin = createFrame(parent, root, Sprites.FEEDBACK_POSITION_FRAME, 10)
-    self.active, self.activeParts = createFrame(parent, root, Sprites.FEEDBACK_FINAL_FRAME, 8)
+    self.origin = createFrame(parent, root, Sprites.FEEDBACK_POSITION_FRAME, 10, rect)
+    self.active, self.activeParts = createFrame(parent, root, Sprites.FEEDBACK_FINAL_FRAME, 8, rect)
     return self
 end
 
@@ -69,17 +71,24 @@ function DragFeedback.newFinal(parent, root)
     return self
 end
 
-function DragFeedback:Update()
-    local root, active = self.root, self.active
-    if active.x ~= root.x or active.y ~= root.y then
-        active:SetPos(root.x, root.y)
+function DragFeedback:SetTargetRect(x, y, width, height)
+    local active = self.active
+    if active.x ~= x or active.y ~= y then
+        active:SetPos(x, y)
     end
-    if active.width ~= root.width or active.height ~= root.height then
-        layout(active, self.activeParts, root.width, root.height, 8)
+    if active.width ~= width or active.height ~= height then
+        layout(active, self.activeParts, width, height, 8)
     end
 end
 
+function DragFeedback:Update()
+    local root = self.root
+    self:SetTargetRect(root.x, root.y, root.width, root.height)
+end
+
 function DragFeedback:Destroy()
+    if self.origin then WorldMap.untrack(self.origin) end
+    if self.active then WorldMap.untrack(self.active) end
     if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
         if self.origin then self.origin:Destroy() end
         if self.active then self.active:Destroy() end

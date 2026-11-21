@@ -111,6 +111,8 @@ function Interfaces.component(component, parent, categoryID, dynamicID)
         host[category] = host[category] or {}
         host[category][id] = component
     else
+        -- A native rebuild can replace the object without changing its full ID.
+        host.static = component
         component.parentStatic = component
         component.categoryID = component.categoryID or -1
         component.dynamicID = component.dynamicID or -1

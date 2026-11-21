@@ -137,8 +137,7 @@ Panel.new(parent, options)
 : Initial position of the pop-out in its overlay parent.
 
 `popoutWidth`, `popoutHeight`
-: Optional initial dimensions for the pop-out. Interactive and programmatic
-  resizing subsequently synchronize both panel surfaces.
+: Optional initial dimensions for the pop-out.
 
 {{% /api-card %}}
 
@@ -168,6 +167,27 @@ Panel.new(parent, options)
   interface units. Programmatic moves and cancelled drags do not notify.
   Restore saved positions with **x**, **y** for standalone panels or
   **popoutX**, **popoutY** for pop-outs, without position anchors.
+
+{{% /api-card %}}
+
+{{% api-card %}}
+
+### Hiding and closing
+
+`onClose`
+: Callback receiving the panel, invoked by `Close()`.
+
+`destroyOnClose`
+: Makes `Close()` destroy the panel instead of hiding it.
+
+`Hide()`
+: Hides the panel without invoking **onClose**. 
+
+`Show()`
+: Shows and raises the panel.
+
+`Close()`
+: Invokes **onClose**, then hides or destroys the panel in accordance with the **destroyOnClose** setting.
 
 {{% /api-card %}}
 

@@ -242,6 +242,7 @@ function Layout.resizeRect(owner, component, x, y, width, height)
     local root = componentRoot(component)
     if root == nil then return end
     local dy = y - root.y
+    local widthChanged = width ~= root.width
     local hasRow = false
     for _, entry in ipairs(owner._managedFlowEntries or {}) do
         if entry.component == component then
@@ -255,11 +256,13 @@ function Layout.resizeRect(owner, component, x, y, width, height)
             end
             placement.x, placement.y = x, y
             placement.xAnchor, placement.yAnchor = 0, 0
-            placement.width, placement.height = width, height
-            placement.widthAnchor = 0
+            placement.height = height
             placement._flowExplicitX = true
-            placement._flowFillWidth = false
-            placement._flowWidth = nil
+            if widthChanged then
+                placement.width, placement.widthAnchor = width, 0
+                placement._flowFillWidth = false
+                placement._flowWidth = nil
+            end
             break
         end
         if not entry.placement._flowAbsolute then
@@ -267,14 +270,15 @@ function Layout.resizeRect(owner, component, x, y, width, height)
         end
     end
     root:SetPos(x, y)
-    root:SetSize(width, height)
+    if widthChanged then root:SetSize(width, height) else root:SetHeight(height) end
     reflow(owner)
     refreshRowBackgrounds(owner)
 end
 
 function Layout.destroyManaged(owner)
     local entries = owner._managedFlowEntries or {}
-    local loaded = ui.Interfaces:GetInterface(owner.interfaceID) ~= nil
+    local loaded = ui.Interfaces:GetInterface(owner._scroll and owner._scroll.interfaceID
+        or owner.interfaceID) ~= nil
     owner._destroyingManagedFlow = true
     for index = #entries, 1, -1 do
         local entry = entries[index]

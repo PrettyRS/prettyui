@@ -5,6 +5,8 @@ local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local InterfaceMouse = require("src/core/mouse")
+local Scroll = require("src/core/scroll")
+local WorldMap = require("src/core/world_map")
 
 local Slider = {}
 Slider.__index = Slider
@@ -170,6 +172,8 @@ function Slider.new(parent, options)
 
     self:SetValue(options.value == nil and self.min or options.value, false)
     self:SetDisabled(self.disabled)
+    self.widthScroll = Scroll.findContaining(Tooltip.getContext(parent))
+    if self.widthScroll then self.widthScroll:RegisterWidthTarget(self) end
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
 end
@@ -250,12 +254,22 @@ function Slider:_LayoutValue()
     local filledWidth = thumbX + math.ceil(THUMB_WIDTH / 2)
     local middleWidth = math.max(0, filledWidth - BAR_END_WIDTH * 2)
     local barHidden = self.value <= self.min
-    self.barLeft.hidden = barHidden
+    Components.setHidden(self.barLeft, barHidden)
     self.barMiddle:SetWidth(middleWidth)
-    self.barMiddle.hidden = barHidden or middleWidth == 0
+    Components.setHidden(self.barMiddle, barHidden or middleWidth == 0)
     self.barRight:SetX(math.max(BAR_END_WIDTH, filledWidth - BAR_END_WIDTH))
-    self.barRight.hidden = barHidden
+    Components.setHidden(self.barRight, barHidden)
     if self.dragStart == nil then self:_LayoutThumbDrag() end
+end
+
+-- Places the marker and filled bar based on the track's current width.
+function Slider:Refresh()
+    if self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
+    self:_LayoutValue()
+end
+
+function Slider:_OnContentWidthChanged()
+    self:Refresh()
 end
 
 function Slider:_LayoutThumbDrag()
@@ -321,14 +335,20 @@ function Slider:SetTooltip(value)
 end
 
 function Slider:Destroy()
+    if self.widthScroll then
+        self.widthScroll:UnregisterWidthTarget(self)
+        self.widthScroll = nil
+    end
     self:_StopDrag()
     Tooltip.unbind(self)
     local loaded = ui.Interfaces:GetInterface(self.interfaceID) ~= nil
     if self.thumbDrag then
+        WorldMap.untrack(self.thumbDrag)
         if loaded then self.thumbDrag:Destroy() end
         self.thumbDrag = nil
     end
     if self.root then
+        WorldMap.untrack(self.root)
         if loaded then self.root:Destroy() end
         self.root = nil
     end

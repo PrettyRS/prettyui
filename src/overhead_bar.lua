@@ -1,5 +1,6 @@
 local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
+local WorldMap = require("src/core/world_map")
 
 local OverheadBar = {}
 OverheadBar.__index = OverheadBar
@@ -54,7 +55,7 @@ local function create(entity, targetType, options)
     self.root = Components.new(ui.Layer, parent, options)
     self.root:SetSize(variant.width, variant.height)
     self.root.clickthrough = true
-    self.root.hidden = true
+    Components.setHidden(self.root, true)
     self.background = sprite(self.root, variant.background, variant.width, variant.height)
     self.fillClip = Components.new(ui.Layer, self.root)
     self.fillClip:SetSize(0, variant.height)
@@ -111,11 +112,11 @@ function OverheadBar:Update()
         return false
     end
     if not self.visible then
-        self.root.hidden = true
+        Components.setHidden(self.root, true)
         return false
     end
     if self.targetType == "loc" and (self.entity.isHidden or self.entity.isRoofRemoved) then
-        self.root.hidden = true
+        Components.setHidden(self.root, true)
         return false
     end
 
@@ -134,7 +135,7 @@ function OverheadBar:Update()
     end
     if not succeeded or screen == nil or screen.x < 0 or screen.y < 0
         or screen.x > self.parent.width or screen.y > self.parent.height then
-        self.root.hidden = true
+        Components.setHidden(self.root, true)
         return false
     end
     local width, height = self.variant.width, self.variant.height
@@ -143,7 +144,7 @@ function OverheadBar:Update()
     x = math.max(0, math.min(self.parent.width - width, x))
     y = math.max(0, math.min(self.parent.height - height, y))
     if x ~= self.root.x or y ~= self.root.y then self.root:SetPos(x, y) end
-    self.root.hidden = false
+    Components.setHidden(self.root, false)
     return true
 end
 
@@ -154,13 +155,14 @@ end
 
 function OverheadBar:Hide()
     self.visible = false
-    if self.root then self.root.hidden = true end
+    if self.root then Components.setHidden(self.root, true) end
 end
 
 function OverheadBar:Destroy()
     Event.Logic.Unsubscribe(self.eventID)
     active[self] = nil
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

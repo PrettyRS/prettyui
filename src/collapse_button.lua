@@ -11,6 +11,7 @@ local Text = require("src/text")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local CollapseButton = {}
 CollapseButton.__index = CollapseButton
@@ -125,7 +126,7 @@ local function buildCollapseButton(parent, text, options)
     self.content = Components.newContent(self.root)
     self.content:SetPos(self.indent, SEGMENT_SIZE + CONTENT_GAP)
     self.content:SetSize(-self.indent, 0, 1.0)
-    self.content.hidden = not self.expanded
+    Components.setHidden(self.content, not self.expanded)
     self.content.clickthrough = false
     Wheel.bind(self.content, options)
 
@@ -332,7 +333,7 @@ function CollapseButton:SetExpanded(expanded)
     expanded = expanded == true
     if self.expanded == expanded then return end
     self.expanded = expanded
-    self.content.hidden = not expanded
+    Components.setHidden(self.content, not expanded)
     self:_Resize()
     self:_UpdateState()
     if self.onToggle then self.onToggle(self, expanded) end
@@ -409,6 +410,7 @@ function CollapseButton:Destroy()
     self.equalizedButtons = {}
     Tooltip.unbind(self)
     if self.root then
+        WorldMap.untrack(self.root)
         if loaded then self.root:Destroy() end
         self.root = nil
         self.content = nil

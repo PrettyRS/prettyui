@@ -62,9 +62,13 @@ Event = {
     },
 }
 local lockValue, transparencyValue = 0, 0
+local classicValue = 0
 var = { VarPlayer = {
     TOPLEVEL_V2_CUSTOMIZATION_LOCK = setmetatable({}, { __index = function() return lockValue end }),
     TOPLEVEL_V2_TRANSPARENCY = setmetatable({}, { __index = function() return transparencyValue end }),
+    TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, { __index = function(_, key)
+        if key == "value" then return classicValue end
+    end }),
 } }
 local function listening()
     local count = 0
@@ -76,6 +80,17 @@ local function transmit(varID)
 end
 
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
+expect(NativeInterfaceSettings.isClassicUI(), false, "modern mode is read live")
+expect(listening(), 0, "classic mode reading does not subscribe to variable transmissions")
+classicValue = 1
+expect(NativeInterfaceSettings.isClassicUI(), true, "legacy interface value one enables classic mode")
+classicValue = 2
+expect(NativeInterfaceSettings.isClassicUI(), false, "non-one legacy values are not classic mode")
+classicValue = -1
+expect(NativeInterfaceSettings.isClassicUI(), false, "negative legacy values are not classic mode")
+classicValue = 0
+expect(NativeInterfaceSettings.isClassicUI(), false, "returning to modern mode takes effect immediately")
+expect(listening(), 0, "live mode reads never install setting watchers")
 local Window = require("src/window")
 local Panel = require("src/panel")
 local parent = component()
@@ -219,6 +234,45 @@ expect(unlockedPanel.altDragSurface, unlockedPanel.dock, "an opted-out panel can
 altDown = false
 unlockedPanel:Destroy()
 lockValue = 0
+
+-- Transparency and lock may share a base variable: both varbits must refresh
+-- from the same transmission, never from the transparency varbit's own ID.
+local transparencyVar = var.VarPlayer.TOPLEVEL_V2_TRANSPARENCY
+id.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = -13
+var.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = setmetatable({
+    isVarBit = true, baseVar = { id = 12 },
+}, { __index = function(_, key)
+    if key == "value" then return transparencyValue end
+end })
+package.loaded["src/core/native_interface_settings"] = nil
+package.loaded["src/window"] = nil
+local BitSettings = require("src/core/native_interface_settings")
+local BitWindow = require("src/window")
+lockValue, transparencyValue = 0, 51
+local bitCalls = 0
+BitSettings.watchTransparency("bit", function() bitCalls = bitCalls + 1 end)
+local bitWindow = BitWindow.new(parent, {
+    title = "Varbit", width = 300, height = 200,
+    resizable = true, useNativeTransparency = true,
+})
+expect(bitCalls, 1, "a varbit watcher reads the current transparency")
+expect(bitWindow.background.alpha, 0.8, "native-following window reads the transparency varbit")
+expect(bitWindow.resize.enabled, true, "shared-base lock starts unlocked")
+transparencyValue = 102
+lockValue = 1
+transmit(-13)
+transmit(99)
+expect(bitCalls, 1, "own and unrelated variable transmissions do not refresh the varbit")
+expect(bitWindow.background.alpha, 0.8, "unrelated transmissions do not fade the window")
+transmit(12)
+expect(bitCalls, 2, "the base variable transmission refreshes the transparency watcher")
+expect(bitWindow.background.alpha, 0.6, "the base variable transmission fades the window")
+expect(bitWindow.resize.enabled, false, "shared-base transmission also updates interface lock")
+bitWindow:Destroy()
+BitSettings.unwatchTransparency("bit")
+expect(listening(), 0, "destroying the varbit followers releases their subscription")
+id.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = 13
+var.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = transparencyVar
 
 -- A variable the client does not know leaves its setting unwatched: no listening, no
 -- callback, and the component keeps its own behaviour. The other setting still works.

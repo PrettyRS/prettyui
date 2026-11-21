@@ -36,6 +36,7 @@ class Method:
     source: str = ""
     description: str = ""
     param_types: dict[str, str] = field(default_factory=dict)
+    overloads: list[tuple[dict[str, str], list[str]]] = field(default_factory=list)
 
 
 @dataclass
@@ -321,6 +322,11 @@ def enrich_with_metadata(definitions: dict[str, Definition], metadata_path: Path
                 method.param_types = dict(override["params"])
             if "returns" in override:
                 method.returns = list(override["returns"])
+            if "overloads" in override:
+                method.overloads = [
+                    (dict(overload["params"]), list(overload["returns"]))
+                    for overload in override["overloads"]
+                ]
             if "description" in override:
                 method.description = override["description"]
             if "static" in override:
@@ -475,10 +481,15 @@ def collect_definitions(exports: dict[str, tuple[str, str | None]]) -> dict[str,
                 existing.returns = method.returns.copy()
                 if "options" in existing.params:
                     existing.param_types.update(method.param_types)
-        if name in {"Window", "SimpleView"}:
+        if name in {"Window", "SimpleView", "NisPanel"}:
             scroll = function_map(ROOT / "src/core/scroll.lua").get("Scroll", {})
-            merge_forwarded_methods(definition, scroll)
-        if name in {"Window", "SimpleView", "Panel", "Tabs"}:
+            # Only Scroll.install's public host API is forwarded, not controller internals.
+            merge_forwarded_methods(definition, {
+                method: scroll[method]
+                for method in ("SetContentHeight", "SetScrollPosition", "ScrollBy", "ScrollToChild", "SetScrollable")
+                if method in scroll
+            })
+        if name in {"Window", "SimpleView", "NisPanel", "Panel", "Tabs"}:
             # Layout.configure consumes the nested layout/textLayout/contentLayout
             # table, not top-level component options.
             if "layout" in definition.options or "textLayout" in definition.options:
@@ -533,6 +544,14 @@ def emit_method(name: str, method: Method, owner: str, exported: bool) -> list[s
         rows.extend("---" + line for line in method.description.splitlines())
     elif method.source:
         rows.append(f"---Source: {method.source}")
+    for params, returns in method.overloads:
+        arguments = []
+        for arg, raw_type in params.items():
+            typ = annotation_type(raw_type)
+            optional = typ.endswith("?")
+            arguments.append(f"{arg}{'?' if optional else ''}: {typ[:-1] if optional else typ}")
+        result = ", ".join(annotation_type(returned) for returned in returns)
+        rows.append(f"---@overload fun({', '.join(arguments)}): {result}")
     for arg in method.params:
         typ = annotation_type(method.param_types.get(arg, "any"))
         rows.append(f"---@param {arg} {typ}")

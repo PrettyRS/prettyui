@@ -42,6 +42,12 @@ attachment:SetText("Updated information")
 `tooltip = options`
 : Customizes text, maximum width, dimensions, position, or overlay parent.
 
+`placement`, `placementFallback`
+: **placement** prefers `"above"`, `"below"`, `"left"`, or `"right"` (the default).
+  Set **placementFallback = false** to keep that side instead of trying another
+  when space is limited. The result still stays within the overlay parent unless
+  **constrainToParent = false**.
+
 Overlay
 : Inherits the owning window's top-level coordinate space, so tooltips render above windows without scroll viewport clipping.
 
