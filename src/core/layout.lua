@@ -19,6 +19,14 @@ local function finalizeRow(layout)
     layout.row = nil
 end
 
+-- makes components with manually specified y positions occupy height in the layout.
+local function stackBelowPositioned(layout, y, height, gap)
+    if not layout.stackBelowPositioned then return end
+    finalizeRow(layout)
+    layout.nextY = math.max(layout.nextY, y + height + gap)
+    layout.hasItems = true
+end
+
 local function growContent(owner, bottom)
     if owner.SetContentHeight == nil then return end
     local layout = owner._flowLayout
@@ -37,6 +45,7 @@ function Layout.configure(owner, options)
         paddingBottom = options.paddingBottom or options.padding or DEFAULT_PADDING,
         columnGap = options.columnGap or DEFAULT_COLUMN_GAP,
         rowGap = options.rowGap or DEFAULT_ROW_GAP,
+        stackBelowPositioned = options.stackBelowPositioned == true,
         row = nil,
         hasItems = false,
         minimumContentHeight = owner.contentHeight or 0,
@@ -64,6 +73,7 @@ function Layout.place(owner, value, defaults)
     if absolute then
         options.x = options.x or layout.paddingLeft
         options.y = options.y or layout.nextY
+        stackBelowPositioned(layout, options.y, height, gap)
     elseif options.inline == true and layout.row ~= nil then
         options.x = options.x or layout.row.nextX
         options.y = layout.row.y + (options.offsetY or 0)
@@ -165,7 +175,9 @@ local function reflow(owner)
             local gap = placement._flowGap or layout.rowGap
 
             if placement._flowAbsolute == true then
-                contentBottom = math.max(contentBottom, (root.y or placement.y or 0) + height)
+                local y = root.y or placement.y or 0
+                contentBottom = math.max(contentBottom, y + height)
+                stackBelowPositioned(layout, y, height, gap)
             elseif placement.inline == true and layout.row ~= nil then
                 local x = placement._flowExplicitX and placement.x or layout.row.nextX
                 local y = layout.row.y + (placement.offsetY or 0)

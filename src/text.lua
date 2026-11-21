@@ -72,10 +72,10 @@ local function textOptions(value)
     return copy
 end
 
-function Text._bindWrapping(label, options, isTitle, paused, onHeight)
+local function bindWrapping(owner, label, options, isTitle)
     local measuredWidth, measuredText
     local function refresh()
-        if paused() then return true end
+        if owner._destroyingManagedFlow then return true end
         local width = math.max(1, label.width)
         local text = label.content
         if width == measuredWidth and text == measuredText then return true end
@@ -90,7 +90,7 @@ function Text._bindWrapping(label, options, isTitle, paused, onHeight)
         local glyphHeight = (font.maxAscent or spacing) + (font.maxDescent or 0)
         local height = math.max(isTitle and 28 or 24, (count - 1) * spacing + glyphHeight + 6)
         -- Cache before resizing: height and scrollbar changes can trigger ONRESIZE again.
-        onHeight(height)
+        Layout.resize(owner, label, height)
         return true
     end
     label:Subscribe(ui.Hook.ONRESIZE, "prettyui_text_wrap", refresh)
@@ -123,15 +123,7 @@ function Text.append(owner, value, isTitle)
         marginTop = isTitle and TITLE_MARGIN_TOP or 0,
     })
     local label = Layout.manage(owner, create(owner.content, options, isTitle), options)
-    if autoHeight then
-        options._remeasure = Text._bindWrapping(
-            label,
-            options,
-            isTitle,
-            function() return owner._destroyingManagedFlow end,
-            function(height) Layout.resize(owner, label, height) end
-        )
-    end
+    if autoHeight then options._remeasure = bindWrapping(owner, label, options, isTitle) end
     return label
 end
 
