@@ -225,6 +225,16 @@ local function refreshRowBackgrounds(owner)
     end
 end
 
+function Layout.refresh(owner)
+    for _, entry in ipairs(owner._managedFlowEntries or {}) do
+        if entry.placement._remeasure then entry.placement._remeasure() end
+        local component = entry.component
+        if type(component) == "table" and component.RefreshLayout then component:RefreshLayout() end
+    end
+    reflow(owner)
+    refreshRowBackgrounds(owner)
+end
+
 function Layout.resize(owner, component, height)
     local root = componentRoot(component)
     if root == nil then return end
