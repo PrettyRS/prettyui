@@ -59,17 +59,8 @@ section:AddSimpleButton("A much longer action", secondAction)
 
 ### Content and control
 
-`AddText`, `AddSimpleButton`, `AddFancyButton`
-: Add flow-managed content to the expanded region.
-
-`AddTextField`, `AddComboBox`, `AddList`
-: Add full-width field controls.
-
-`AddCheckboxButton`, `AddRadioButton`
-: Add [radio and checkbox buttons](#selection-button-api).
-
-Text wrapping
-: Text added without specifying a **height** wraps as the section's width changes.
+`Add…` methods
+: **Add…** methods can be used to add any simple control to a section.
 
 Button widths
 : Textual buttons in one section equalize to the widest button.

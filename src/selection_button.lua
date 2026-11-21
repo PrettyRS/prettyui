@@ -221,15 +221,8 @@ function SelectionButton.new(kind, parent, choices, options)
 end
 
 function SelectionButton:BindFlow(owner)
-    return self:_BindWrapping(
-        function() return owner._destroyingManagedFlow end,
-        function(height) Layout.resize(owner, self, height) end
-    )
-end
-
-function SelectionButton:_BindWrapping(paused, onHeight)
+    self.flowOwner = owner
     if self.maxLines == 1 then return self end
-    self.wrapPaused, self.onWrapHeight = paused, onHeight
     for _, item in ipairs(self.items) do
         item.label.maxLines = self.maxLines
     end
@@ -243,7 +236,7 @@ function SelectionButton:_BindWrapping(paused, onHeight)
 end
 
 function SelectionButton:_Rewrap()
-    if self.root == nil or self.wrapPaused() then return end
+    if self.root == nil or self.flowOwner._destroyingManagedFlow then return end
     local width = math.max(1, self.items[1].label.width)
     if width == self.wrappedWidth then return end
     self.wrappedWidth = width
@@ -254,7 +247,7 @@ function SelectionButton:_Rewrap()
         item.row:SetHeight(height)
         y = y + height
     end
-    self.onWrapHeight(y)
+    Layout.resize(self.flowOwner, self, y)
 end
 
 function SelectionButton:_RebuildSelectedValues()

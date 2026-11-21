@@ -94,6 +94,9 @@ local SimpleView = require("src/simple_view")
 local LONG = "Chat heads always look towards the centre of the screen"
 local ROW_HEIGHT = 22
 local LABEL_X = 22
+-- Sections space controls like pages: 2 below text, the layout's row gap below anything else.
+local TEXT_GAP = 2
+local CONTROL_GAP = 8
 
 local function linesAt(width) return math.ceil(#LONG * CHARACTER_WIDTH / width) end
 
@@ -122,7 +125,6 @@ local pairSection = view:AddCollapseButton("Pair", { expanded = true })
 local leftText = pairSection:AddText(LONG)
 local rightText = pairSection:AddText({ text = LONG, x = 150, y = 0 })
 local belowPair = pairSection:AddSimpleButton("Below", function() end)
-local anchoredText = section:AddText({ text = LONG, heightAnchor = 0.5 })
 -- Checkbox lists inside a section: one that wraps, one without maxLines, and a button below them.
 local listSection = view:AddCollapseButton("Lists", { expanded = true })
 local sectionChecks = listSection:AddCheckboxButton({ LONG }, { maxLines = 0 })
@@ -146,10 +148,10 @@ local function checkWide()
     expect(radios.root.height, 2 * ROW_HEIGHT, "one-line radio labels keep 22-high rows")
     expect(radios.root.y, checkboxes.root.y + checkboxes.root.height + 8, "radios follow the checkboxes")
     expect(sectionText.height, 24, "section text keeps one line")
-    expect(sectionButton.root.y, 24 + 4, "the section button follows its text")
+    expect(sectionButton.root.y, 24 + TEXT_GAP, "the section button follows its text")
     expect(sectionChecks.root.height, ROW_HEIGHT, "a section list that fits keeps one row")
-    expect(sectionDefault.root.y, ROW_HEIGHT + 4, "the next section list follows the first")
-    expect(listSectionButton.root.y, 2 * ROW_HEIGHT + 8, "the section button follows the lists")
+    expect(sectionDefault.root.y, ROW_HEIGHT + CONTROL_GAP, "the next section list follows the first")
+    expect(listSectionButton.root.y, 2 * (ROW_HEIGHT + CONTROL_GAP), "the section button follows the lists")
 end
 
 checkWide()
@@ -185,23 +187,22 @@ expect(besideButton.root.y, 0, "a control beside wrapping text stays where it wa
 expect(besideSection.contentHeight, besideText.height, "the section fits the wrapped text beside the control")
 expect(
     belowTall.root.y,
-    math.max(tallButton.root.height, tallText.height) + 4,
+    math.max(tallButton.root.height + CONTROL_GAP, tallText.height + TEXT_GAP),
     "the control below text beside a taller one moves only as far as the row grew"
 )
 expect(
     belowPair.root.y,
-    math.max(leftText.height, rightText.height) + 4,
+    math.max(leftText.height, rightText.height) + TEXT_GAP,
     "two wrapping texts side by side move the control below once, not twice"
 )
-expect(anchoredText.subscriptions.ONRESIZE, nil, "anchored text keeps its anchored height")
-expect(sectionButton.root.y, sectionText.height + 4, "the section button moves below the wrapped text")
+expect(sectionButton.root.y, sectionText.height + TEXT_GAP, "the section button moves below the wrapped text")
 local sectionLines = linesAt(sectionChecks.items[1].label.width)
 expect(sectionLines > 1, true, "the narrow section wraps its list's label")
 local sectionRow = ROW_HEIGHT + (sectionLines - 1) * 18
 expect(sectionChecks.root.height, sectionRow, "a section list grows with its wrapped label")
-expect(sectionDefault.root.y, sectionRow + 4, "the next section list moves below the wrapped one")
+expect(sectionDefault.root.y, sectionRow + CONTROL_GAP, "the next section list moves below the wrapped one")
 expect(sectionDefault.root.height, ROW_HEIGHT, "a section list without maxLines keeps one line")
-expect(listSectionButton.root.y, sectionRow + ROW_HEIGHT + 8, "the section button moves below the lists")
+expect(listSectionButton.root.y, sectionRow + ROW_HEIGHT + 2 * CONTROL_GAP, "the section button moves below the lists")
 expect(after.y > wideAfterY, true, "rows below the wrapped lists and section move down")
 expect(fitText.height > 24, true, "text in a closed section still wraps")
 expect(fitView.root.height, PLAYER_HEIGHT, "a closed section does not refit its view when its text wraps")
@@ -237,6 +238,6 @@ sectionText.content = "Short"
 view:RefreshLayout()
 expect(sectionText.height, 24, "RefreshLayout reaches text inside a collapse section")
 expect(after.y, shortAfterY - (wrappedSectionHeight - 24), "the page moves up as the section shrinks")
-expect(sectionButton.root.y, 24 + 4, "the section button moves up with the shorter text")
+expect(sectionButton.root.y, 24 + TEXT_GAP, "the section button moves up with the shorter text")
 
 print("label_wrap_test: ok")

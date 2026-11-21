@@ -31,7 +31,7 @@ hero:
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
 - Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default. On classic interface mode, NisPanels adapt to an osrs-like sidebar layout.
 - Added a `maxLines` option to [radio and checkbox buttons](index.html#selection-button-api). Setting this option allows Label text to wrap if needed to fit the parent's width.
-- Added `AddCheckboxButton` and `AddRadioButton` to [collapse buttons](index.html#collapse-button-api).
+- [Collapse buttons](index.html#collapse-button-api) now accept every `Add…` method a window has except `AddTabs`, `AddPanel` and `AddCollapseButton`.
 - Added `RefreshLayout()` to windows, simple views, panels, tab pages and collapse buttons. Call it after changing content in place, such as a label's text, to re-wrap text and re-flow the content.
 
 ### Changed
@@ -39,6 +39,7 @@ hero:
 - Added `Refresh()` to [sliders](index.html#slider-api), which can update the marker's position again after the slider's width changes.
 - Titles and body text now wrap and resize vertically as their available width changes.
 - Titles no longer default to a single-line limit.
+- [Collapse buttons](index.html#collapse-button-api) now lay out their content like windows: controls use window spacing instead of a fixed 4 px gap, `inline` controls share a row, `marginTop` adds to the gap instead of replacing it, and destroying a control moves the ones below it up.
 
 
 ### Fixed
