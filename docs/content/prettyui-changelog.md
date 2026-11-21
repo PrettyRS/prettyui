@@ -30,6 +30,9 @@ hero:
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
 - Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
 - Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default. On classic interface mode, NisPanels adapt to an osrs-like sidebar layout.
+- Added a `maxLines` option to [radio and checkbox buttons](index.html#selection-button-api). Setting this option allows Label text to wrap if needed to fit the parent's width.
+- Added `AddCheckboxButton` and `AddRadioButton` to [collapse buttons](index.html#collapse-button-api).
+- Added `RefreshLayout()` to windows, simple views, panels, tab pages and collapse buttons. Call it after changing content in place, such as a label's text, to re-wrap text and re-flow the content.
 
 ### Changed
 - PrettyUI components are now hidden while the player is viewing the world map.
@@ -49,6 +52,7 @@ hero:
 - Dragging a scrollbar no longer stops while the mouse passes over a resizable window's edge.
 - Fixed custom buffs and debuffs flickering between rows near the native bar's wrap threshold.
 - Fixed a crash that might occur when pressing alt after destroying a panel mounted on a parent.
+- Fixed how Text added to a [collapse button](index.html#collapse-button-api) wraps and resizes to avoid clipping.
 
 ## 1.3.0 2026-11-19 {#v1-3-0}
 
