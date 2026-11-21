@@ -547,11 +547,17 @@ function Panel.new(parent, options, flowManaged)
         Components.checkContentParent(parent, policyOptions)
         Components.checkContentParent(overlayParent, policyOptions)
     end
-    return Components.withBatch(parent, function()
+    local panel = Components.withBatch(parent, function()
         return Components.withBatch(overlayParent, function()
             return buildPanel(parent, options, flowManaged, overlayParent, policy)
         end)
     end)
+    if context and flowManaged ~= true then
+        context.ownedWidgets = context.ownedWidgets or {}
+        context.ownedWidgets[panel] = true
+        panel._owningContext = context
+    end
+    return panel
 end
 
 function Panel:_UpdateResizeEnabled()
@@ -1161,6 +1167,11 @@ function Panel:AddSlider(options)
 end
 
 function Panel:Destroy()
+    if self.root == nil then return end
+    if self._owningContext then
+        self._owningContext.ownedWidgets[self] = nil
+        self._owningContext = nil
+    end
     WorldMap.unwatch(self)
     NativeInterfaceSettings.unwatchTransparency(self)
     NativeInterfaceSettings.unwatchLock(self)
