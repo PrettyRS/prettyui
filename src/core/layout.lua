@@ -151,6 +151,11 @@ local function componentRoot(component)
     return component and (component.root or component) or nil
 end
 
+local function flowHeight(root, placement)
+    if (placement.heightAnchor or 0) ~= 0 then return placement.height or 0 end
+    return root.height or placement.height or 0
+end
+
 local function setFlowPosition(owner, root, placement, x, y)
     root:SetPos(x, y, placement.xAnchor or 0, placement.yAnchor or 0)
     if placement._flowFillWidth then
@@ -171,7 +176,7 @@ local function reflow(owner)
         local root = componentRoot(entry.component)
         local placement = entry.placement
         if root ~= nil then
-            local height = root.height or placement.height or 0
+            local height = flowHeight(root, placement)
             local gap = placement._flowGap or layout.rowGap
 
             if placement._flowAbsolute == true then

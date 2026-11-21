@@ -43,6 +43,7 @@ hero:
 
 
 ### Fixed
+- Controls with a `heightAnchor` no longer make a scrolling page or a collapse section taller each time its layout re-flows.
 - Improved hover feedback on keybind fields and restored the missing clear sprite for resetting keybinds.
 - [Windows](index.html#window-api) can now be positioned visually flush against the edges of their parents.
 - [Slider](index.html#slider-api) markers now move with the track when the window or panel holding them is resized.
