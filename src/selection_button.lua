@@ -13,6 +13,7 @@ local ROW_HEIGHT = 22
 local LABEL_X = 22
 local MIN_WIDTH = 80
 local INLINE_CHOICE_GAP = 12
+local LINE_HEIGHT = 18
 local TEXT_COLOUR = 0xE7D7B0FF
 local DISABLED_TEXT_COLOUR = 0x777777FF
 
@@ -59,6 +60,15 @@ local function measureChoiceWidth(choice)
     return LABEL_X + (succeeded and width or #normalized.text * 7)
 end
 
+local function measureLineCount(text, width, maxLines)
+    local succeeded, count = pcall(function()
+        return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringLineCount(text, width, false, false, false)
+    end)
+    if not succeeded then return 1 end
+    if maxLines > 0 then count = math.min(count, maxLines) end
+    return math.max(1, count)
+end
+
 local function measureWidth(choices)
     local widest = 0
     for _, choice in ipairs(choices) do
@@ -95,7 +105,7 @@ local function buildSelectionButton(kind, parent, choices, options)
     local self = setmetatable({}, SelectionButton)
     self.kind = kind
     self.items = items
-    self.wrap = options.wrap == true and not choicesInline
+    self.maxLines = not choicesInline and options.maxLines or 1
     self.disabled = options.disabled == true
     self.onChange = options.onChange
     self.textColour = options.colour or TEXT_COLOUR
@@ -164,14 +174,14 @@ local function buildSelectionButton(kind, parent, choices, options)
 
         item.label = Components.new(ui.Text, row)
         item.label:SetPos(LABEL_X, 0)
-        item.label:SetSize(-LABEL_X, ROW_HEIGHT, 1.0)
+        item.label:SetSize(-LABEL_X, 0, 1.0, 1.0)
         item.label.content = item.text
         item.label.font = id.Font.MUSEO_SANS_15PT_REGULAR
         item.label.rgba = self.textColour
         item.label.isShadowed = options.shadowed ~= false
         item.label.alignHorizontal = ui.AlignMode.TOPLEFT
         item.label.alignVertical = ui.AlignMode.CENTRE
-        item.label.maxLines = self.wrap and 0 or 1
+        item.label.maxLines = 1
         item.label.clickthrough = true
 
         row:Subscribe(ui.Hook.ONMOUSEOVER, function()
@@ -201,7 +211,6 @@ local function buildSelectionButton(kind, parent, choices, options)
     end
 
     Tooltip.bind(self, self.root, parent, options.tooltip)
-    if self.wrap and options._flowAbsolute == nil then self:_BindWrapping() end
     return self
 end
 
@@ -211,41 +220,41 @@ function SelectionButton.new(kind, parent, choices, options)
     end)
 end
 
-function SelectionButton:_LayoutWrappedChoices()
-    local width = math.max(1, math.floor(self.root.width) - LABEL_X)
-    if width == self._labelWidth then return end
-    self._labelWidth = width
-    local font = config.Font.MUSEO_SANS_15PT_REGULAR
-    local spacing = font.baseline or 18
+function SelectionButton:BindFlow(owner)
+    return self:_BindWrapping(
+        function() return owner._destroyingManagedFlow end,
+        function(height) Layout.resize(owner, self, height) end
+    )
+end
+
+function SelectionButton:_BindWrapping(paused, onHeight)
+    if self.maxLines == 1 then return self end
+    self.wrapPaused, self.onWrapHeight = paused, onHeight
+    for _, item in ipairs(self.items) do
+        item.label.maxLines = self.maxLines
+    end
+    -- Every label has the same width, so the first one's resizes cover the whole list.
+    self.items[1].label:Subscribe(ui.Hook.ONRESIZE, "prettyui_selection_wrap", function()
+        self:_Rewrap()
+        return true
+    end)
+    self:_Rewrap()
+    return self
+end
+
+function SelectionButton:_Rewrap()
+    if self.root == nil or self.wrapPaused() then return end
+    local width = math.max(1, self.items[1].label.width)
+    if width == self.wrappedWidth then return end
+    self.wrappedWidth = width
     local y = 0
     for _, item in ipairs(self.items) do
-        local lines = font:GetStringLineCount(item.text, width, false, false, false)
-        local height = ROW_HEIGHT + math.max(0, lines - 1) * spacing
+        local height = ROW_HEIGHT + (measureLineCount(item.text, width, self.maxLines) - 1) * LINE_HEIGHT
         item.row:SetPos(0, y)
-        item.row:SetSize(0, height, 1.0)
-        item.label:SetHeight(height)
+        item.row:SetHeight(height)
         y = y + height
     end
-    if self.flowOwner then
-        Layout.resize(self.flowOwner, self, y)
-    else
-        self.root:SetHeight(y)
-    end
-end
-
-function SelectionButton:_BindWrapping()
-    self.root:Subscribe(ui.Hook.ONRESIZE, "prettyui_selection_wrap", function()
-        self:_LayoutWrappedChoices()
-    end)
-    self:_LayoutWrappedChoices()
-end
-
-function SelectionButton:BindFlow(owner)
-    if self.wrap then
-        self.flowOwner = owner
-        self:_BindWrapping()
-    end
-    return self
+    self.onWrapHeight(y)
 end
 
 function SelectionButton:_RebuildSelectedValues()
