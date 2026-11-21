@@ -1,6 +1,6 @@
 std = "lua54"
 max_line_length = false -- StyLua owns wrapping.
-max_cyclomatic_complexity = 25
+max_cyclomatic_complexity = false -- The Lua quality runner checks complexity.
 
 local host_globals = {
     "audio",

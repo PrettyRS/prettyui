@@ -115,7 +115,7 @@ def failure_details(log, source):
     sections = []
     for title, lines, limit in (
         ("Formatting (StyLua)", formatting, 12),
-        ("Lint and nesting", diagnostics, 20),
+        ("Lint, nesting, and complexity", diagnostics, 20),
         ("Other errors", errors, 6),
     ):
         if lines:
