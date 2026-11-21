@@ -471,6 +471,10 @@ function Window:SetTooltip(value)
     return Tooltip.set(self, value)
 end
 
+function Window:RefreshLayout()
+    Layout.refresh(self)
+end
+
 function Window:RefreshRowBackgrounds()
     RowBackgrounds.clear(self.rowBackgrounds, self.interfaceID)
     self.rowBackgrounds = RowBackgrounds.apply(

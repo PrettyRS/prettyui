@@ -128,6 +128,8 @@ local listSection = view:AddCollapseButton("Lists", { expanded = true })
 local sectionChecks = listSection:AddCheckboxButton({ LONG }, { maxLines = 0 })
 local sectionDefault = listSection:AddRadioButton({ LONG }, {})
 local listSectionButton = listSection:AddSimpleButton("Below the lists", function() end)
+-- Page text whose content changes after it is added.
+local changingText = view:AddText("Short")
 local after = view:AddText({ text = "After", height = 24 })
 
 -- A closed section that refits its view, in a view the player has made taller by hand.
@@ -214,5 +216,27 @@ expect(
     "a section never shrinks below its tallest control"
 )
 expect(after.y, wideAfterY, "widening restores the page layout")
+
+-- RefreshLayout fits text to content changed in place, on the page and, through the section, inside it.
+resizeParent(parent, 800, view, fitView)
+local shortAfterY = after.y
+changingText.content = LONG
+expect(changingText.height, 24, "changing content alone sends no resize")
+view:RefreshLayout()
+local changedLines = linesAt(changingText.width)
+expect(changedLines > 1, true, "the new page text needs more than one line")
+local changedHeight = (changedLines - 1) * 18 + 18 + 6
+expect(changingText.height, changedHeight, "RefreshLayout fits page text to its longer content")
+expect(after.y, shortAfterY + changedHeight - 24, "the page moves down for the longer text")
+changingText.content = "Short"
+view:RefreshLayout()
+expect(changingText.height, 24, "RefreshLayout fits page text to its shorter content")
+expect(after.y, shortAfterY, "the page moves back up for the shorter text")
+local wrappedSectionHeight = sectionText.height
+sectionText.content = "Short"
+view:RefreshLayout()
+expect(sectionText.height, 24, "RefreshLayout reaches text inside a collapse section")
+expect(after.y, shortAfterY - (wrappedSectionHeight - 24), "the page moves up as the section shrinks")
+expect(sectionButton.root.y, 24 + 4, "the section button moves up with the shorter text")
 
 print("label_wrap_test: ok")

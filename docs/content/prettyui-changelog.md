@@ -32,6 +32,7 @@ hero:
 - Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default. On classic interface mode, NisPanels adapt to an osrs-like sidebar layout.
 - Added a `maxLines` option to [radio and checkbox buttons](index.html#selection-button-api). Setting this option allows Label text to wrap if needed to fit the parent's width.
 - Added `AddCheckboxButton` and `AddRadioButton` to [collapse buttons](index.html#collapse-button-api).
+- Added `RefreshLayout()` to windows, simple views, panels, tab pages and collapse buttons. Call it after changing content in place, such as a label's text, to re-wrap text and re-flow the content.
 
 ### Changed
 - PrettyUI components are now hidden while the player is viewing the world map.

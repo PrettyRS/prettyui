@@ -226,6 +226,12 @@ function CollapseButton:_WrapPaused()
     return self.root == nil or (self.flowOwner ~= nil and self.flowOwner._destroyingManagedFlow == true)
 end
 
+function CollapseButton:RefreshLayout()
+    for _, entry in ipairs(self.children) do
+        if entry.remeasure then entry.remeasure() end
+    end
+end
+
 function CollapseButton:BindFlow(owner)
     self.flowOwner = owner
     self:_Resize()
@@ -368,7 +374,7 @@ function CollapseButton:AddText(value)
     table.insert(self.children, entry)
     self:_SetContentHeight(math.max(self.contentHeight, options.y + entry.height))
     if autoHeight then
-        Text._bindWrapping(
+        entry.remeasure = Text._bindWrapping(
             label,
             options,
             false,

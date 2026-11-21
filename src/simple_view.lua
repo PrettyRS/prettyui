@@ -68,6 +68,10 @@ function SimpleView:RefreshRowBackgrounds()
         self.content, self.height, self, self.rowBackgroundColours, self.rowBackgroundEdgeToEdge)
 end
 
+function SimpleView:RefreshLayout()
+    Layout.refresh(self)
+end
+
 function SimpleView:SetTooltip(value)
     return Tooltip.set(self, value)
 end
