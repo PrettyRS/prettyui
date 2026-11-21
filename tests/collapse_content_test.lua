@@ -130,4 +130,20 @@ local second = removable:AddSimpleButton("Second", noop)
 first:Destroy()
 expect(second.root.y, 0, "destroying a control moves the next one up")
 
+-- Text anchored to its parent's height keeps the same content height however often the layout re-flows,
+-- in a section and on a page taller than its view.
+local anchoredSection = view:AddCollapseButton("Anchored", { expanded = true })
+anchoredSection:AddText({ text = "Anchored", heightAnchor = 0.5 })
+anchoredSection:AddSimpleButton("Below", noop)
+local tallView = SimpleView.new(parent, { width = 400, height = 200 })
+tallView:AddText({ text = "Filler", height = 400 })
+tallView:AddText({ text = "Anchored", heightAnchor = 0.5 })
+local sectionHeight, pageHeight = anchoredSection.contentHeight, tallView.contentHeight
+for _ = 1, 3 do
+    view:RefreshLayout()
+    tallView:RefreshLayout()
+end
+expect(anchoredSection.contentHeight, sectionHeight, "anchored text doesn't grow a section on re-flow")
+expect(tallView.contentHeight, pageHeight, "anchored text doesn't grow a page on re-flow")
+
 print("collapse_content_test: ok")
