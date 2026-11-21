@@ -1,5 +1,6 @@
 local Components = require("src/core/components")
 local Cursor = require("src/core/cursor")
+local Layout = require("src/core/layout")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
@@ -12,6 +13,7 @@ local ROW_HEIGHT = 22
 local LABEL_X = 22
 local MIN_WIDTH = 80
 local INLINE_CHOICE_GAP = 12
+local LINE_HEIGHT = 18
 local TEXT_COLOUR = 0xE7D7B0FF
 local DISABLED_TEXT_COLOUR = 0x777777FF
 
@@ -58,6 +60,15 @@ local function measureChoiceWidth(choice)
     return LABEL_X + (succeeded and width or #normalized.text * 7)
 end
 
+local function measureLineCount(text, width, maxLines)
+    local succeeded, count = pcall(function()
+        return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringLineCount(text, width, false, false, false)
+    end)
+    if not succeeded then return 1 end
+    if maxLines > 0 then count = math.min(count, maxLines) end
+    return math.max(1, count)
+end
+
 local function measureWidth(choices)
     local widest = 0
     for _, choice in ipairs(choices) do
@@ -94,6 +105,7 @@ local function buildSelectionButton(kind, parent, choices, options)
     local self = setmetatable({}, SelectionButton)
     self.kind = kind
     self.items = items
+    self.maxLines = not choicesInline and options.maxLines or 1
     self.disabled = options.disabled == true
     self.onChange = options.onChange
     self.textColour = options.colour or TEXT_COLOUR
@@ -162,7 +174,7 @@ local function buildSelectionButton(kind, parent, choices, options)
 
         item.label = Components.new(ui.Text, row)
         item.label:SetPos(LABEL_X, 0)
-        item.label:SetSize(-LABEL_X, ROW_HEIGHT, 1.0)
+        item.label:SetSize(-LABEL_X, 0, 1.0, 1.0)
         item.label.content = item.text
         item.label.font = id.Font.MUSEO_SANS_15PT_REGULAR
         item.label.rgba = self.textColour
@@ -206,6 +218,36 @@ function SelectionButton.new(kind, parent, choices, options)
     return Components.withBatch(parent, function()
         return buildSelectionButton(kind, parent, choices, options)
     end)
+end
+
+function SelectionButton:BindFlow(owner)
+    self.flowOwner = owner
+    if self.maxLines == 1 then return self end
+    for _, item in ipairs(self.items) do
+        item.label.maxLines = self.maxLines
+    end
+    -- Every label has the same width, so the first one's resizes cover the whole list.
+    self.items[1].label:Subscribe(ui.Hook.ONRESIZE, "prettyui_selection_wrap", function()
+        self:_Rewrap()
+        return true
+    end)
+    self:_Rewrap()
+    return self
+end
+
+function SelectionButton:_Rewrap()
+    if self.root == nil or self.flowOwner._destroyingManagedFlow then return end
+    local width = math.max(1, self.items[1].label.width)
+    if width == self.wrappedWidth then return end
+    self.wrappedWidth = width
+    local y = 0
+    for _, item in ipairs(self.items) do
+        local height = ROW_HEIGHT + (measureLineCount(item.text, width, self.maxLines) - 1) * LINE_HEIGHT
+        item.row:SetPos(0, y)
+        item.row:SetHeight(height)
+        y = y + height
+    end
+    Layout.resize(self.flowOwner, self, y)
 end
 
 function SelectionButton:_RebuildSelectedValues()

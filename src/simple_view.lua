@@ -58,6 +58,10 @@ function SimpleView:_FitContent()
     self:Refresh()
 end
 
+function SimpleView:RefreshLayout()
+    Layout.refresh(self)
+end
+
 function SimpleView:SetTooltip(value)
     return Tooltip.set(self, value)
 end

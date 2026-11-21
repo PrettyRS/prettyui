@@ -95,6 +95,7 @@ local function bindWrapping(owner, label, options, isTitle)
     end
     label:Subscribe(ui.Hook.ONRESIZE, "prettyui_text_wrap", refresh)
     refresh()
+    return refresh
 end
 
 function Text.append(owner, value, isTitle)
@@ -122,7 +123,7 @@ function Text.append(owner, value, isTitle)
         marginTop = isTitle and TITLE_MARGIN_TOP or 0,
     })
     local label = Layout.manage(owner, create(owner.content, options, isTitle), options)
-    if autoHeight then bindWrapping(owner, label, options, isTitle) end
+    if autoHeight then options._remeasure = bindWrapping(owner, label, options, isTitle) end
     return label
 end
 
