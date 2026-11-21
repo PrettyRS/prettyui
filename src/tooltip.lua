@@ -118,6 +118,10 @@ local function destroyContext(context)
     for index = #context.tooltips, 1, -1 do
         context.tooltips[index]:Destroy()
     end
+    if context.ownedWidgets then
+        for widget in pairs(context.ownedWidgets) do widget:Destroy() end
+        context.ownedWidgets = nil
+    end
     context.children = {}
     context.tooltips = {}
     context.ownerWindow = nil

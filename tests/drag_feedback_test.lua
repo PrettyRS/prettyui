@@ -77,6 +77,7 @@ local function component(parent, kind, categoryID, dynamicID)
         end
     end
     function result:MoveToFront()
+        assert(not self.destroyed, "raising a destroyed component")
         if not parent then return end
         removeChild(parent, self)
         table.insert(parent.children, self)
@@ -364,6 +365,27 @@ closableWindow:Show()
 closableWindow:Close()
 expect(windowCloses, 2, "window Close calls onClose")
 closableWindow:Destroy()
+
+do
+    local host = Window.new(parent, { title = "Settings", destroyOnClose = true })
+    local managed = host:AddPanel()
+    local docked = Panel.new(host.content, { popout = true, overlayParent = overlayParent })
+    local nested = Panel.new(managed.content)
+    local dockLayer, nestedLayer = docked.dockDragLayer, nested.dockDragLayer
+    local popoutRoot = docked.overlay.root
+    setAlt(true)
+    expect(dockLayer.hidden, false, "Alt enables a standalone panel inside a window")
+    setAlt(false)
+
+    fire(host.closeButton, ui.Hook.ONCLICK)
+    setAlt(true)
+    expect(docked.root, nil, "closing the host tears down the standalone panel")
+    expect(nested.root, nil, "closing the host tears down nested standalone panels")
+    expect(dockLayer.destroyed, true, "closing the host removes the standalone drag layer")
+    expect(nestedLayer.destroyed, true, "closing the host removes nested standalone drag layers")
+    expect(popoutRoot.destroyed, true, "closing the host removes externally parented popouts")
+    setAlt(false)
+end
 
 local panel = Panel.new(parent, { x = 45, y = 68, width = 270, height = 150 })
 setAlt(true)
