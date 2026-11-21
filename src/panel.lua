@@ -1213,8 +1213,8 @@ function Panel:Destroy()
     end
     unregisterAltDrag(self)
     self:_StopDrag()
-    if self.dock and self.dock.content then Tooltip.unregisterContext(self.dock.content) end
-    if self.overlay and self.overlay.content then Tooltip.unregisterContext(self.overlay.content) end
+    if self.dock.content then Tooltip.unregisterContext(self.dock.content) end
+    if self.overlay.content then Tooltip.unregisterContext(self.overlay.content) end
     Layout.destroyManaged(self.dockOwner)
     Layout.destroyManaged(self.overlayOwner)
     Tooltip.unbind(self, "dockTooltip")
@@ -1223,16 +1223,16 @@ function Panel:Destroy()
     self.dockRowBackgrounds = {}
     self.overlayRowBackgrounds = {}
     Tooltip.unbind(self, "overlayTooltip")
-    if self.dock and self.dock.scroll then
+    if self.dock.scroll then
         self.dock.scroll:Destroy()
         self.dock.scroll = nil
     end
-    if self.overlay and self.overlay.scroll then
+    if self.overlay.scroll then
         self.overlay.scroll:Destroy()
         self.overlay.scroll = nil
     end
-    local dockLoaded = self.dock and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil
-    local overlayLoaded = self.overlay and ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil
+    local dockLoaded = ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil
+    local overlayLoaded = ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil
     if self.dockDragLayer then
         WorldMap.untrack(self.dockDragLayer)
         if dockLoaded then self.dockDragLayer:Destroy() end
@@ -1243,12 +1243,12 @@ function Panel:Destroy()
         if overlayLoaded then self.overlayDragLayer:Destroy() end
         self.overlayDragLayer = nil
     end
-    if self.dock and self.dock.root then
+    if self.dock.root then
         WorldMap.untrack(self.dock.root)
         if dockLoaded then self.dock.root:Destroy() end
         self.dock.root = nil
     end
-    if self.overlay and self.overlay.root then
+    if self.overlay.root then
         WorldMap.untrack(self.overlay.root)
         if overlayLoaded then self.overlay.root:Destroy() end
         self.overlay.root = nil
