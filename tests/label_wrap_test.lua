@@ -240,4 +240,18 @@ expect(sectionText.height, 24, "RefreshLayout reaches text inside a collapse sec
 expect(after.y, shortAfterY - (wrappedSectionHeight - 24), "the page moves up as the section shrinks")
 expect(sectionButton.root.y, 24 + TEXT_GAP, "the section button moves up with the shorter text")
 
+-- Lists built directly, outside any page or section, wrap by growing their own root.
+local SelectionButtons = require("src/selection_button")
+local direct = SelectionButtons.CheckboxButton.new(parent, { "Short", LONG }, {
+    width = -600, widthAnchor = 1, maxLines = 0,
+})
+local directDefault = SelectionButtons.RadioButton.new(parent, { LONG }, { width = -600, widthAnchor = 1 })
+local directLines = linesAt(direct.root.width - LABEL_X)
+expect(directLines > 1, true, "the narrow parent wraps the direct list's long label")
+expect(direct.root.height, 2 * ROW_HEIGHT + (directLines - 1) * 18, "a direct list grows as its label wraps")
+expect(directDefault.root.height, ROW_HEIGHT, "a direct list without maxLines keeps one line")
+expect(directDefault.items[1].label.subscriptions.ONRESIZE, nil, "a direct list without maxLines watches no resizes")
+resizeParent(parent, 1400, view, fitView)
+expect(direct.root.height, 2 * ROW_HEIGHT, "a direct list shrinks back when its parent widens")
+
 print("label_wrap_test: ok")

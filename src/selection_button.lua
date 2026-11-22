@@ -211,6 +211,7 @@ local function buildSelectionButton(kind, parent, choices, options)
     end
 
     Tooltip.bind(self, self.root, parent, options.tooltip)
+    if options._flowAbsolute == nil then self:_BindWrapping() end
     return self
 end
 
@@ -222,7 +223,12 @@ end
 
 function SelectionButton:BindFlow(owner)
     self.flowOwner = owner
-    if self.maxLines == 1 then return self end
+    self:_BindWrapping()
+    return self
+end
+
+function SelectionButton:_BindWrapping()
+    if self.maxLines == 1 then return end
     for _, item in ipairs(self.items) do
         item.label.maxLines = self.maxLines
     end
@@ -232,11 +238,10 @@ function SelectionButton:BindFlow(owner)
         return true
     end)
     self:_Rewrap()
-    return self
 end
 
 function SelectionButton:_Rewrap()
-    if self.root == nil or self.flowOwner._destroyingManagedFlow then return end
+    if self.root == nil or (self.flowOwner and self.flowOwner._destroyingManagedFlow) then return end
     local width = math.max(1, self.items[1].label.width)
     if width == self.wrappedWidth then return end
     self.wrappedWidth = width
@@ -247,7 +252,11 @@ function SelectionButton:_Rewrap()
         item.row:SetHeight(height)
         y = y + height
     end
-    Layout.resize(self.flowOwner, self, y)
+    if self.flowOwner then
+        Layout.resize(self.flowOwner, self, y)
+    else
+        self.root:SetHeight(y)
+    end
 end
 
 function SelectionButton:_RebuildSelectedValues()
