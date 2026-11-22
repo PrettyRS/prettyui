@@ -13,17 +13,11 @@ local NisGroup = require("src/nis/group")
 local NisPersistence = require("src/nis/persistence")
 local NisNative = require("src/nis/native")
 local Wheel = require("src/core/wheel")
+local Settings = require("src/settings")
 
 local RibbonBar = {}
 
 local EVENT_ID = "prettyui_ribbon_bar"
-local POSITION_STORAGE_KEY = "ribbonBarPosition"
-local AUTO_HIDE_STORAGE_KEY = "ribbonBarAutoHide"
-local BUTTON_CAP_STORAGE_KEY = "ribbonBarButtonCap"
-local POSITION_IDS = { left = 1, right = 2, top = 3 }
-local POSITION_VALUES = { "left", "right", "top" }
-local DEFAULT_BUTTON_CAP = 10
-local MAX_BUTTON_CAP = 50
 local INDICATOR_SIZE = 12
 local BORDER = 4
 local PADDING = 6
@@ -32,8 +26,8 @@ local SETTINGS_BUTTON_SIZE = 24
 local SETTINGS_BUTTON_OFFSET = (BUTTON_SIZE - SETTINGS_BUTTON_SIZE) / 2
 local BUTTON_GAP = 2
 local AUTO_HIDE_SLIDE_STEP = 8
-local SETTINGS_WIDTH = 340
-local SETTINGS_HEIGHT = 320
+local SETTINGS_WIDTH = 480
+local SETTINGS_HEIGHT = 410
 local CLASSIC_CONTENT_WIDTH = 300
 local MODERN_NATIVE_RESTORE_TICKS = 10 -- 200 ms at the client's fixed 50 Hz.
 local RAIL_WIDTH = BUTTON_SIZE + PADDING * 2
@@ -43,11 +37,9 @@ local SETTINGS_PITCH = SETTINGS_BUTTON_SIZE + BUTTON_GAP
 local entries = {}
 local byPanel = {}
 local gameArea, root, interfaceID, frame, settingsButton, settingsWindow
-local settingsControls = {}
 local settingsView, settingsLayerView
-local buttonCap = DEFAULT_BUTTON_CAP
-local started, settingsOpen, autoHide, hitboxHovered = false, false, false, false
-local position, slideOffset = "left", 0
+local started, settingsOpen, hitboxHovered = false, false, false
+local slideOffset = 0
 local classic = false
 local classicSelectedPanel, classicBody
 local iconList, previousIndicator, nextIndicator
@@ -99,12 +91,6 @@ local function reserveClassic(width)
     end
     if not ok then error(result, 0) end
     return result
-end
-
-local function normalizePosition(value)
-    value = string.lower(tostring(value or ""))
-    if value == "right" or value == "top" then return value end
-    return "left"
 end
 
 local function sprite(parent, spriteID)
@@ -162,9 +148,10 @@ local function barSize()
         local rail, body = classicWidths(classicSelectedPanel ~= nil or settingsOpen)
         return rail + body, gameArea.height
     end
+    local position = Settings.get("ribbonBarPosition")
     local span = position == "top" and gameArea.width or gameArea.height
     local available = math.max(0, span - PADDING * 2 - SETTINGS_PITCH)
-    local count = math.min(#entries, buttonCap)
+    local count = math.min(#entries, Settings.get("ribbonBarButtonCap"))
     local run = math.max(0, count * PITCH - BUTTON_GAP)
     if #entries > count or run > available then
         count = math.min(count, math.max(0, math.floor((available - INDICATOR_SIZE * 2 + BUTTON_GAP) / PITCH)))
@@ -177,6 +164,7 @@ end
 
 local function ribbonOrigin(width, height)
     if classic then return gameArea.width - width, 0 end
+    local position = Settings.get("ribbonBarPosition")
     if position == "top" then
         return math.floor(((gameArea.width or 0) - width) / 2), -slideOffset
     end
@@ -191,6 +179,7 @@ local function isHitboxHovered(width, height)
     local mouse = InterfaceMouse.GetPosition()
     if mouse == nil then return false end
     local x, y = ribbonOrigin(width, height)
+    local position = Settings.get("ribbonBarPosition")
     -- The unslid edge stays reachable while the bar is auto-hidden.
     if position == "top" then
         y = 0
@@ -268,6 +257,7 @@ end
 
 local function layoutRoot()
     if root == nil or ui.Interfaces:GetInterface(interfaceID) == nil then return end
+    local position = Settings.get("ribbonBarPosition")
     local width, height = barSize()
     local rearrange = width ~= layoutWidth
         or height ~= layoutHeight
@@ -302,48 +292,8 @@ local function closeSettings()
     settingsOpen = false
 end
 
-local function destroySettingsHost(host)
-    if host then
-        settingsControls[host] = nil
-        host:Destroy()
-    end
-end
-
-local function buildSettings(host, showTitle)
-    if showTitle then host:AddTitle("PrettyUI settings") end
-    host:AddTitle("Ribbon settings")
-    host:AddText(
-        "These preferences apply to the Modern Interface ribbon. Classic Interface uses a fixed, full-height sidebar."
-    )
-    local controls = {}
-    settingsControls[host] = controls
-    host:AddText("Ribbon alignment")
-    controls.position = host:AddComboBox({
-        entries = {
-            { label = "Left", id = POSITION_IDS.left },
-            { label = "Right", id = POSITION_IDS.right },
-            { label = "Top", id = POSITION_IDS.top },
-        },
-        selectedID = POSITION_IDS[position],
-        onChange = function(_, entryID) RibbonBar.SetPosition(POSITION_VALUES[entryID]) end,
-    })
-    controls.autoHide = host:AddCheckboxButton({
-        { text = "Auto-hide ribbon", value = "autoHide", selected = autoHide },
-    }, {
-        onChange = function(_, _, _, selected) RibbonBar.SetAutoHide(selected) end,
-    })
-    controls.capLabel = host:AddText("Visible panel buttons: " .. buttonCap)
-    controls.cap = host:AddSlider({
-        min = 1,
-        max = MAX_BUTTON_CAP,
-        step = 1,
-        value = buttonCap,
-        onChange = function(_, value) RibbonBar.SetButtonCap(value) end,
-    })
-end
-
 local function mountSettingsLayer(event)
-    destroySettingsHost(settingsLayerView)
+    Settings.destroy(settingsLayerView)
     settingsLayerView = SimpleView.new(event.component, {
         categoryID = "auto",
         width = 0,
@@ -353,7 +303,7 @@ local function mountSettingsLayer(event)
     })
     local view = settingsLayerView
     view.root:Subscribe(ui.Hook.ONRESIZE, EVENT_ID, function() view:Refresh() end)
-    buildSettings(view, true)
+    Settings.build(view, true)
 end
 
 local function showSettings()
@@ -371,7 +321,7 @@ local function showSettings()
             width = math.max(0, body - BORDER * 2),
             height = math.max(0, gameArea.height - BORDER * 2),
         })
-        buildSettings(settingsView, true)
+        Settings.build(settingsView, true)
         return
     end
     if settingsWindow then
@@ -394,7 +344,7 @@ local function showSettings()
         maxHeight = SETTINGS_HEIGHT,
         onClose = closeSettings,
     })
-    buildSettings(settingsWindow)
+    Settings.build(settingsWindow)
     settingsOpen = true
 end
 
@@ -418,8 +368,8 @@ destroySurface = function(keepLayout)
         ok, problem = pcall(selected._SetClassicHost, selected, nil)
     end
     if not keepLayout then ClassicLayout.restore() end
-    destroySettingsHost(settingsWindow)
-    destroySettingsHost(settingsView)
+    Settings.destroy(settingsWindow)
+    Settings.destroy(settingsView)
     settingsWindow, settingsView = nil, nil
     settingsOpen, hitboxHovered, slideOffset = false, false, 0
     if settingsButton then
@@ -622,7 +572,7 @@ collapseClassic = function(reserve)
     classicSelectedPanel = nil
     if classic then settingsOpen = false end
     if settingsView then
-        destroySettingsHost(settingsView)
+        Settings.destroy(settingsView)
         settingsView = nil
     end
     local ok, problem = true, nil
@@ -681,7 +631,7 @@ local function mountSurface()
     Tooltip.registerContext(iconList, gameArea, function(target)
         local width, height = barSize()
         local x, y = ribbonOrigin(width, height)
-        local horizontal = not classic and position == "top"
+        local horizontal = not classic and Settings.get("ribbonBarPosition") == "top"
         return x + iconList.x + (target.x or 0) - (horizontal and iconScroll or 0),
             y + iconList.y + (target.y or 0) - (horizontal and 0 or iconScroll)
     end, rootContext)
@@ -722,7 +672,11 @@ end
 local function updateAutoHide()
     local width, height = barSize()
     hitboxHovered = isHitboxHovered(width, height)
-    local target = autoHide and not hitboxHovered and not settingsOpen and (position == "top" and height or width) or 0
+    local target = Settings.get("ribbonBarAutoHide")
+            and not hitboxHovered
+            and not settingsOpen
+            and (Settings.get("ribbonBarPosition") == "top" and height or width)
+        or 0
     if slideOffset < target then
         slideOffset = math.min(target, slideOffset + AUTO_HIDE_SLIDE_STEP)
     elseif slideOffset > target then
@@ -886,23 +840,9 @@ function RibbonBar.sync(panel)
     end
 end
 
-function RibbonBar.SetPosition(value)
-    position = normalizePosition(value)
-    PersistentDB:SetString(POSITION_STORAGE_KEY, position)
-    for host, controls in pairs(settingsControls) do
-        if ui.Interfaces:GetInterface(host.interfaceID) ~= nil then
-            controls.position:Select(POSITION_IDS[position], false)
-        end
-    end
-    layoutRoot()
-end
-
-function RibbonBar.GetPosition()
-    return position
-end
-
 -- Use the expanded ribbon edge so auto-hide never puts a panel off-screen.
 function RibbonBar.panelPosition(parent, width, height)
+    local position = Settings.get("ribbonBarPosition")
     local area = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA) or parent
     local origin, parentOrigin = area.xyGlobal, parent.xyGlobal
     local x = math.floor((area.width - width) / 2)
@@ -918,48 +858,13 @@ function RibbonBar.panelPosition(parent, width, height)
     return math.max(0, math.min(x, parent.width - width)), math.max(0, math.min(y, parent.height - height))
 end
 
-function RibbonBar.SetAutoHide(value)
-    autoHide = value == true
-    PersistentDB:SetBool(AUTO_HIDE_STORAGE_KEY, autoHide)
-    for host, controls in pairs(settingsControls) do
-        if ui.Interfaces:GetInterface(host.interfaceID) ~= nil then
-            controls.autoHide:SetSelected("autoHide", autoHide, false)
-        end
-    end
-end
-
-function RibbonBar.GetAutoHide()
-    return autoHide
-end
-
-local function normalizeButtonCap(value)
-    value = tonumber(value)
-    if value == nil or value ~= value then return DEFAULT_BUTTON_CAP end
-    return math.max(1, math.min(MAX_BUTTON_CAP, math.floor(value)))
-end
-
-function RibbonBar.SetButtonCap(value)
-    buttonCap = normalizeButtonCap(value)
-    PersistentDB:SetInt(BUTTON_CAP_STORAGE_KEY, buttonCap)
-    for host, controls in pairs(settingsControls) do
-        if ui.Interfaces:GetInterface(host.interfaceID) ~= nil then
-            controls.cap:SetValue(buttonCap, false)
-            controls.capLabel.content = "Visible panel buttons: " .. buttonCap
-        end
-    end
-    layoutRoot()
-end
-
-function RibbonBar.GetButtonCap()
-    return buttonCap
-end
-
 function RibbonBar.Start()
     if started then return end
     started = true
-    position = normalizePosition(PersistentDB:GetString(POSITION_STORAGE_KEY))
-    autoHide = PersistentDB:GetBool(AUTO_HIDE_STORAGE_KEY) == true
-    buttonCap = normalizeButtonCap(PersistentDB:GetInt(BUTTON_CAP_STORAGE_KEY))
+    Settings.load()
+    Settings.watch(RibbonBar, function(key)
+        if key == "ribbonBarPosition" or key == "ribbonBarButtonCap" then layoutRoot() end
+    end)
     Event.SettingsLayerReady.Subscribe(EVENT_ID, mountSettingsLayer)
     Event.Logic.Subscribe(EVENT_ID, ensureMounted)
     Event.VarTransmit.Subscribe(EVENT_ID, function(event)
@@ -970,12 +875,13 @@ end
 
 function RibbonBar.Shutdown()
     if started then
+        Settings.unwatch(RibbonBar)
         Event.Logic.Unsubscribe(EVENT_ID)
         Event.VarTransmit.Unsubscribe(EVENT_ID)
         Event.SettingsLayerReady.Unsubscribe(EVENT_ID)
     end
     started = false
-    destroySettingsHost(settingsLayerView)
+    Settings.destroy(settingsLayerView)
     settingsLayerView = nil
     local ok, problem = pcall(destroySurface)
     clearEntries()

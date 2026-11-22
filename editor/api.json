@@ -251,6 +251,9 @@
         "scrollable": "boolean",
         "scrollStep": "number",
         "contentHeight": "number",
+        "rowBackgroundColours": "number[]",
+        "rowBackgroundColors": "number[]",
+        "rowBackgroundEdgeToEdge": "boolean",
         "tooltip": "string|PrettyUI.TooltipOptions",
         "layout": "PrettyUI.LayoutOptions",
         "textLayout": "PrettyUI.LayoutOptions"
@@ -265,6 +268,7 @@
         "contentWidth": "number"
       },
       "methods": {
+        "RefreshRowBackgrounds": { "params": {}, "returns": ["nil"] },
         "new": {
           "params": {
             "parent": "any",
@@ -1686,6 +1690,7 @@
       "options": {
         "selectedValue": "any",
         "inline": "boolean",
+        "wrap": "boolean",
         "disabled": "boolean",
         "onChange": "fun(group: PrettyUI.RadioButton, value: any)",
         "colour": "number",
@@ -1727,6 +1732,7 @@
       "options": {
         "selectedValues": "any[]|table<any, boolean>",
         "inline": "boolean",
+        "wrap": "boolean",
         "disabled": "boolean",
         "onChange": "fun(group: PrettyUI.CheckboxButton, values: any[], changedValue: any, selected: boolean)",
         "colour": "number",

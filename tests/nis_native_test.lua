@@ -114,6 +114,7 @@ run("native rebuilds and lock changes retain membership, selection and tab paint
     local panel = f:panel({ tabIcon = Plugin.resources.image })
     assert(panel:DockTo(scene.notes.frame))
     local binding, content = panel._nisNative, panel.content
+    require("src/settings").set("respectInterfaceLock", false)
     f:lock(true)
     scene.notes:rebuild({ 9001, 9002 }, 1)
     scene.ranged:rebuild({ 9001, 9002 }, 2)

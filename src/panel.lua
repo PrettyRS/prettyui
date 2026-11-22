@@ -476,7 +476,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
         self:_UpdateResizeEnabled()
     end
     self:_WatchNativeTransparency()
-    self:_WatchNativeLock()
+    NativeInterfaceSettings.watchMovementLock(self, Panel._SetLocked)
     WorldMap.watch(self, function(suspended)
         if suspended then
             self:_StopDrag()
@@ -514,14 +514,6 @@ function Panel:_SetBackgroundTransparency(transparency)
     end
 end
 
-function Panel:_WatchNativeLock()
-    if self.respectInterfaceLock then
-        NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
-    else
-        NativeInterfaceSettings.unwatchLock(self)
-    end
-end
-
 function Panel:_SetLocked(locked)
     if self.locked == locked then return end
     self.locked = locked
@@ -541,8 +533,7 @@ end
 
 function Panel:SetRespectInterfaceLock(enabled)
     self.respectInterfaceLock = enabled == true
-    self:_WatchNativeLock()
-    if not self.respectInterfaceLock then self:_SetLocked(false) end
+    if self.root then NativeInterfaceSettings.watchMovementLock(self, Panel._SetLocked) end
 end
 
 function Panel.new(parent, options, flowManaged)
@@ -1194,7 +1185,7 @@ function Panel:Destroy()
     end
     WorldMap.unwatch(self)
     NativeInterfaceSettings.unwatchTransparency(self)
-    NativeInterfaceSettings.unwatchLock(self)
+    NativeInterfaceSettings.unwatchMovementLock(self)
     if self.dockResize then
         self.dockResize:Destroy()
         self.dockResize = nil

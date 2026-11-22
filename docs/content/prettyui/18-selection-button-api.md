@@ -58,6 +58,10 @@ local selectedFeatures = features:GetSelectedValues()
 : Lays radio or checkbox choices out side by side on one row. It also retains
   the shared flow behavior and joins the current content row when one exists.
 
+`wrap`
+: Lets stacked choice labels wrap and grow to fit their available width.
+  Defaults to false and is ignored for inline choices.
+
 `disabled`
 : Disables the entire group.
 

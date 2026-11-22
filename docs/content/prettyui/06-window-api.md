@@ -120,8 +120,9 @@ Interactive resizing is opt-in with `resizable = true`.
   Defaults to false.
 
 `respectInterfaceLock`
-: Stops the window from being moved or resized while the player's interface is
-  locked. Defaults to true.
+: In Modern UI, prevents moving and resizing while the interface is locked and
+  the player's [PrettyUI lock setting](#settings-layer) is enabled. Defaults to
+  `true`.
 
 `snapToEdges`
 : Snaps the dragged window to edges within 12 interface units: other PrettyUI
@@ -191,7 +192,7 @@ Interactive resizing is opt-in with `resizable = true`.
 : Changes **useNativeTransparency**. Turning it off makes the background opaque.
 
 `SetRespectInterfaceLock(enabled)`
-: Changes **respectInterfaceLock**. Turning it off unlocks the window.
+: Changes **respectInterfaceLock** for this window in Modern UI.
 
 `Show()`
 : Shows and raises the window.

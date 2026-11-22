@@ -84,6 +84,7 @@ local COMPONENTS = {
         measured = true,
         fillWidth = true,
         fitInline = true,
+        bindFlow = true,
         proxyCallbacks = { "onChange" },
     },
     {
@@ -94,6 +95,7 @@ local COMPONENTS = {
         measured = true,
         fillWidth = true,
         fitInline = true,
+        bindFlow = true,
         proxyCallbacks = { "onChange" },
     },
     { method = "AddColourPicker", module = "src/colour_picker", optionsIndex = 1, measured = true },

@@ -30,7 +30,6 @@ local function sidebar(f)
     return {
         top = top,
         area = area,
-        ribbon = ribbon,
         click = function(panel)
             f.fire(assert(find(top, panel.tabIcon), "missing ribbon button"), ui.Hook.ONCLICK)
         end,
@@ -40,6 +39,8 @@ end
 Fixture.run("Classic sidebar clicks mount one page, collapse without disabling, and release content", function(f)
     local scene = sidebar(f)
     f.classicMode.value = 1
+    require("src/settings").set("allowClassicMovement", true)
+    f:lock(true)
     local builds, cleanups = 0, 0
     local function content(owner)
         builds = builds + 1
@@ -69,8 +70,9 @@ end)
 
 Fixture.run("mode round trip preserves modern grouping, selection, bounds and ribbon preferences", function(f)
     local scene = sidebar(f)
-    scene.ribbon.SetPosition("top")
-    scene.ribbon.SetAutoHide(true)
+    local settings = require("src/settings")
+    settings.set("ribbonBarPosition", "top")
+    settings.set("ribbonBarAutoHide", true)
     local a = f:panel({ id = "a", tabIcon = 830001 })
     local b = f:panel({ id = "b", x = 500, width = 300, height = 260, tabIcon = 830002 })
     assert(a:DockTo(b))
@@ -90,8 +92,8 @@ Fixture.run("mode round trip preserves modern grouping, selection, bounds and ri
     assert(a.content == nil and b.content ~= nil)
     Fixture.rect(b.root, 500, 100, 300, 260)
     f.expect(scene.area.width, 1200, "mode exit returns native space")
-    f.expect(scene.ribbon.GetPosition(), "top", "modern edge preference")
-    f.expect(scene.ribbon.GetAutoHide(), true, "modern auto-hide preference")
+    f.expect(settings.get("ribbonBarPosition"), "top", "modern edge preference")
+    f.expect(settings.get("ribbonBarAutoHide"), true, "modern auto-hide preference")
 end)
 
 Fixture.run("panels without geometry choose modern placement after leaving Classic", function(f)
@@ -101,7 +103,7 @@ Fixture.run("panels without geometry choose modern placement after leaving Class
     f.panels[#f.panels + 1] = panel
     scene.click(panel)
     assert(panel.content ~= nil and panel.root.hidden)
-    scene.ribbon.SetPosition("right")
+    require("src/settings").set("ribbonBarPosition", "right")
     f.classicMode.value = 0
     f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
     f:emit("Logic")
