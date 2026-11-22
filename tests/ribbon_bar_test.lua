@@ -183,6 +183,7 @@ ui.Sprite.new = function(parent)
 end
 local nextSpriteID = 1000
 id = {
+    Font = { CINZEL_18PT_BOLD = 1 },
     Component = {
         TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP = (1010 << 16) | 71,
         TOPLEVEL_V2__VIEWPORT = (10 << 16) | 75,
@@ -316,12 +317,16 @@ local function contentHost(options)
         return result
     end
     function instance:AddCheckboxButton(values, options)
-        local result = { values = values, options = options, selected = values[1].selected }
-        function result:SetSelected(_, value)
+        local result = { options = options, selected = {} }
+        function result:IsSelected(value) return self.selected[value] == true end
+        function result:SetSelected(key, value)
             assert(not instance.destroyed, "updating a destroyed settings host")
-            self.selected = value
+            self.selected[key] = value
         end
-        self.controls.autoHide = result
+        for _, choice in ipairs(values) do
+            result.selected[choice.value] = choice.selected
+            self.controls[choice.value] = result
+        end
         return result
     end
     function instance:Show() self.visible = true end
@@ -332,6 +337,7 @@ local function contentHost(options)
         if self.root then self.root:Destroy() end
     end
     function instance:Refresh() self.refreshes = (self.refreshes or 0) + 1 end
+    function instance:RefreshRowBackgrounds() end
     return instance
 end
 local Window = {}
@@ -416,10 +422,12 @@ local function tick()
     assert(events.prettyui_ribbon_bar, "logic listener missing")()
 end
 
+local Settings = require("src/settings")
+
 local function modernRegistrationAndSettings()
     db.ribbonBarPosition, db.ribbonBarAutoHide = "right", false
     start(10)
-    expect(RibbonBar.GetPosition(), "right", "stored position")
+    expect(Settings.get("ribbonBarPosition"), "right", "stored position")
     tick()
     expect(buttons(), nil, "no surface without registrations")
 
@@ -455,8 +463,8 @@ local function modernRegistrationAndSettings()
         "modern settings show position and auto-hide")
     click({ root = roots[1] })
     expect(settings.visible, false, "settings cog closes window")
-    RibbonBar.SetPosition("top")
-    RibbonBar.SetAutoHide(true)
+    Settings.set("ribbonBarPosition", "top")
+    Settings.set("ribbonBarAutoHide", true)
     expect(db.ribbonBarPosition, "top", "position persisted")
     expect(db.ribbonBarAutoHide, true, "auto-hide persisted")
     expect(roots[2].parent.x + roots[2].x - roots[1].x - roots[1].width, 2,
@@ -465,7 +473,7 @@ local function modernRegistrationAndSettings()
     expect(surface.y, -8, "auto-hide slides by one step")
     for _ = 1, 10 do tick() end
     expect(surface.y, -44, "auto-hide reaches hidden edge")
-    RibbonBar.SetAutoHide(false)
+    Settings.set("ribbonBarAutoHide", false)
     for _ = 1, 10 do tick() end
     expect(surface.y, 0, "disabling auto-hide returns bar into view")
     map.suspended = true
@@ -656,8 +664,8 @@ local function classicSelectionAndModeTransitions()
     expect(RibbonBar.isClassicSelected(disabled), false, "settings replace the selected page")
     expect(settings.controls.position ~= nil and settings.controls.autoHide ~= nil, true,
         "Classic settings can edit all Modern ribbon preferences")
-    expect(RibbonBar.GetPosition(), "top", "Classic mode preserves modern position")
-    expect(RibbonBar.GetAutoHide(), true, "Classic mode preserves modern auto-hide")
+    expect(Settings.get("ribbonBarPosition"), "top", "Classic mode preserves modern position")
+    expect(Settings.get("ribbonBarAutoHide"), true, "Classic mode preserves modern auto-hide")
     clickRoot(buttonNamed("PrettyUI settings"))
     expect(settings.destroyed, true, "settings cog closes and destroys sidebar settings")
     rail(44, "closing settings collapses sidebar")
@@ -792,7 +800,7 @@ local function modernOverflowAndCap()
         panels[index] = classicPanel("Modern " .. index, false)
         RibbonBar.register(panels[index])
     end
-    expect(RibbonBar.GetButtonCap(), 3, "saved button cap restored")
+    expect(Settings.get("ribbonBarButtonCap"), 3, "saved button cap restored")
     local surface = assert(buttons())
     local cog = buttonNamed("PrettyUI settings")
     expect(cog.spriteID, id.Sprite.RS3_ICON_SETTINGS_30PX_2, "cog uses the settings sprite")
@@ -802,7 +810,7 @@ local function modernOverflowAndCap()
         if child.spriteID == id.Sprite.RS3_ICON_ACCORDION_2 then nextArrow = child end
     end
     for _, edge in ipairs({ "left", "right", "top" }) do
-        RibbonBar.SetPosition(edge)
+        Settings.set("ribbonBarPosition", edge)
         local first, last = buttonNamed("Modern 1"), buttonNamed("Modern 23")
         local list = first.parent
         local wheel = list.subscriptions[ui.Hook.ONSCROLLWHEEL]
@@ -834,17 +842,17 @@ local function modernOverflowAndCap()
         clickRoot(cog)
         local settings = windows[#windows]
         settings.controls.cap.options.onChange(nil, 1)
-        expect(RibbonBar.GetButtonCap(), 1, "settings control changes cap")
+        expect(Settings.get("ribbonBarButtonCap"), 1, "settings control changes cap")
         expect(db.ribbonBarButtonCap, 1, "cap persisted")
         wheel(list, 100)
         expect(last.hidden, false, "last panel remains reachable with a one-button cap")
         clickRoot(cog)
-        RibbonBar.SetButtonCap(3)
+        Settings.set("ribbonBarButtonCap", 3)
     end
     area:SetSize(140, 140, 0, 0)
     tick()
     expect(surface.width <= area.width, true, "ribbon fits a smaller game area")
-    RibbonBar.SetPosition("right")
+    Settings.set("ribbonBarPosition", "right")
     expect(surface.height <= area.height, true, "vertical ribbon fits a smaller game area")
     for index = 1, 22 do RibbonBar.unregister(panels[index]) end
     local last = buttonNamed("Modern 23")
@@ -922,19 +930,23 @@ local function sharedNativeSettingsLifecycle()
     mountSettings({ component = parent })
     local native = views[#views]
     expect(buttons(), nil, "native settings are available without panel registrations")
+    expect(native.controls.allowClassicMovement:IsSelected("allowClassicMovement"), false, "Classic movement is opt-in")
+    expect(native.controls.respectInterfaceLock:IsSelected("respectInterfaceLock"), true, "Modern respects the lock by default")
+    native.controls.respectInterfaceLock.options.onChange(nil, nil, "respectInterfaceLock", false)
     native.controls.position.options.onChange(nil, 1)
-    native.controls.autoHide.options.onChange(nil, nil, nil, false)
+    native.controls.autoHide.options.onChange(nil, nil, "autoHide", false)
     native.controls.cap.options.onChange(nil, 4)
-    expect(RibbonBar.GetPosition(), "left", "native settings update saved placement")
-    expect(RibbonBar.GetButtonCap(), 4, "native settings update saved cap without panels")
+    expect(Settings.get("ribbonBarPosition"), "left", "native settings update saved placement")
+    expect(Settings.get("ribbonBarButtonCap"), 4, "native settings update saved cap without panels")
 
     local owner = classicPanel("Settings sync", false)
     RibbonBar.register(owner)
     clickRoot(buttonNamed("PrettyUI settings"))
     local floating = windows[#windows]
     expect(floating.controls.cap.value, 4, "floating settings load native edits")
-    floating.controls.autoHide.options.onChange(nil, nil, nil, true)
-    expect(native.controls.autoHide.selected, true, "floating changes synchronize to native settings")
+    floating.controls.autoHide.options.onChange(nil, nil, "autoHide", true)
+    expect(native.controls.autoHide:IsSelected("autoHide"), true, "floating changes synchronize to native settings")
+    expect(floating.controls.respectInterfaceLock:IsSelected("respectInterfaceLock"), false, "floating settings load the Modern override")
     native.controls.position.options.onChange(nil, 3)
     expect(floating.controls.position.selected, 3, "native changes synchronize to floating settings")
     mode(1)
@@ -942,7 +954,10 @@ local function sharedNativeSettingsLifecycle()
     clickRoot(buttonNamed("PrettyUI settings"))
     local sidebar = views[#views]
     expect(sidebar.controls.position.selected, 3, "Classic settings expose saved placement")
-    expect(sidebar.controls.autoHide.selected, true, "Classic settings expose saved auto-hide")
+    expect(sidebar.controls.autoHide:IsSelected("autoHide"), true, "Classic settings expose saved auto-hide")
+    sidebar.controls.allowClassicMovement.options.onChange(nil, nil, "allowClassicMovement", true)
+    expect(native.controls.allowClassicMovement:IsSelected("allowClassicMovement"), true,
+        "Classic movement edits synchronize to native settings")
     sidebar.controls.cap.options.onChange(nil, 6)
     expect(native.controls.cap.value, 6, "Classic changes synchronize to native settings")
     native.controls.position.options.onChange(nil, 2)
@@ -952,7 +967,7 @@ local function sharedNativeSettingsLifecycle()
     expect(sidebar.destroyed, true, "last panel unregister destroys sidebar settings")
     expect(native.destroyed, nil, "last panel unregister preserves native settings")
     native.controls.cap.options.onChange(nil, 7)
-    expect(RibbonBar.GetButtonCap(), 7, "native settings still work without the ribbon")
+    expect(Settings.get("ribbonBarButtonCap"), 7, "native settings still work without the ribbon")
 
     mountSettings({ component = parent })
     local replacement = views[#views]
@@ -965,6 +980,13 @@ local function sharedNativeSettingsLifecycle()
     expect(replacement.destroyed, true, "shutdown destroys native settings")
     expect(parent.destroyed, nil, "shutdown preserves the client-owned layer")
     expect(settingsEvents.prettyui_ribbon_bar, nil, "shutdown unsubscribes native settings")
+
+    start(71)
+    assert(settingsEvents.prettyui_ribbon_bar)({ component = area })
+    local reopened = views[#views].controls
+    expect(reopened.allowClassicMovement:IsSelected("allowClassicMovement"), true, "Classic opt-in survives restart")
+    expect(reopened.respectInterfaceLock:IsSelected("respectInterfaceLock"), false, "Modern override survives restart")
+    RibbonBar.Shutdown()
 end
 
 classicSelectionAndModeTransitions()

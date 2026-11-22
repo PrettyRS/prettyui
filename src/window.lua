@@ -383,7 +383,7 @@ local function buildWindow(parent, options)
         })
     end
     self:_WatchNativeTransparency()
-    self:_WatchNativeLock()
+    NativeInterfaceSettings.watchMovementLock(self, Window._SetLocked)
     WorldMap.watch(self, function(suspended)
         if suspended then
             if self._stopDrag then self._stopDrag() end
@@ -413,14 +413,6 @@ function Window:_SetBackgroundTransparency(transparency)
     self.background.alpha = 1 - transparency
 end
 
-function Window:_WatchNativeLock()
-    if self.respectInterfaceLock then
-        NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
-    else
-        NativeInterfaceSettings.unwatchLock(self)
-    end
-end
-
 function Window:_SetLocked(locked)
     if self.locked == locked or ui.Interfaces:GetInterface(self.interfaceID) == nil then return end
     self.locked = locked
@@ -440,8 +432,7 @@ end
 
 function Window:SetRespectInterfaceLock(enabled)
     self.respectInterfaceLock = enabled == true
-    self:_WatchNativeLock()
-    if not self.respectInterfaceLock then self:_SetLocked(false) end
+    if self.root then NativeInterfaceSettings.watchMovementLock(self, Window._SetLocked) end
 end
 
 function Window.new(parent, options)
@@ -555,7 +546,7 @@ end
 function Window:Destroy()
     WorldMap.unwatch(self)
     NativeInterfaceSettings.unwatchTransparency(self)
-    NativeInterfaceSettings.unwatchLock(self)
+    NativeInterfaceSettings.unwatchMovementLock(self)
     if self.resize then
         self.resize:Destroy()
         self.resize = nil

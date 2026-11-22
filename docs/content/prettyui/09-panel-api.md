@@ -201,15 +201,16 @@ Panel.new(parent, options)
   and **popoutBackgroundAlpha**, so both still apply. Defaults to false.
 
 `respectInterfaceLock`
-: Stops the panel from being moved or resized while the player's interface is
-  locked. Defaults to true. 
+: In Modern UI, prevents moving and resizing while the interface is locked and
+  the player's [PrettyUI lock setting](#settings-layer) is enabled. Defaults to
+  true.
 
 `SetUseNativeTransparency(enabled)`
 : Changes **useNativeTransparency**. Turning it off restores the panel's own
   alpha values.
 
 `SetRespectInterfaceLock(enabled)`
-: Changes **respectInterfaceLock**. Turning it off unlocks the panel.
+: Changes **respectInterfaceLock** for this panel in Modern UI.
 
 {{% /api-card %}}
 

@@ -64,7 +64,7 @@ local function ribbonScene(f)
     local scene = nativeScene(f)
     local ribbon = require("src/ribbon_bar")
     ribbon.Start()
-    return scene, ribbon
+    return require("src/settings"), scene, ribbon
 end
 
 for _, case in ipairs({
@@ -73,8 +73,8 @@ for _, case in ipairs({
     { edge = "top", x = 350, y = 50 },
 }) do
     run("omitted geometry opens beside the " .. case.edge .. " ribbon", function(f)
-        local _, ribbon = ribbonScene(f)
-        ribbon.SetPosition(case.edge)
+        local settings = ribbonScene(f)
+        settings.set("ribbonBarPosition", case.edge)
         local panel = unpositioned(f, { buildContent = function(owner)
             rect(owner.root, case.x, case.y, 300, 400)
             owner:AddText("Default geometry")
@@ -85,8 +85,8 @@ for _, case in ipairs({
 end
 
 run("first ribbon enable uses the current edge even after an unopened panel restarts", function(f)
-    local scene, ribbon = ribbonScene(f)
-    ribbon.SetPosition("left")
+    local settings, scene, ribbon = ribbonScene(f)
+    settings.set("ribbonBarPosition", "left")
     local panel = unpositioned(f, { id = "deferred", active = false, tabIcon = 830011 })
     assert(panel.content == nil)
     panel:Destroy(); ribbon.Shutdown(); f:restart()
@@ -94,8 +94,8 @@ run("first ribbon enable uses the current edge even after an unopened panel rest
     ribbon.Start()
     panel = unpositioned(f, { id = "deferred", tabIcon = 830011 })
     assert(not panel:IsActive(), "restart must preserve the unopened state")
-    ribbon.SetPosition("right")
-    ribbon.SetAutoHide(true)
+    settings.set("ribbonBarPosition", "right")
+    settings.set("ribbonBarAutoHide", true)
     for _ = 1, 8 do f:emit("Logic") end
     local function findButton(node)
         if node.spriteID == panel.tabIcon then return node.parent end
@@ -109,7 +109,7 @@ run("first ribbon enable uses the current edge even after an unopened panel rest
     assert(panel.content ~= nil and panel:IsActive())
     panel:SetSize(340, 180)
     panel:Hide()
-    ribbon.SetPosition("top")
+    settings.set("ribbonBarPosition", "top")
     panel:Show()
     rect(panel.root, 650, 150, 340, 180)
     panel:Destroy(); ribbon.Shutdown(); f:restart()
@@ -127,12 +127,12 @@ for _, case in ipairs({
     { name = "explicit origin", options = { x = 0, y = 0 }, x = 0, y = 0 },
 }) do
     run("ribbon placement preserves " .. case.name, function(f)
-        local _, ribbon = ribbonScene(f)
-        ribbon.SetPosition("left")
+        local settings = ribbonScene(f)
+        settings.set("ribbonBarPosition", "left")
         local options = f.copy(case.options)
         options.active = false
         local panel = unpositioned(f, options)
-        ribbon.SetPosition("right")
+        settings.set("ribbonBarPosition", "right")
         panel:Show()
         rect(panel.root, case.x, case.y, 300, case.options.height or 400)
         if options.xAnchor then
@@ -145,24 +145,24 @@ for _, case in ipairs({
 end
 
 run("ribbon placement converts parent origins and clamps to small mounts", function(f)
-    local _, ribbon = ribbonScene(f)
+    local settings = ribbonScene(f)
     local parent = f.parent
     f.parent = f.component(nil, "custom-parent")
     f.parent:SetPos(180, 140)
     f.parent:SetSize(900, 600)
-    ribbon.SetPosition("right")
+    settings.set("ribbonBarPosition", "right")
     local panel = unpositioned(f)
     rect(panel.root, 550, 50, 300, 400)
     panel:Destroy()
     f.parent = parent
     parent:SetSize(220, 140)
-    ribbon.SetPosition("left")
+    settings.set("ribbonBarPosition", "left")
     panel = unpositioned(f, { width = 200, height = 120 })
     rect(panel.root, 20, 10, 200, 120)
 end)
 
 run("first placement waits for world-map suspension to end", function(f)
-    local _, ribbon = ribbonScene(f)
+    local settings = ribbonScene(f)
     local focus = { configName = "WORLDMAP_FOCUS", value = -1 }
     var.VarClient = { WORLDMAP_FOCUS = focus }
     local panel = unpositioned(f, { id = "suspended", active = false })
@@ -170,7 +170,7 @@ run("first placement waits for world-map suspension to end", function(f)
     f:emit("VarTransmit", { var = focus, newValue = 0 })
     panel:Show()
     assert(panel.root.hidden)
-    ribbon.SetPosition("right")
+    settings.set("ribbonBarPosition", "right")
     focus.value = -1
     f:emit("VarTransmit", { var = focus, newValue = -1 })
     f:emit("Logic")
