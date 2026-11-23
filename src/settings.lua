@@ -100,7 +100,7 @@ function Settings.build(host, showTitle)
     end
     local movement = host:AddCheckboxButton(choices, {
         rowBackgroundGroup = general,
-        wrap = true,
+        maxLines = 0,
         onChange = function(_, _, key, selected) Settings.set(key, selected) end,
     })
 
@@ -120,7 +120,7 @@ function Settings.build(host, showTitle)
         { text = definitions.ribbonBarAutoHide.text, value = "autoHide", selected = values.ribbonBarAutoHide },
     }, {
         rowBackgroundGroup = ribbon,
-        wrap = true,
+        maxLines = 0,
         onChange = function(_, _, _, selected) Settings.set("ribbonBarAutoHide", selected) end,
     })
     local capLabel = host:AddText({

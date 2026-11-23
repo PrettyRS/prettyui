@@ -59,11 +59,8 @@ section:AddSimpleButton("A much longer action", secondAction)
 
 ### Content and control
 
-`AddText`, `AddSimpleButton`, `AddFancyButton`
-: Add flow-managed content to the expanded region.
-
-`AddTextField`, `AddComboBox`, `AddList`
-: Add full-width field controls.
+`Add…` methods
+: **Add…** methods can be used to add any simple control to a section.
 
 Button widths
 : Textual buttons in one section equalize to the widest button.
