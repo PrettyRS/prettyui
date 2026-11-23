@@ -1,13 +1,9 @@
 local Layout = require("src/core/layout")
+local ContentMethods = require("src/core/content_methods")
 local Cursor = require("src/core/cursor")
 local FancyButton = require("src/fancy_button")
-local ComboBox = require("src/combo_box")
-local List = require("src/list")
 local SimpleButton = require("src/simple_button")
-local Slider = require("src/slider")
-local TextField = require("src/text_field")
 local Sprites = require("src/core/sprites")
-local Text = require("src/text")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local Components = require("src/core/components")
@@ -19,38 +15,9 @@ CollapseButton.__index = CollapseButton
 local SEGMENT_SIZE = 20
 local MIN_WIDTH = SEGMENT_SIZE * 3
 local CONTENT_GAP = 4
-local ITEM_GAP = 4
 local DEFAULT_INDENT = 20
 local TEXT_COLOUR = 0xE7D7B0FF
 local DISABLED_TEXT_COLOUR = 0x777777FF
-local BODY_LINE_HEIGHT = 18
-
-local function bodyFont(options)
-    if options.font ~= nil and config.Font.FromID ~= nil then
-        local succeeded, font = pcall(function() return config.Font.FromID(options.font) end)
-        if succeeded and font ~= nil then return font end
-    end
-    return config.Font.MUSEO_SANS_15PT_REGULAR
-end
-
-local function bodyLineHeight(font, options)
-    if options.lineSpacing ~= nil then return options.lineSpacing end
-    if options.font ~= nil then
-        local succeeded, baseline = pcall(function() return font.baseline end)
-        if succeeded and baseline ~= nil then return baseline end
-    end
-    return BODY_LINE_HEIGHT
-end
-
-local function copyOptions(value)
-    local copy = {}
-    if type(value) == "table" then
-        for key, option in pairs(value) do
-            copy[key] = option
-        end
-    end
-    return copy
-end
 
 local function measureText(text)
     local succeeded, width = pcall(
@@ -87,12 +54,10 @@ local function buildCollapseButton(parent, text, options)
     self.pressed = false
     self.indent = options.indent or DEFAULT_INDENT
     self.contentHeight = 0
-    self.children = {}
-    self.labels = {}
     self.equalizedButtons = {}
     self.onToggle = options.onToggle
     self._onScrollWheel = options._onScrollWheel
-    self._scrollController = options._scrollController
+    self._scroll = options._scrollController
     self.hoverCursor = options.hoverCursor or config.Cursor.CURSOR_BLANK
     self.textColour = options.colour or TEXT_COLOUR
     self.disabledTextColour = options.disabledColour or DISABLED_TEXT_COLOUR
@@ -133,6 +98,8 @@ local function buildCollapseButton(parent, text, options)
     Components.setHidden(self.content, not self.expanded)
     self.content.clickthrough = false
     Wheel.bind(self.content, options)
+    -- The indent already insets the content, so the layout adds no padding of its own.
+    Layout.configure(self, { startY = 0, padding = 0, stackBelowPositioned = true })
 
     local parentContext = Tooltip.getContext(parent)
     local tooltipParent = parentContext and parentContext.parent or parent
@@ -198,16 +165,14 @@ function CollapseButton:_Resize()
     end
 end
 
-function CollapseButton:_SetContentHeight(height)
+function CollapseButton:SetContentHeight(height)
     self.contentHeight = height
     self.content:SetHeight(height)
-    self:_Resize()
+    if self.expanded then self:_Resize() end
 end
 
-function CollapseButton:_NextContentY(options)
-    if options.y ~= nil then return options.y end
-    if self.contentHeight == 0 then return 0 end
-    return self.contentHeight + (options.marginTop or ITEM_GAP)
+function CollapseButton:RefreshLayout()
+    Layout.refresh(self)
 end
 
 function CollapseButton:BindFlow(owner)
@@ -236,101 +201,24 @@ function CollapseButton:_RegisterEqualizedButton(button, preferredWidth)
     self:_EqualizeButtonWidths()
 end
 
+ContentMethods.installSingle(CollapseButton, {
+    exclude = { AddTabs = true, AddPanel = true, AddCollapseButton = true },
+})
+
+local addSimpleButton = CollapseButton.AddSimpleButton
+local addFancyButton = CollapseButton.AddFancyButton
+
+-- these two adds are maintained to allow equalizedButtons
 function CollapseButton:AddSimpleButton(content, action, options)
-    options = copyOptions(options)
-    if options._onScrollWheel == nil then options._onScrollWheel = self._onScrollWheel end
-    local width, height = SimpleButton.getSize(content, options)
-    options.x = options.x or 0
-    options.y = self:_NextContentY(options)
-    local button = SimpleButton.new(self.content, content, action, options)
-    table.insert(self.children, button)
-    if type(content) == "string" then self:_RegisterEqualizedButton(button, width) end
-    self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
+    local button = addSimpleButton(self, content, action, options)
+    if type(content) == "string" then self:_RegisterEqualizedButton(button, SimpleButton.getSize(content, options)) end
     return button
 end
 
 function CollapseButton:AddFancyButton(text, action, options)
-    options = copyOptions(options)
-    if options._onScrollWheel == nil then options._onScrollWheel = self._onScrollWheel end
-    local width, height = FancyButton.getSize(text, options)
-    options.x = options.x or 0
-    options.y = self:_NextContentY(options)
-    local button = FancyButton.new(self.content, text, action, options)
-    table.insert(self.children, button)
-    self:_RegisterEqualizedButton(button, width)
-    self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
+    local button = addFancyButton(self, text, action, options)
+    self:_RegisterEqualizedButton(button, FancyButton.getSize(text, options))
     return button
-end
-
-function CollapseButton:AddSlider(options)
-    options = copyOptions(options)
-    if options._onScrollWheel == nil then options._onScrollWheel = self._onScrollWheel end
-    local _, height = Slider.getSize(options)
-    options.x = options.x or 0
-    options.y = self:_NextContentY(options)
-    options.width = options.width or 0
-    options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
-    local slider = Slider.new(self.content, options)
-    table.insert(self.children, slider)
-    self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
-    return slider
-end
-
-local function addFullWidthControl(self, module, options)
-    options = copyOptions(options)
-    if options._onScrollWheel == nil then options._onScrollWheel = self._onScrollWheel end
-    if options._scrollController == nil then
-        options._scrollController = self._scrollController
-    end
-    local _, height = module.getSize(options)
-    options.x = options.x or 0
-    options.y = self:_NextContentY(options)
-    options.width = options.width or 0
-    options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
-    local component = module.new(self.content, options)
-    table.insert(self.children, component)
-    self:_SetContentHeight(math.max(self.contentHeight, options.y + height))
-    return component
-end
-
-function CollapseButton:AddTextField(options)
-    return addFullWidthControl(self, TextField, options)
-end
-
-function CollapseButton:AddKeybindField(options)
-    return addFullWidthControl(self, require("src/keybind_field"), options)
-end
-
-function CollapseButton:AddComboBox(options)
-    return addFullWidthControl(self, ComboBox, options)
-end
-
-function CollapseButton:AddList(options)
-    return addFullWidthControl(self, List, options)
-end
-
-function CollapseButton:AddText(value)
-    local options = type(value) == "table" and copyOptions(value) or { text = tostring(value or "") }
-    if options._onScrollWheel == nil then options._onScrollWheel = self._onScrollWheel end
-    options.text = tostring(options.text or "")
-    options.x = options.x or 0
-    options.y = self:_NextContentY(options)
-    local availableWidth = math.max(1, (self.root.width or MIN_WIDTH) - self.indent)
-    if options.height == nil then
-        local font = bodyFont(options)
-        local succeeded, lines = pcall(
-            function()
-                return font:GetStringLineCount(options.text, availableWidth, false, false, false)
-            end
-        )
-        options.height = math.max(24, (succeeded and lines or 1) * bodyLineHeight(font, options) + 6)
-    end
-    options.width = options.width or 0
-    options.widthAnchor = options.widthAnchor == nil and 1.0 or options.widthAnchor
-    local label = Text.new(self.content, options)
-    table.insert(self.labels, label)
-    self:_SetContentHeight(math.max(self.contentHeight, options.y + options.height))
-    return label
 end
 
 function CollapseButton:SetExpanded(expanded)
@@ -397,20 +285,7 @@ function CollapseButton:Destroy()
         Tooltip.unregisterContext(self.content)
         self.contentTooltipContext = nil
     end
-    for index = #self.children, 1, -1 do
-        local child = self.children[index]
-        if child then
-            child:Destroy()
-        end
-    end
-    self.children = {}
-    if loaded then
-        for index = #self.labels, 1, -1 do
-            local label = self.labels[index]
-            if label then label:Destroy() end
-        end
-    end
-    self.labels = {}
+    Layout.destroyManaged(self)
     self.equalizedButtons = {}
     Tooltip.unbind(self)
     if self.root then

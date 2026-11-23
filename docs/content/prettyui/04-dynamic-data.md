@@ -103,7 +103,8 @@ Clean up subscriptions
 : Unsubscribe plugin-owned events during **PluginShutdown**.
 
 Account for layout
-: Changing a value redraws its component, but does not automatically resize every flow row. Use stable dimensions or explicitly resize dynamic multiline content.
+: Changing a value redraws its component, but does not automatically resize every flow row. After
+  changing content in place, such as a label's text, call **RefreshLayout()**.
 
 {{% /api-card %}}
 

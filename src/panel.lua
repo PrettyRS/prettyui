@@ -874,6 +874,11 @@ function Panel:SetScrollable(scrollable)
     self.scrollable = self.dock.scroll.scrollable
 end
 
+function Panel:RefreshLayout()
+    Layout.refresh(self.dockOwner)
+    Layout.refresh(self.overlayOwner)
+end
+
 function Panel:RefreshRowBackgrounds()
     refreshPanelRows(self, self.dock, self.dockOwner, "dockRowBackgrounds")
     refreshPanelRows(self, self.overlay, self.overlayOwner, "overlayRowBackgrounds")

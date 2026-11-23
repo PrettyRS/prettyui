@@ -640,6 +640,10 @@ function NisPanel:_FitContent()
     self:RefreshRowBackgrounds()
 end
 
+function NisPanel:RefreshLayout()
+    Layout.refresh(self)
+end
+
 function NisPanel:RefreshRowBackgrounds()
     local contentInterfaceID = self._contentInterfaceID or self.interfaceID
     RowBackgrounds.clear(self.rowBackgrounds, contentInterfaceID)

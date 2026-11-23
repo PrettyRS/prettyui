@@ -1690,7 +1690,7 @@
       "options": {
         "selectedValue": "any",
         "inline": "boolean",
-        "wrap": "boolean",
+        "maxLines": "integer",
         "disabled": "boolean",
         "onChange": "fun(group: PrettyUI.RadioButton, value: any)",
         "colour": "number",
@@ -1732,7 +1732,7 @@
       "options": {
         "selectedValues": "any[]|table<any, boolean>",
         "inline": "boolean",
-        "wrap": "boolean",
+        "maxLines": "integer",
         "disabled": "boolean",
         "onChange": "fun(group: PrettyUI.CheckboxButton, values: any[], changedValue: any, selected: boolean)",
         "colour": "number",

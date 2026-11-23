@@ -13,6 +13,7 @@ local ROW_HEIGHT = 22
 local LABEL_X = 22
 local MIN_WIDTH = 80
 local INLINE_CHOICE_GAP = 12
+local LINE_HEIGHT = 18
 local TEXT_COLOUR = 0xE7D7B0FF
 local DISABLED_TEXT_COLOUR = 0x777777FF
 
@@ -63,6 +64,17 @@ local function measureChoiceWidth(choice)
     return LABEL_X + (succeeded and width or #normalized.text * 7)
 end
 
+local function measureLineCount(text, width, maxLines)
+    local succeeded, count = pcall(
+        function()
+            return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringLineCount(text, width, false, false, false)
+        end
+    )
+    if not succeeded then return 1 end
+    if maxLines > 0 then count = math.min(count, maxLines) end
+    return math.max(1, count)
+end
+
 local function measureWidth(choices)
     local widest = 0
     for _, choice in ipairs(choices) do
@@ -90,30 +102,11 @@ function SelectionButton.getSize(choices, options)
     return width, choicesInline and ROW_HEIGHT or #choices * ROW_HEIGHT
 end
 
-local function buildSelectionButton(kind, parent, choices, options)
-    options = options or {}
-    local items = normalizeChoices(choices)
-    local choicesInline = options.inline == true
-    local width, height = SelectionButton.getSize(items, options)
-
-    local self = setmetatable({}, SelectionButton)
-    self.kind = kind
-    self.items = items
-    self.wrap = options.wrap == true and not choicesInline
-    self.disabled = options.disabled == true
-    self.onChange = options.onChange
-    self.textColour = options.colour or TEXT_COLOUR
-    self.disabledTextColour = options.disabledColour or DISABLED_TEXT_COLOUR
-    self.tickCursor = options.tickCursor or config.Cursor.CURSOR_TICK
-    self.crossCursor = options.crossCursor or config.Cursor.CURSOR_CROSS
-    self.selectedValue = nil
-    self.selectedValues = {}
-    self.selectedSet = {}
-
-    if kind == "radio" then
+local function applyInitialSelection(self, options)
+    if self.kind == "radio" then
         local requested = options.selectedValue
         local hasRequested = requested ~= nil
-        for _, item in ipairs(items) do
+        for _, item in ipairs(self.items) do
             if
                 self.selectedValue == nil
                 and ((hasRequested and item.value == requested) or (not hasRequested and item.selected))
@@ -124,12 +117,36 @@ local function buildSelectionButton(kind, parent, choices, options)
                 item.selected = false
             end
         end
-    else
-        for _, item in ipairs(items) do
-            item.selected = contains(options.selectedValues, item.value) or item.selected
-        end
-        self:_RebuildSelectedValues()
+        return
     end
+
+    for _, item in ipairs(self.items) do
+        item.selected = contains(options.selectedValues, item.value) or item.selected
+    end
+    self:_RebuildSelectedValues()
+end
+
+local function buildSelectionButton(kind, parent, choices, options)
+    options = options or {}
+    local items = normalizeChoices(choices)
+    local choicesInline = options.inline == true
+    local width, height = SelectionButton.getSize(items, options)
+
+    local self = setmetatable({}, SelectionButton)
+    self.kind = kind
+    self.items = items
+    self.maxLines = not choicesInline and options.maxLines or 1
+    self.disabled = options.disabled == true
+    self.onChange = options.onChange
+    self.textColour = options.colour or TEXT_COLOUR
+    self.disabledTextColour = options.disabledColour or DISABLED_TEXT_COLOUR
+    self.tickCursor = options.tickCursor or config.Cursor.CURSOR_TICK
+    self.crossCursor = options.crossCursor or config.Cursor.CURSOR_CROSS
+    self.selectedValue = nil
+    self.selectedValues = {}
+    self.selectedSet = {}
+
+    applyInitialSelection(self, options)
 
     self.interfaceID = parent.interfaceID
     self.root = Components.new(ui.Layer, parent, options)
@@ -172,14 +189,14 @@ local function buildSelectionButton(kind, parent, choices, options)
 
         item.label = Components.new(ui.Text, row)
         item.label:SetPos(LABEL_X, 0)
-        item.label:SetSize(-LABEL_X, ROW_HEIGHT, 1.0)
+        item.label:SetSize(-LABEL_X, 0, 1.0, 1.0)
         item.label.content = item.text
         item.label.font = id.Font.MUSEO_SANS_15PT_REGULAR
         item.label.rgba = self.textColour
         item.label.isShadowed = options.shadowed ~= false
         item.label.alignHorizontal = ui.AlignMode.TOPLEFT
         item.label.alignVertical = ui.AlignMode.CENTRE
-        item.label.maxLines = self.wrap and 0 or 1
+        item.label.maxLines = 1
         item.label.clickthrough = true
 
         row:Subscribe(ui.Hook.ONMOUSEOVER, function()
@@ -209,7 +226,7 @@ local function buildSelectionButton(kind, parent, choices, options)
     end
 
     Tooltip.bind(self, self.root, parent, options.tooltip)
-    if self.wrap and options._flowAbsolute == nil then self:_BindWrapping() end
+    if options._flowAbsolute == nil then self:_BindWrapping() end
     return self
 end
 
@@ -222,19 +239,35 @@ function SelectionButton.new(kind, parent, choices, options)
     )
 end
 
-function SelectionButton:_LayoutWrappedChoices()
-    local width = math.max(1, math.floor(self.root.width) - LABEL_X)
-    if width == self._labelWidth then return end
-    self._labelWidth = width
-    local font = config.Font.MUSEO_SANS_15PT_REGULAR
-    local spacing = font.baseline or 18
+function SelectionButton:BindFlow(owner)
+    self.flowOwner = owner
+    self:_BindWrapping()
+    return self
+end
+
+function SelectionButton:_BindWrapping()
+    if self.maxLines == 1 then return end
+    for _, item in ipairs(self.items) do
+        item.label.maxLines = self.maxLines
+    end
+    -- Every label has the same width, so the first one's resizes cover the whole list.
+    self.items[1].label:Subscribe(ui.Hook.ONRESIZE, "prettyui_selection_wrap", function()
+        self:_Rewrap()
+        return true
+    end)
+    self:_Rewrap()
+end
+
+function SelectionButton:_Rewrap()
+    if self.root == nil or (self.flowOwner and self.flowOwner._destroyingManagedFlow) then return end
+    local width = math.max(1, self.items[1].label.width)
+    if width == self.wrappedWidth then return end
+    self.wrappedWidth = width
     local y = 0
     for _, item in ipairs(self.items) do
-        local lines = font:GetStringLineCount(item.text, width, false, false, false)
-        local height = ROW_HEIGHT + math.max(0, lines - 1) * spacing
+        local height = ROW_HEIGHT + (measureLineCount(item.text, width, self.maxLines) - 1) * LINE_HEIGHT
         item.row:SetPos(0, y)
-        item.row:SetSize(0, height, 1.0)
-        item.label:SetHeight(height)
+        item.row:SetHeight(height)
         y = y + height
     end
     if self.flowOwner then
@@ -242,25 +275,6 @@ function SelectionButton:_LayoutWrappedChoices()
     else
         self.root:SetHeight(y)
     end
-end
-
-function SelectionButton:_BindWrapping()
-    self.root:Subscribe(
-        ui.Hook.ONRESIZE,
-        "prettyui_selection_wrap",
-        function()
-            self:_LayoutWrappedChoices()
-        end
-    )
-    self:_LayoutWrappedChoices()
-end
-
-function SelectionButton:BindFlow(owner)
-    if self.wrap then
-        self.flowOwner = owner
-        self:_BindWrapping()
-    end
-    return self
 end
 
 function SelectionButton:_RebuildSelectedValues()

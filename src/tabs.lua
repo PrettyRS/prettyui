@@ -414,6 +414,12 @@ function Tabs.new(parent, values, options)
     end)
 end
 
+function Tabs:RefreshLayout()
+    for _, page in ipairs(self.pages) do
+        page:RefreshLayout()
+    end
+end
+
 function Tabs:BindFlow(owner)
     self.flowOwner = owner
     return self
@@ -501,6 +507,10 @@ function Tabs:SetScrollable(scrollable)
     for _, page in ipairs(self.pages) do
         page:SetScrollable(self.scrollable)
     end
+end
+
+function TabPage:RefreshLayout()
+    Layout.refresh(self)
 end
 
 function TabPage:RefreshRowBackgrounds()
