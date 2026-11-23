@@ -109,6 +109,7 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
             or not same(a.content, b.content) or not same(a.scroll, b.scroll)
             or not same(a.tabs, b.tabs) or not same(a.backdrop, b.backdrop)
             or #a.backgrounds ~= #b.backgrounds or #a.children ~= #b.children then return false end
+        if a.children == b.children then return true end
         for i, bg in ipairs(a.backgrounds) do
             if bg.key ~= b.backgrounds[i].key then return false end
         end
@@ -134,7 +135,8 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         -- A matching row can repaint one child at a time during an incoming
         -- native drag. A return to that child's exact anchors is not a new
         -- native layout; keep its mixed slot even on consecutive Draws.
-        if current.nativeLayout then
+        local newRow = current.nativeLayout ~= host.nativeLayout
+        if newRow and current.nativeLayout then
             for _, fresh in ipairs(current.nativeLayout) do
                 local previous = host.nativeByKey[fresh.key]
                 local reset = acceptTabRepaint(fresh, previous)
@@ -145,7 +147,7 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         end
         if Divider.changed(host) and current.frame.visibleGlobal then group.paintPending = true end
         for _, field in ipairs(hostFields) do host[field] = current[field] end
-        if host.grouped then
+        if host.grouped and (newRow or group.lockTransition) then
             TabLayout.track(host.tabs, host.nativeLayout, current.previewIncoming or group.lockTransition ~= nil)
         end
         if host.overflow then host.overflow.host = host end
@@ -414,11 +416,42 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         return anchor
     end
 
+    -- Once every native page has its frame, a stable nest doesn't need to
+    -- rediscover unrelated windows. Still read each resident's live children:
+    -- the client can replace them without a release, resize or selection event.
+    local function refreshResidents(group, preferred)
+        if group.split or group.incomingPreview or group.lockTransition or group.transient then return false end
+        local hosts = group.hosts
+        local expected = preferred.grouped and #preferred.backgrounds or 1
+        if #hosts ~= expected then return false end
+        local members = 0
+        for _, frame in pairs(group.frames) do
+            if frame.sortPending then return false end
+            members = members + 1
+        end
+        if members ~= expected then return false end
+        local checked = {}
+        for index, host in ipairs(hosts) do
+            local ok, current = pcall(capture, host.spec, group.area, true, nil, host)
+            if not ok or not current then return false end
+            if current.frame.visibleGlobal ~= (index == group.current) or not matchingHost(host, current) then
+                return false
+            end
+            checked[index] = current
+        end
+        if Host.incomingPreview(group, preferred) then return false end
+        for index, host in ipairs(hosts) do
+            refreshHost(group, host, checked[index])
+        end
+        return true
+    end
+
     -- A former frame identity anchors the group. Rectangles and matching tab
     -- art alone cannot confer ownership of an unrelated native window.
     local function reconcile(group)
         if not live(group) then error("native interface retired") end
         local preferred = group.hosts[group.current]
+        if refreshResidents(group, preferred) then return false end
         local found = discover(group.area, group.previewBase or preferred)
         local previous = {}
         for _, host in ipairs(group.hosts) do previous[host.key] = host end

@@ -31,16 +31,26 @@ local function position(component)
     return nil
 end
 
+local function positionMatches(component, original, offset)
+    local current = component.position
+    if current.x ~= original[1] + offset then return false end
+    for index = 2, 6 do
+        if current[positions[index]] ~= original[index] then return false end
+    end
+    return true
+end
+
 local function matches(component, original, offset)
-    local ok, same = pcall(function()
-        local current = component.position
-        if current.x ~= original[1] + offset then return false end
-        for index = 2, 6 do
-            if current[positions[index]] ~= original[index] then return false end
-        end
-        return true
-    end)
-    return ok and same
+    local ok, result = pcall(positionMatches, component, original, offset)
+    return ok and result
+end
+
+function NativeTabLayout.unchanged(record, child)
+    local entry = record._entry
+    local owner = tracked[record._tabsKey]
+    return owner ~= nil and owner.records[record.key] == entry and entry ~= nil and child.x == record.x + record.offset
+        and child.width == record.width and child.height == record.height
+        and positionMatches(child, entry.original, entry.offset)
 end
 
 local function copy(values)

@@ -104,10 +104,14 @@ function Host.new(byFrame)
         component:SetSize(table.unpack(saved, 7, 10))
     end
 
-    local function spriteID(component)
-        local ok, value = pcall(function() return component.spriteID end)
+    local function fieldOf(item, field)
+        return item[field]
+    end
+
+    local function spriteID(item)
+        local ok, value = pcall(fieldOf, item, "spriteID")
         if ok and type(value) == "number" then return value, "spriteID" end
-        ok, value = pcall(function() return component.spriteId end)
+        ok, value = pcall(fieldOf, item, "spriteId")
         if ok and type(value) == "number" then return value, "spriteId" end
         return nil
     end
@@ -267,6 +271,7 @@ function Host.new(byFrame)
         for _, saved in ipairs(nativeLayout) do
             byKey[saved.key] = saved
             local child = saved.component
+            saved.y, saved.rowSprite = child.y, seen[saved.key]
             if saved.width == 24 and saved.height == 24 and child.visible
                 and child.hidden ~= true and child.y == 2 and not icons[saved.x] then
                 local value = seen[saved.key]
@@ -286,6 +291,42 @@ function Host.new(byFrame)
         if not signature then return nil end
         for _, bg in ipairs(backgrounds) do byKey[bg.iconKey].tabIcon = bg.icon end
         return backgrounds, children, signature, right, nativeLayout, byKey, moving
+    end
+
+    -- Reuse only a complete, verified row. Dynamic IDs survive rebuilds;
+    -- fresh handles must still reach artwork, input observers and cleanup.
+    local function residentStrip(host, tabs)
+        if not host.grouped or host.previewIncoming then return false end
+        local records = host.nativeLayout
+        local count, changed, replacements = 0, false, nil
+        tabs:IterateDynamicComponents(function(child)
+            if not same(child.parent, tabs) then return false end
+            count = count + 1
+            local record = records[count]
+            if not record or (record.component ~= child and identity(child) ~= record.key)
+                or child.y ~= record.y or not TabLayout.unchanged(record, child) then
+                changed = true
+                return true
+            end
+            local sprite = child.visible and not child.hidden and spriteID(child) or true
+            if sprite ~= record.rowSprite then
+                changed = true
+                return true
+            end
+            if record.component ~= child then
+                replacements = replacements or {}
+                replacements[count] = child
+            end
+            return false
+        end)
+        if changed or count ~= #records then return false end
+        if replacements then
+            for index, child in pairs(replacements) do
+                records[index].component, host.children[index] = child, child
+            end
+            for _, bg in ipairs(host.backgrounds) do bg.component = bg.layout.component end
+        end
+        return true
     end
 
     local function previewReference(reference, frame, key, bound)
@@ -314,7 +355,7 @@ function Host.new(byFrame)
         return host.overflow and host.overflow.scrollX or host.grouped and host.tabs.scrollX or 0
     end
 
-    local function capture(spec, area, allowHidden, reference)
+    local function capture(spec, area, allowHidden, reference, resident)
         local frame = component(spec.frame)
         if not frame or not same(frame.parent, area) or frame.hidden then return nil end
         local content, scroll, tabs, backdrop = component(spec.CONTENT), component(spec.SCROLL),
@@ -335,8 +376,14 @@ function Host.new(byFrame)
             local previous = group and not group.nativeSort and group.hosts[group.current]
             if previous and (not previous.grouped or previous.key ~= frameKey) then previous = nil end
             reference = previewReference(reference, frame, frameKey, group)
-            backgrounds, children, signature, used, nativeLayout, nativeByKey, previewSource =
-                strip(tabs, previous, reference)
+            if resident and residentStrip(resident, tabs) then
+                backgrounds, children = resident.backgrounds, resident.children
+                signature, used = resident.signature, resident.used
+                nativeLayout, nativeByKey = resident.nativeLayout, resident.nativeByKey
+            else
+                backgrounds, children, signature, used, nativeLayout, nativeByKey, previewSource =
+                    strip(tabs, previous, reference)
+            end
             if not backgrounds or content.y < tabs.y + HEIGHT then return nil end
         else
             if not frame.visibleGlobal or content.width < WIDTH then return nil end
@@ -530,14 +577,16 @@ function Host.new(byFrame)
     local function incomingPreview(group, reference)
         if not reference or not reference.grouped then return false end
         indexSpecs()
+        local x, y = reference.frame.x, reference.frame.y
         local visible = false
-        group.area:IterateStaticComponents(function(frame)
-            if not frame.visibleGlobal or frame.x ~= reference.frame.x or frame.y ~= reference.frame.y then
-                return false
-            end
+        group.area:IterateStaticComponents(function(frame, shown)
+            if shown == false then return false end
             local packed = (frame.interfaceID << 16) | frame.staticID
             local spec = specByID[packed]
-            if spec and not byFrame[identity(frame)] then
+            if not spec or frame.x ~= x or frame.y ~= y or not frame.visibleGlobal then return false end
+            if not byFrame[identity(frame)] then
+                local tabs = component(spec.TABS)
+                if not tabs or not tabs.visible then return false end
                 local ok, host = pcall(capture, spec, group.area, true, reference)
                 if ok and host and host.previewIncoming then visible = true; return true end
             end
