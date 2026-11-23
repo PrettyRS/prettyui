@@ -202,76 +202,80 @@ PersistentDB = {
 package.loaded["src/minimenu"] = { Start = function() end, Shutdown = function() end }
 
 local prettyui = require("main")
-local occupied = host(1)
-for dynamic = 0, 4049 do
-    occupied.virtual[pair(0, dynamic)] = true
-end
-occupied.virtual[pair(1, 6)] = true
-local neighbor = ui.Layer.new(occupied, 2, 0)
-local window = prettyui.Window.new(occupied, { categoryID = "auto", title = "Capacity", width = 400, height = 230 })
-local rawRows = {}
-local firstClick, lastClick
-for index = 1, 250 do
-    local row = prettyui.NewComponent(ui.Layer, window.content)
-    rawRows[index] = row
-    for _ = 1, 4 do
-        prettyui.NewComponent(ui.Text, row)
+local function testPopulatedHost()
+    local occupied = host(1)
+    for dynamic = 0, 4049 do
+        occupied.virtual[pair(0, dynamic)] = true
     end
-    local button = prettyui.NewComponent(ui.Button, row)
-    button:Subscribe(ui.Hook.ONCLICK, function()
-        if index == 1 then firstClick = true end
-        if index == 250 then lastClick = true end
-    end)
+    occupied.virtual[pair(1, 6)] = true
+    local neighbor = ui.Layer.new(occupied, 2, 0)
+    local window = prettyui.Window.new(occupied, { categoryID = "auto", title = "Capacity", width = 400, height = 230 })
+    local rawRows = {}
+    local firstClick, lastClick
+    for index = 1, 250 do
+        local row = prettyui.NewComponent(ui.Layer, window.content)
+        rawRows[index] = row
+        for _ = 1, 4 do
+            prettyui.NewComponent(ui.Text, row)
+        end
+        local button = prettyui.NewComponent(ui.Button, row)
+        button:Subscribe(ui.Hook.ONCLICK, function()
+            if index == 1 then firstClick = true end
+            if index == 250 then lastClick = true end
+        end)
+    end
+    rawRows[1].children[5].subscriptions[ui.Hook.ONCLICK]()
+    rawRows[250].children[5].subscriptions[ui.Hook.ONCLICK]()
+    expect(firstClick, true, "first raw row remains clickable")
+    expect(lastClick, true, "last raw row remains clickable")
+    expect(rawRows[250].categoryID > 0, true, "raw rows cross category zero")
+    expect(neighbor.destroyed, nil, "mixed-owner neighbor survives raw rows")
+
+    local choices = {}
+    for index = 1, 250 do
+        choices[index] = { label = "Choice " .. index, value = index }
+    end
+    local checkbox = window:AddCheckboxButton(choices)
+    checkbox.items[1].row.subscriptions[ui.Hook.ONCLICK]()
+    checkbox.items[250].row.subscriptions[ui.Hook.ONCLICK]()
+    expect(checkbox.items[1].selected, true, "first PrettyUI checkbox can be selected")
+    expect(checkbox.items[250].selected, true, "last PrettyUI checkbox can be selected")
+    expect(checkbox.items[250].row.categoryID > 0, true, "nested PrettyUI rows cross category zero")
+    window:AddText({ text = "After choices", height = 24 })
+    window:SetScrollPosition(100000)
+    expect(window.scrollY > 0, true, "window scroll reaches populated content")
+
+    local view = prettyui.SimpleView.new(occupied, { categoryID = "auto", height = 200, width = 300 })
+    local viewChoice = view:AddCheckboxButton({ { label = "Visible", value = 1 } })
+    viewChoice.items[1].row.subscriptions[ui.Hook.ONCLICK]()
+    expect(viewChoice.items[1].selected, true, "simple view row can be selected")
+    expect(viewChoice.items[1].row.categoryID > 0, true, "simple view rows receive allocated IDs")
+    local panel = prettyui.Panel.new(occupied, { categoryID = "auto", width = 300, height = 200 })
+    local pairChoice = panel:AddCheckboxButton({ { label = "Dock", value = 1 } })
+    expect(pairChoice.dock.items[1].row.categoryID > 0, true, "panel dock child is allocated")
+    expect(pairChoice.overlay.items[1].row.categoryID > 0, true, "panel overlay child is allocated")
+
+    local second = host(1)
+    local independent = prettyui.NewComponent(ui.Layer, second)
+    assert(
+        independent.categoryID == 0 and independent.dynamicID == 0,
+        "static parents sharing an interface allocate independently"
+    )
+
+    for _, row in ipairs(rawRows) do
+        row:Destroy()
+    end
+    panel:Destroy()
+    view:Destroy()
+    window:Destroy()
+    expect(neighbor.destroyed, nil, "destroy and rebuild preserve other owners")
+    local remounted = prettyui.Window.new(occupied, { categoryID = "auto", width = 320, height = 200 })
+    remounted:AddText({ text = "Remounted", height = 24 })
+    expect(remounted.root.destroyed, nil, "window remount succeeds")
+    remounted:Destroy()
 end
-rawRows[1].children[5].subscriptions[ui.Hook.ONCLICK]()
-rawRows[250].children[5].subscriptions[ui.Hook.ONCLICK]()
-expect(firstClick, true, "first raw row remains clickable")
-expect(lastClick, true, "last raw row remains clickable")
-expect(rawRows[250].categoryID > 0, true, "raw rows cross category zero")
-expect(neighbor.destroyed, nil, "mixed-owner neighbor survives raw rows")
 
-local choices = {}
-for index = 1, 250 do
-    choices[index] = { label = "Choice " .. index, value = index }
-end
-local checkbox = window:AddCheckboxButton(choices)
-checkbox.items[1].row.subscriptions[ui.Hook.ONCLICK]()
-checkbox.items[250].row.subscriptions[ui.Hook.ONCLICK]()
-expect(checkbox.items[1].selected, true, "first PrettyUI checkbox can be selected")
-expect(checkbox.items[250].selected, true, "last PrettyUI checkbox can be selected")
-expect(checkbox.items[250].row.categoryID > 0, true, "nested PrettyUI rows cross category zero")
-window:AddText({ text = "After choices", height = 24 })
-window:SetScrollPosition(100000)
-expect(window.scrollY > 0, true, "window scroll reaches populated content")
-
-local view = prettyui.SimpleView.new(occupied, { categoryID = "auto", height = 200, width = 300 })
-local viewChoice = view:AddCheckboxButton({ { label = "Visible", value = 1 } })
-viewChoice.items[1].row.subscriptions[ui.Hook.ONCLICK]()
-expect(viewChoice.items[1].selected, true, "simple view row can be selected")
-expect(viewChoice.items[1].row.categoryID > 0, true, "simple view rows receive allocated IDs")
-local panel = prettyui.Panel.new(occupied, { categoryID = "auto", width = 300, height = 200 })
-local pairChoice = panel:AddCheckboxButton({ { label = "Dock", value = 1 } })
-expect(pairChoice.dock.items[1].row.categoryID > 0, true, "panel dock child is allocated")
-expect(pairChoice.overlay.items[1].row.categoryID > 0, true, "panel overlay child is allocated")
-
-local second = host(1)
-local independent = prettyui.NewComponent(ui.Layer, second)
-assert(
-    independent.categoryID == 0 and independent.dynamicID == 0,
-    "static parents sharing an interface allocate independently"
-)
-
-for _, row in ipairs(rawRows) do
-    row:Destroy()
-end
-panel:Destroy()
-view:Destroy()
-window:Destroy()
-expect(neighbor.destroyed, nil, "destroy and rebuild preserve other owners")
-local remounted = prettyui.Window.new(occupied, { categoryID = "auto", width = 320, height = 200 })
-remounted:AddText({ text = "Remounted", height = 24 })
-expect(remounted.root.destroyed, nil, "window remount succeeds")
-remounted:Destroy()
+testPopulatedHost()
 
 local nestedHost = host(3)
 local container = ui.Layer.new(nestedHost, 0, 0)
@@ -721,9 +725,12 @@ do
     local function wrapFreshIteration(node)
         local base = node.IterateDynamicComponents
         function node:IterateDynamicComponents(callback)
-            return base(self, function(child, visible)
-                return callback(freshHandle(child, true), visible)
-            end)
+            return base(
+                self,
+                function(child, visible)
+                    return callback(freshHandle(child, true), visible)
+                end
+            )
         end
     end
     wrapFreshIteration(fallbackHost)
@@ -737,10 +744,14 @@ do
     local fallbackLegacy = C.new(ui.Text, fallbackLayer)
     expect(fallbackLegacy.categoryID, 0, "fallback legacy preflight succeeds past leaf controls")
     local fallbackView = prettyui.SimpleView.new(fallbackLayer, {
-        categoryID = "auto", width = 200, height = 160, scrollable = true,
+        categoryID = "auto",
+        width = 200,
+        height = 160,
+        scrollable = true,
     })
     local fallbackTip = prettyui.Tooltip.attach(fallbackAuto, fallbackHost, {
-        categoryID = "auto", text = "Tooltip under fallback walk",
+        categoryID = "auto",
+        text = "Tooltip under fallback walk",
     })
     fallbackTip:Show()
     expect(fallbackTip.root.hidden, false, "Tooltip builds and shows under fallback walk with leaf controls")
