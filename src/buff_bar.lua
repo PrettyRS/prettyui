@@ -458,6 +458,8 @@ local function setTooltip(bar, entry, value, deferLayout)
             tooltip:Hide()
         end,
     })
+    -- Keep hover hooks without blocking the game view's camera input.
+    entry.tooltipTarget.clickthrough = true
     setComponentOwned(bar, entry.tooltip.root, true)
     Components.setHidden(entry.tooltipTarget, not entry.visible)
     if deferLayout ~= true then layout(bar, true) end

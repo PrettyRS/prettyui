@@ -53,6 +53,7 @@ hero:
 - A [panel's](index.html#panel-api) popped-out size and docked size are now independent of each other.
 - Dragging a scrollbar no longer stops while the mouse passes over a resizable window's edge.
 - Fixed custom buffs and debuffs flickering between rows near the native bar's wrap threshold.
+- Fixed an issue where middle-mouse camera rotation would stop when crossing PrettyUI buffs or debuffs.
 - Fixed a crash that might occur when pressing alt after destroying a panel mounted on a parent.
 - Fixed how Text added to a [collapse button](index.html#collapse-button-api) wraps and resizes to avoid clipping.
 
