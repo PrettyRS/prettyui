@@ -7,6 +7,7 @@ local Cursor = require("src/core/cursor")
 local InterfaceMouse = require("src/core/mouse")
 local TabLayout = require("src/nis/native_tab_layout")
 local Overflow = require("src/nis/native_overflow")
+local Divider = require("src/nis/native_divider")
 
 local art = Sprites.NIS_PANEL
 
@@ -219,7 +220,7 @@ function View.new(Host, actions)
             tx, ty = tx + left, ty + y
             if hit.x ~= tx or hit.y ~= ty then hit:SetPos(tx, ty) end
             if hit.width ~= width then hit:SetSize(width, HEIGHT) end
-            local input = show and width > 0 and not sorting
+            local input = show and width > 0 and not sorting and not tab.group.incomingPreview
             if hit.hidden == input then Components.setHidden(hit, not input) end
             if hit.enabled ~= input then hit.enabled = input end
             if input and not tab.shown then hit:MoveToFront() end
@@ -264,6 +265,7 @@ function View.new(Host, actions)
                 alignTab(host.nativeTab, host.nativeTab.x, host.nativeTab.y, false)
             end
             if host.seam and not host.seam.hidden then Components.setHidden(host.seam, true) end
+            if host.grouped then Divider.restore(host) end
             if host.chrome and not host.chrome.hidden then Components.setHidden(host.chrome, true) end
             if host.overflow then host.overflow:Hide() end
         end
@@ -359,6 +361,60 @@ function View.new(Host, actions)
         return x + (delta > 0 and 1 or -1) * math.ceil(math.abs(delta) * 0.4)
     end
 
+    -- The client's captured tab follows the pointer, not the slot that it
+    -- will occupy on release. Pack peers around its actual footprint, without
+    -- moving that component or changing the saved insertion points.
+    local function clearGhost(x, width, left, right)
+        if x < right and x + width > left then return right end
+        return x
+    end
+
+    local function incomingSlots(group, host)
+        if group.incomingPreview ~= host.key or not host.previewSource then return nil end
+        local source = host.backgrounds[host.previewSource].component
+        local left, right = source.x, source.x + source.width
+        -- A native repaint can move the icon and badge one draw after their
+        -- background. Reserve those visible pixels without touching capture.
+        for _, record in ipairs(host.nativeLayout) do
+            local child = record.component
+            if record.nativeSlot == host.previewSource and child.visible and not child.hidden then
+                left, right = math.min(left, child.x), math.max(right, child.x + child.width)
+            end
+        end
+        local slots = host.previewSlots or { native = {}, own = {} }
+        host.previewSlots = slots
+        local x, member, peers = 0, 1, #host.backgrounds - 1
+        for before = 0, peers do
+            while member <= #group.members do
+                local binding = group.bindings[group.members[member]]
+                if math.min(binding.beforeNative or peers, peers) ~= before then break end
+                x = clearGhost(x, WIDTH, left, right)
+                slots.own[member] = x
+                x, member = x + WIDTH, member + 1
+            end
+            local index = before + 1
+            if index >= host.previewSource then index = index + 1 end
+            local bg = host.backgrounds[index]
+            if bg then
+                local width = bg.component.width
+                x = clearGhost(x, width, left, right)
+                slots.native[index] = x - bg.layout.x
+                x = x + width
+            end
+        end
+        slots.used = math.max(x, right)
+        return slots
+    end
+
+    local function alignIncomingTabs(host, slots)
+        for _, saved in ipairs(host.nativeLayout) do
+            local index = saved.nativeSlot
+            if index and index ~= host.previewSource then
+                assert(TabLayout.move(saved, slots.native[index]) ~= false, "native preview peer position overwritten")
+            end
+        end
+    end
+
     local function alignNativeTabs(group, host, animate)
         if not host.grouped then return end
         for index, bg in ipairs(host.backgrounds) do
@@ -376,9 +432,46 @@ function View.new(Host, actions)
         end
     end
 
-    local function scrollPosition(group, current)
+    local function selectedNative(host)
+        local chosen
+        for _, bg in ipairs(host.backgrounds) do
+            if bg.component.visibleGlobal and not bg.component.hidden
+                and Host.spriteID(bg.component) == art.tabSelected then
+                if chosen then return nil end
+                chosen = bg
+            end
+        end
+        return chosen
+    end
+
+    local function alignDivider(group, host, frameIndex, show)
+        if not host.grouped then return end
+        if not show then Divider.restore(host); return end
+        local x, width
+        if group.active then
+            for _, panel in ipairs(group.members) do
+                if panel == group.active then
+                    local tab = group.bindings[panel].tabs[frameIndex]
+                    x, width = tab.x, WIDTH
+                    break
+                end
+            end
+        else
+            local selected = selectedNative(host)
+            if selected then
+                x = host.tabs.x + selected.component.x - (host.tabs.scrollX or 0)
+                width = selected.component.width
+            end
+        end
+        if not x then Divider.restore(host); return end
+        local clipped, visibleWidth = host.overflow:Clip(x, width)
+        Divider.align(host, clipped - host.backdrop.x, visibleWidth)
+    end
+
+    local function scrollPosition(group, current, extent)
         local host = group.hosts[current]
-        local total = host.used + WIDTH * (#group.members + (group.dockPreview and group.dockPreview.count or 0))
+        local total = extent or host.used
+            + WIDTH * (#group.members + (group.dockPreview and group.dockPreview.count or 0))
         local width = Overflow.width(host, total)
         local scroll = group.tabScroll
         if scroll == nil then scroll = host.grouped and host.tabs.scrollX or 0 end
@@ -407,7 +500,8 @@ function View.new(Host, actions)
     local function align(group)
         local current = Host.selectedFrame(group)
         if not current then error("native group has no unique visible frame") end
-        local scroll = scrollPosition(group, current)
+        local slots = incomingSlots(group, group.hosts[current])
+        local scroll = scrollPosition(group, current, slots and slots.used)
         for i, host in ipairs(group.hosts) do
             local show = i == current
             local band = Host.tabBand(host)
@@ -416,8 +510,10 @@ function View.new(Host, actions)
             if chrome.x ~= x or chrome.y ~= y then chrome:SetPos(x, y) end
             if chrome.width ~= width or chrome.height ~= height then chrome:SetSize(width, height) end
             if chrome.hidden == show then Components.setHidden(chrome, not show) end
-            host.overflow:Layout(host.used + WIDTH * (#group.members
-                + (group.dockPreview and group.dockPreview.count or 0)), scroll, show, not group.tabDrag)
+            local preview = show and slots
+            local total = preview and preview.used or host.used
+                + WIDTH * (#group.members + (group.dockPreview and group.dockPreview.count or 0))
+            host.overflow:Layout(total, scroll, show, not group.tabDrag and not group.incomingPreview)
             if host.tabBuffer then
                 if host.tabBuffer.x ~= band.x or host.tabBuffer.y ~= band.y then
                     host.tabBuffer:SetPos(band.x, band.y)
@@ -435,10 +531,14 @@ function View.new(Host, actions)
                 if host.divider.x ~= dx or host.divider.y ~= dy then host.divider:SetPos(dx, dy) end
                 if host.divider.width ~= band.width then host.divider:SetSize(band.width, SEAM) end
             end
-            alignNativeTabs(group, host, (group.tabDrag ~= nil or group.dockPreview ~= nil) and show)
+            if preview then
+                alignIncomingTabs(host, preview)
+            else
+                alignNativeTabs(group, host, (group.tabDrag ~= nil or group.dockPreview ~= nil) and show)
+            end
             for index, panel in ipairs(group.members) do
                 local tab = group.bindings[panel].tabs[i]
-                local target = ownX(group, host, index)
+                local target = preview and Host.tabOrigin(host) + preview.own[index] or ownX(group, host, index)
                 local drag = group.tabDrag
                 local x = target
                 if (drag or group.dockPreview) and show then
@@ -451,6 +551,7 @@ function View.new(Host, actions)
                 alignTab(tab, x - scroll, band.y, show)
                 selectTab(tab, show and group.active == panel)
             end
+            alignDivider(group, host, i, show)
             local seam = host.seam
             if seam then
                 local selected = show and group.active ~= nil

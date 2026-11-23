@@ -112,7 +112,134 @@ function Host.new(byFrame)
         return nil
     end
 
-    local function strip(tabs)
+    local function orderedRow(backgrounds, icons, sprites)
+        table.sort(backgrounds, function(a, b) return a.layout.x < b.layout.x end)
+        local signature, right = {}, 0
+        for _, entry in ipairs(backgrounds) do
+            local bg, x = entry.component, entry.layout.x
+            if bg.width < WIDTH or bg.height ~= HEIGHT or x < right then return nil end
+            local icon = icons[x + math.floor((bg.width - 24) / 2)]
+            if not icon then return nil end
+            entry.icon, entry.iconKey = sprites[icon.key], icon.key
+            signature[#signature + 1] = x .. ":" .. bg.width .. ":" .. entry.icon
+            right = x + bg.width
+        end
+        return table.concat(signature, "/"), right
+    end
+
+    -- Native category-zero tabs are four dynamic children per slot: background,
+    -- icon, then two optional badges. The client can move a dragged background
+    -- and icon independently of the settled row, so position alone is not identity.
+    local function pairedRow(backgrounds, records, seen)
+        table.sort(backgrounds, function(a, b)
+            return a.component.dynamicID < b.component.dynamicID
+        end)
+        local slots = {}
+        for _, saved in ipairs(records) do
+            local child = saved.component
+            if child.categoryID == 0 and type(child.dynamicID) == "number" then
+                if child.dynamicID < 0 or child.dynamicID >= #backgrounds * 4
+                    or slots[child.dynamicID] then return nil end
+                slots[child.dynamicID] = saved
+            end
+        end
+        for index, bg in ipairs(backgrounds) do
+            local child = bg.component
+            local slot = (index - 1) * 4
+            local icon = slots[slot + 1]
+            if child.categoryID ~= 0 or child.dynamicID ~= slot
+                or bg.layout.width < WIDTH or bg.layout.height ~= HEIGHT
+                or not icon or icon.width ~= 24 or icon.height ~= 24
+                or icon.component.y ~= 2 or not icon.component.visible or icon.component.hidden
+                or type(seen[icon.key]) ~= "number" then return nil end
+            bg.icon, bg.iconKey = seen[icon.key], icon.key
+        end
+        return slots
+    end
+
+    local function previewSlot(reference, backgrounds)
+        if not reference or not reference.grouped
+            or #backgrounds ~= #reference.backgrounds + 1 then return nil end
+        local previous, inserted = 1, nil
+        for index, bg in ipairs(backgrounds) do
+            local peer = reference.backgrounds[previous]
+            if peer and peer.icon == bg.icon then
+                previous = previous + 1
+            elseif inserted or spriteID(bg.component) ~= art.tabSelected then
+                return nil
+            else
+                inserted = index
+            end
+        end
+        if previous ~= #reference.backgrounds + 1 then return nil end
+        return inserted
+    end
+
+    local function projectChild(record, bg, index, physical, x, moving)
+        local child = record.component
+        record.nativeSlot = index
+        if index == moving then return end
+        local originalX = record.x
+        local target = x + originalX - physical
+        if child.dynamicID % 4 == 1 then target = x + math.floor((bg.layout.width - 24) / 2) end
+        local correction = target - originalX
+        record.correction, record.x = correction, target
+        record.offset = record.offset - correction
+    end
+
+    local function projectPreview(reference, backgrounds, slots, moving)
+        local x, signature = reference.backgrounds[1].layout.x, {}
+        for index, bg in ipairs(backgrounds) do
+            local physical = bg.layout.x
+            local first = (index - 1) * 4
+            signature[#signature + 1] = x .. ":" .. bg.layout.width .. ":" .. bg.icon
+            for childID = first, first + 3 do
+                local record = slots[childID]
+                if record then projectChild(record, bg, index, physical, x, moving) end
+            end
+            if index == moving then
+                -- The row needs a logical slot; its input records keep the
+                -- actual captured coordinates for repaint detection.
+                bg.layout = { x = x, width = bg.component.width }
+            end
+            x = x + bg.layout.width
+        end
+        return table.concat(signature, "/"), x
+    end
+
+    -- During native drop preview a background can already occupy a neighbour's
+    -- slot while its icon still has the old position. Geometry cannot identify
+    -- that row. Only project the last complete row if every slot and icon is
+    -- accounted for and nothing but horizontal positions has changed.
+    local function retainedRow(previous, backgrounds, records, seen)
+        if not previous or #previous.backgrounds ~= #backgrounds or #previous.nativeLayout ~= #records then
+            return nil
+        end
+        for _, bg in ipairs(previous.backgrounds) do
+            local sprite = seen[bg.key]
+            if sprite ~= art.tabSelected and sprite ~= art.tabUnselected then return nil end
+            if seen[bg.iconKey] ~= bg.icon then return nil end
+        end
+        for _, record in ipairs(records) do
+            local old = previous.nativeByKey[record.key]
+            if not old or old.width ~= record.width or old.height ~= record.height then return nil end
+            for i = 2, 6 do
+                if old.original[i] ~= record.original[i] then return nil end
+            end
+            local correction = old.x - record.x
+            record.correction, record.x = correction, old.x
+            record.offset = record.offset - correction
+            record._conflicted = false
+        end
+        table.sort(backgrounds, function(a, b) return a.layout.x < b.layout.x end)
+        for i, bg in ipairs(backgrounds) do
+            local old = previous.backgrounds[i]
+            bg.icon, bg.iconKey = old.icon, old.iconKey
+        end
+        return previous.signature, previous.used
+    end
+
+    local function strip(tabs, previous, reference)
         local backgrounds, children, seen, overflow, count = {}, {}, {}, false, 0
         tabs:IterateDynamicComponents(function(child)
             count = count + 1
@@ -143,23 +270,35 @@ function Host.new(byFrame)
             if saved.width == 24 and saved.height == 24 and child.visible
                 and child.hidden ~= true and child.y == 2 and not icons[saved.x] then
                 local value = seen[saved.key]
-                if type(value) == "number" then icons[saved.x] = value end
+                if type(value) == "number" then icons[saved.x] = saved end
             end
         end
         for _, entry in ipairs(backgrounds) do entry.layout = byKey[entry.key] end
-        table.sort(backgrounds, function(a, b) return a.layout.x < b.layout.x end)
-        local signature, right = {}, 0
-        for _, entry in ipairs(backgrounds) do
-            local bg = entry.component
-            local x = entry.layout.x
-            if bg.width < WIDTH or bg.height ~= HEIGHT or x < 0 then return nil end
-            local icon = icons[x + math.floor((bg.width - 24) / 2)]
-            if not icon then return nil end
-            signature[#signature + 1] = tostring(x) .. ":" .. tostring(bg.width) .. ":" .. tostring(icon)
-            entry.icon = icon
-            right = math.max(right, x + bg.width)
+        local verified = reference and pairedRow(backgrounds, nativeLayout, seen)
+        local moving = verified and previewSlot(reference, backgrounds)
+        local signature, right
+        if moving then
+            signature, right = projectPreview(reference, backgrounds, verified, moving)
+        else
+            signature, right = orderedRow(backgrounds, icons, seen)
+            if not signature then signature, right = retainedRow(previous, backgrounds, nativeLayout, seen) end
         end
-        return backgrounds, children, table.concat(signature, "/"), right, nativeLayout, byKey
+        if not signature then return nil end
+        for _, bg in ipairs(backgrounds) do byKey[bg.iconKey].tabIcon = bg.icon end
+        return backgrounds, children, signature, right, nativeLayout, byKey, moving
+    end
+
+    local function previewReference(reference, frame, key, bound)
+        if not reference or not reference.grouped or reference.owner ~= frame.interfaceID then return nil end
+        if not frame.visibleGlobal then return nil end
+        if reference.candidate then
+            if reference.candidate ~= key then return nil end
+        elseif bound or not reference.frame.visibleGlobal then
+            return nil
+        end
+        if frame.x ~= (reference.previewTargetX or reference.frame.x) then return nil end
+        if frame.y ~= (reference.previewTargetY or reference.frame.y) then return nil end
+        return reference
     end
 
     -- Client-hidden native strips need not reflow when the standalone content does.
@@ -175,7 +314,7 @@ function Host.new(byFrame)
         return host.overflow and host.overflow.scrollX or host.grouped and host.tabs.scrollX or 0
     end
 
-    local function capture(spec, area, allowHidden)
+    local function capture(spec, area, allowHidden, reference)
         local frame = component(spec.frame)
         if not frame or not same(frame.parent, area) or frame.hidden then return nil end
         local content, scroll, tabs, backdrop = component(spec.CONTENT), component(spec.SCROLL),
@@ -187,12 +326,17 @@ function Host.new(byFrame)
             or not allowHidden and (content.hidden or scroll and scroll.hidden) then return nil end
         local grouped = tabs.visible == true
         local frameKey = identity(frame)
-        local backgrounds, children, signature, used, nativeIcon, nativeLayout, nativeByKey
+        local backgrounds, children, signature, used, nativeIcon, nativeLayout, nativeByKey, previewSource
         if grouped then
             if tabs.height ~= HEIGHT or tabs.width <= 0
                 or tabs.x < content.x or tabs.x + tabs.width > content.x + content.width
                 or backdrop.y ~= tabs.y then return nil end
-            backgrounds, children, signature, used, nativeLayout, nativeByKey = strip(tabs)
+            local group = byFrame[frameKey]
+            local previous = group and not group.nativeSort and group.hosts[group.current]
+            if previous and (not previous.grouped or previous.key ~= frameKey) then previous = nil end
+            reference = previewReference(reference, frame, frameKey, group)
+            backgrounds, children, signature, used, nativeLayout, nativeByKey, previewSource =
+                strip(tabs, previous, reference)
             if not backgrounds or content.y < tabs.y + HEIGHT then return nil end
         else
             if not frame.visibleGlobal or content.width < WIDTH then return nil end
@@ -220,7 +364,9 @@ function Host.new(byFrame)
             tabControls = component(spec.TABS_SCROLL),
             backgrounds = backgrounds, children = children, signature = signature,
             used = used, grouped = grouped, spec = spec,
-            nativeIcon = nativeIcon, nativeLayout = nativeLayout, nativeByKey = nativeByKey }
+            nativeIcon = nativeIcon, nativeLayout = nativeLayout, nativeByKey = nativeByKey,
+            previewIncoming = previewSource ~= nil, previewSource = previewSource,
+            previewTargetX = previewSource and frame.x, previewTargetY = previewSource and frame.y }
     end
 
     -- Whole rendered roots captured from standalone hosts. Prayer's separate
@@ -371,14 +517,33 @@ function Host.new(byFrame)
         return { snapshotRoot(chosen, saved, { 0, HEIGHT, 0, 0, 0, 0, 0, -HEIGHT, 1, 1 }) }
     end
 
-    local function discover(area)
+    local function discover(area, reference)
         indexSpecs()
         local found = {}
         for _, spec in pairs(specByID) do
-            local ok, host = pcall(capture, spec, area, true)
+            local ok, host = pcall(capture, spec, area, true, reference)
             if ok and host then found[#found + 1] = host end
         end
         return found
+
+    end
+    local function incomingPreview(group, reference)
+        if not reference or not reference.grouped then return false end
+        indexSpecs()
+        local visible = false
+        group.area:IterateStaticComponents(function(frame)
+            if not frame.visibleGlobal or frame.x ~= reference.frame.x or frame.y ~= reference.frame.y then
+                return false
+            end
+            local packed = (frame.interfaceID << 16) | frame.staticID
+            local spec = specByID[packed]
+            if spec and not byFrame[identity(frame)] then
+                local ok, host = pcall(capture, spec, group.area, true, reference)
+                if ok and host and host.previewIncoming then visible = true; return true end
+            end
+            return false
+        end)
+        return visible
     end
 
     local function related(host, other)
@@ -503,7 +668,7 @@ function Host.new(byFrame)
         applyLayout = applyLayout, spriteID = spriteID,
         tabBand = tabBand, tabOrigin = tabOrigin, tabScroll = tabScroll,
         capture = capture, familiarRootsFor = familiarRootsFor, nativeRootsFor = nativeRootsFor,
-        discover = discover, related = related, resolve = resolve,
+        discover = discover, incomingPreview = incomingPreview, related = related, resolve = resolve,
         frameGroup = frameGroup, selectedFrame = selectedFrame,
         rectInParent = rectInParent, freeRect = freeRect,
         captureAt = captureAt, captureHiddenGroup = captureHiddenGroup,

@@ -113,11 +113,6 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                     local changed = reconcile(group)
                     if changed == nil then suspend(group); return end
                     checkCapacity(group)
-                    if settledSort then
-                        -- Native sort completion can be followed by one delayed
-                        -- baseline repaint, just like the lock reflow path.
-                        for _, host in ipairs(group.hosts) do host.tabReset = true end
-                    end
                     for _, host in ipairs(group.hosts) do
                         if not validHost(group, host) then error("native host resized out of capacity or retired") end
                     end
@@ -194,36 +189,37 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
         end
     end
 
+    local function drawGroup(group)
+        local member = group.members[1]
+        if group.dead or not member or group.mapPaused or member._nisTopLevelHidden then return end
+        if not live(group) or group.area.visibleGlobal == false then return end
+        local ok, problem = pcall(syncClientSort, group)
+        if not ok then
+            group.failure = problem
+            return
+        end
+        if group.nativeSort then
+            syncObservers(group)
+            presentNativeSort(group)
+            return
+        end
+        local readOK, changed = pcall(nativeRowChanged, group)
+        if not readOK then
+            group.failure = changed
+        elseif group.paintPending or changed then
+            if actions.sync(member) and selectedFrame(group) then raiseGroup(group) end
+            group.paintPending = nil
+        elseif group.incomingPreview then
+            -- Native drag painting can raise the frame even at a stationary
+            -- pointer. Raise only clickthrough artwork while it owns capture.
+            group.hosts[group.current].chrome:MoveToFront()
+        end
+    end
+
     local function beforeDraw()
         if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI() then return end
         for index = #groups, 1, -1 do
-            local group = groups[index]
-            if not group.dead and #group.members > 0 then
-                if not group.mapPaused and not group.members[1]._nisTopLevelHidden
-                    and live(group) and group.area.visibleGlobal ~= false then
-                    local ok, problem = pcall(syncClientSort, group)
-                    if not ok then group.failure = problem end
-                end
-                if group.nativeSort then
-                    if not group.mapPaused and not group.members[1]._nisTopLevelHidden
-                        and live(group) and group.area.visibleGlobal ~= false then
-                        syncObservers(group)
-                        -- Native input can move the band and raise its opaque frame
-                        -- after Logic, including multiple paints between logic ticks.
-                        presentNativeSort(group)
-                    end
-                elseif not group.mapPaused and not group.members[1]._nisTopLevelHidden
-                    and live(group) and group.area.visibleGlobal ~= false then
-                    local ok, changed = pcall(nativeRowChanged, group)
-                    if not ok then
-                        group.failure = changed
-                    elseif group.paintPending or changed then
-                        -- Reacquire the final native row and stacking before painting.
-                        if actions.sync(group.members[1]) and selectedFrame(group) then raiseGroup(group) end
-                        group.paintPending = nil
-                    end
-                end
-            end
+            drawGroup(groups[index])
         end
     end
 

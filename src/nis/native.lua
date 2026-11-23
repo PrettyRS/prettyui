@@ -27,7 +27,6 @@ local View = require("src/nis/native_view").new(Host, {
 local Sort = require("src/nis/native_sort").new(Host, View, warn)
 local Reconcile = require("src/nis/native_reconcile").new(Host, View, Sort, byFrame, {
     sync = function(panel) return Native.sync(panel) end,
-    logicSequence = function() return Runtime.logicSequence end,
     warn = warn,
 })
 local Preview = require("src/nis/native_preview").new(Host, View, {
@@ -183,7 +182,8 @@ end
 
 saveGroup = function(group)
     if WorldMap.isSuspended() then return end
-    if restoring or group.attaching or group.tabDrag or group.nativeSort or group.dockPreview then return end
+    if restoring or group.attaching or group.tabDrag or group.nativeSort or group.dockPreview
+        or group.incomingPreview then return end
     for _, member in ipairs(group.members) do
         if member._nisNativeTransaction then return end
     end
@@ -529,7 +529,6 @@ function Native.lockChanged(panel, locked)
             local ok, problem = pcall(syncObservers, group)
             if not ok then group.failure = problem end
         end
-        for _, host in ipairs(group.hosts) do host.tabReset = true end
         if group.nativeRoots then
             for _, saved in ipairs(group.nativeRoots) do saved.baselineReset = true end
         end
@@ -778,7 +777,6 @@ WorldMap.watch(Native, function(suspended)
     for _, group in ipairs(groups) do
         group.mapPaused, group.lockTransition = true, true
         if group.nativeSort then group.nativeSort.mapCancelled = true end
-        for _, host in ipairs(group.hosts) do host.tabReset = true end
         for _, saved in ipairs(group.nativeRoots or {}) do saved.baselineReset = true end
     end
 end)

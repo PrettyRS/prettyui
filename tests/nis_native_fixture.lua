@@ -114,7 +114,7 @@ return function(f)
         local body = nativeNode(1477, first + 2, frame, 4, 44, 371, 309)
         nativeNode(1477, first + 3, frame, 4, 44, 371, 309)
         local scroll = nativeNode(1477, first + 4, frame, 4, 44, 371, 309)
-        nativeNode(1477, first + 7, frame, 0, 16, 379, 28)
+        local backdrop = nativeNode(1477, first + 7, frame, 0, 16, 379, 28)
         local tabs = nativeNode(1477, first + 8, frame, 4, 16, 371, 28)
         tabs.visible = true
         local tabControls = nativeNode(1477, first + 9, frame, 4, 16, 371, 28)
@@ -131,6 +131,7 @@ return function(f)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_TABS_SCROLL" .. suffix] = (1477 << 16) | (first + 9)
         id.Component["TOPLEVEL_V2__" .. prefix .. "_TAB_BACKGROUND" .. suffix] = (1477 << 16) | (first + 7)
         local result = { frame = frame, body = body, scroll = scroll, tabs = tabs, tabControls = tabControls }
+        result.backdrop = backdrop
         function result:rebuild(order, selected)
             for _, child in ipairs({ table.unpack(tabs.children) }) do child:Destroy() end
             self.backgrounds = {}
