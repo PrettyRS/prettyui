@@ -482,7 +482,9 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         anchor = updatePreview(group, preferred, anchor, found)
         local hosts = {}
         for _, host in ipairs(found) do
-            if related(anchor, host) then
+            if related(anchor, host) or (group.selectionHandoff and group.frames[host.key]
+                and host.grouped and host.signature == anchor.signature and host.frame.visibleGlobal
+                and host.frame.x == anchor.frame.x and host.frame.y == anchor.frame.y) then
                 if byFrame[host.key] and byFrame[host.key] ~= group then
                     error("native host belongs to another docked group")
                 end
@@ -705,6 +707,9 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
     -- Native scripts can repaint rows after Logic, reusing components with new
     -- icons. Detect those changes before Draw updates artwork and input positions.
     local function nativeRowChanged(group)
+        -- Either resident can repaint its native-only coordinates before the
+        -- outgoing selection disappears. Reapply the same order to both.
+        if group.selectionHandoff then return true end
         local selected = selectedFrame(group)
         if selected ~= group.current then return true end
         local host = group.hosts[selected]

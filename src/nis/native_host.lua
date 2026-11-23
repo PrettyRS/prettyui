@@ -638,8 +638,8 @@ function Host.new(byFrame)
         local index
         for i, host in ipairs(group.hosts) do
             if host.frame.visibleGlobal then
-                if index then return nil end
-                index = i
+                if index and not group.selectionHandoff then return nil end
+                if not index or i == group.current then index = i end
             end
         end
         return index

@@ -1,5 +1,6 @@
 -- Observes client-owned tab dragging without taking over native input or ordering.
 local Components = require("src/core/components")
+local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local InterfaceMouse = require("src/core/mouse")
 local TabLayout = require("src/nis/native_tab_layout")
@@ -262,8 +263,7 @@ function NativeSort.new(Host, View, warn)
                 if entry.native then
                     nativeCountBefore = nativeCountBefore + 1
                     if not host.grouped then syntheticX = entry.slideX end
-                    if saved and mapped and (entry ~= sort.source.entry
-                        or sort.finishing and (not sort.clientCopies or current)) then
+                    if saved and mapped and (entry ~= sort.source.entry or sort.finishing) then
                         local bg = mapped[entry.nativeIndex]
                         local record = bg and saved[bg.key]
                         if record then
@@ -336,9 +336,10 @@ function NativeSort.new(Host, View, warn)
 
     local function finishNativeSort(group, hook, cancelled)
         local sort = group.nativeSort
-        if not sort or hook and sort.source ~= hook then
-            return
-        end
+        if not sort then return end
+        -- Native scripts can deliver the release to the strip, icon or new
+        -- page copy. A retired observer may finish only its own capture.
+        if hook and hook.removed and hook ~= sort.source then return end
         if WorldMap.isSuspended() then sort.mapCancelled = true; return end
         local pointerSampled = sampleSortPointer(sort)
         if not pointerSampled and not cancelled and sort.source.entry and not sort.finishing then
@@ -374,7 +375,8 @@ function NativeSort.new(Host, View, warn)
                     if center and center >= left and center < left + bg.component.width then
                         InterfaceMouse.CalibrateFromHook(hook.component, x, y)
                         local pointer = InterfaceMouse.GetPosition()
-                        return { host = host.key, index = index, x = bg.component.x,
+                        return { hook = hook, host = host.key, index = index, x = bg.component.x, icon = bg.icon,
+                            category = bg.component.categoryID, dynamic = bg.component.dynamicID,
                             pointerX = pointer and pointer.x, backgrounds = host.backgrounds,
                             frameX = host.frame.x, frameY = host.frame.y, signature = host.signature }
                     end
@@ -385,12 +387,16 @@ function NativeSort.new(Host, View, warn)
 
     local function beginNativeSort(group, hook, x, y, press)
         if group.nativeSort or group.split or group.dead or #group.members == 0 or editingLocked(group) then return end
-        press = press or hook.sortPress or nativeSortPress(group, hook, x, y)
+        if not press then
+            press = group.nativePress
+            if not press or press.hook ~= hook then press = nativeSortPress(group, hook, x, y) end
+        end
         if not press then return end
         local host
         for _, candidate in ipairs(group.hosts) do
             if candidate.key == press.host then host = candidate; break end
         end
+        group.selectionHandoff = nil
         if not host then return end
         local sort = { source = hook, sourceHost = host.key, press = press, mapped = {},
             sourceStart = press.x, sourceX = press.x, pointerStart = press.pointerX,
@@ -424,32 +430,75 @@ function NativeSort.new(Host, View, warn)
         presentNativeSort(group)
     end
 
-    -- Native scripts hand capture between frame copies: RELEASE can arrive before
-    -- the drag begins, with no subsequent ONDRAG/ONHOLD on the original component.
-    -- Retain the press across that handoff. Coincident visible copies signal an
-    -- in-row sort; independently positioned copies are separate windows.
+    -- A second copy can mean either selection or capture. A handed-off
+    -- drag needs the client's drag target or a selected tab off both its
+    -- native and mixed slots. A pointer crossing the strip proves neither.
+    local function dragEvidence(host, press)
+        local bg = host.backgrounds[press.index]
+        if not bg or bg.icon ~= press.icon or not host.frame.visibleGlobal then return nil end
+        local child = ui.Interfaces:GetComponent(host.owner, host.spec.TABS & 0xFFFF, press.category, press.dynamic)
+        if not child or not same(child.parent, host.tabs) or spriteID(child) ~= Sprites.NIS_PANEL.tabSelected then
+            return nil
+        end
+        local target = child.dragConfig.draggedComponent or host.tabs.dragConfig.draggedComponent
+        if target and (same(target, child) or identity(target) == bg.iconKey) then return "capture" end
+        local x = child.x
+        if x ~= press.x and x ~= bg.layout.x and x ~= bg.layout.x + (bg.layout.offset or 0) then return "layout" end
+    end
+
+    local function syncHandoff(group, press)
+        local sort = group.nativeSort
+        if sort then
+            sort.clientCopies = true
+            if sort.captureHost and dragEvidence(sort.captureHost, sort.press) ~= "capture" then
+                sort.finishing = true
+            end
+            return
+        end
+        group.selectionHandoff = true
+        if not press then return end
+        for _, host in ipairs(group.hosts) do
+            local evidence = dragEvidence(host, press)
+            if evidence then
+                press.host = host.key
+                if evidence == "layout" then press.pointerX = nil end
+                beginNativeSort(group, press.hook, nil, nil, press)
+                sort = group.nativeSort
+                if sort then
+                    sort.clientCopies = true
+                    sort.captureHost = evidence == "capture" and host or nil
+                end
+                return
+            end
+        end
+    end
+
     local function syncClientSort(group)
-        if not group.nativePress and not group.nativeSort then return end
+        local handoff = group.selectionHandoff
+        group.selectionHandoff = nil
+        local press, sort = group.nativePress, group.nativeSort
+        if not press and not sort and not (group.pending or handoff) then return end
+        -- A release forwarded to another copy can precede native capture by
+        -- a Logic tick. Keep its slot identity, not an active pointer gesture.
+        if not handoff and not sort and press and press.release and press.release ~= press.hook then
+            if selectedFrame(group) then return end
+        end
         local count, separate, sameSize = Split.visibleCopies(Host, group)
         if separate then
             Split.release(group, stopSortInputs, View.suspend)
             return
         end
-        if editingLocked(group) then group.nativePress = nil; return end
-        local sort = group.nativeSort
+        if editingLocked(group) then
+            group.nativePress = nil
+            group.selectionHandoff = not sort and count > 1 and sameSize
+            return
+        end
         if count > 1 and sameSize then
-            if not sort and group.nativePress then
-                local press = group.nativePress
-                beginNativeSort(group, press.hook, nil, nil, press)
-                sort = group.nativeSort
-            end
-            if sort then
-                sort.clientCopies = true
-                if not sort.cancelled then sort.finishing = nil end
-            end
+            syncHandoff(group, press)
         elseif count == 1 and sort and sort.clientCopies then
-            -- There may be no final hook after the client has taken over capture.
-            finishNativeSort(group, nil, sort.cancelled)
+            -- Copy retirement ends the gesture at the last drag sample.
+            sort.finishing = true
+        elseif count == 1 and not sort and press and press.release then
             group.nativePress = nil
         end
     end
@@ -498,12 +547,12 @@ function NativeSort.new(Host, View, warn)
                     or copy.signature ~= current.signature) or nil
             end
         end
-        group.nativePress = nil
+        if group.nativePress == sort.press then group.nativePress = nil end
         return true
     end
 
     local observedHooks = {
-        ui.Hook.ONCLICK, ui.Hook.ONHOLD, ui.Hook.ONDRAG,
+        ui.Hook.ONCLICK, ui.Hook.ONDRAG,
         ui.Hook.ONRELEASE, ui.Hook.ONDRAGCOMPLETE,
     }
 
@@ -559,8 +608,7 @@ function NativeSort.new(Host, View, warn)
         for _, kind in ipairs(observedHooks) do
             if kind ~= ui.Hook.ONCLICK then unsubscribeHook(group, hook, kind) end
         end
-        hook.dragObserved, hook.pressX, hook.pressY = false, nil, nil
-        hook.sortPress = nil
+        hook.dragObserved = false
     end
 
     local function observeHost(group, hook, dragEnabled)
@@ -575,15 +623,11 @@ function NativeSort.new(Host, View, warn)
         if not hook.subscribed[ui.Hook.ONCLICK] then
             subscribeHook(group, hook, ui.Hook.ONCLICK, observe(function(_, x, y)
                 if hook.dragObserved and editingLocked(group) then stopObservingDrag(group, hook) end
-                if hook.dragObserved then
-                    hook.pressX, hook.pressY = x, y
-                    hook.sortPress = nativeSortPress(group, hook, x, y)
-                    if hook.sortPress and not group.nativeSort then
-                        hook.sortPress.hook = hook
-                        group.nativePress = hook.sortPress
-                    end
-                end
-                if not group.dead and not group.nativeSort and #group.members > 0 and selectedFrame(group) then
+                -- A new click supersedes any missed release. Never sample its
+                -- pointer position as movement from the preceding gesture.
+                if group.nativeSort then group.nativeSort.finishing = true end
+                group.nativePress = hook.dragObserved and nativeSortPress(group, hook, x, y) or nil
+                if not group.dead and #group.members > 0 then
                     group.pending, group.paintPending = true, true
                     hideSeams(group) -- immediate, before native script/listener processing
                     restoreArtwork(group)
@@ -596,22 +640,14 @@ function NativeSort.new(Host, View, warn)
             return
         end
         overlayDragRendering(hook)
-        subscribeHook(group, hook, ui.Hook.ONHOLD, observe(function(_, x, y)
-            if group.dead or group.nativeSort or editingLocked(group)
-                or type(x) ~= "number" or type(y) ~= "number" then return end
-            if type(hook.pressX) == "number" and type(hook.pressY) == "number" then
-                if x ~= hook.pressX or y ~= hook.pressY then beginNativeSort(group, hook, x, y) end
-            else
-                hook.pressX, hook.pressY = x, y
-            end
-        end))
         subscribeHook(group, hook, ui.Hook.ONDRAG, observe(function(_, x, y)
             beginNativeSort(group, hook, x, y)
         end))
         local function released()
-            hook.pressX, hook.pressY = nil, nil
+            if group.nativePress and (not hook.removed or hook == group.nativePress.hook) then
+                group.nativePress.release = hook
+            end
             finishNativeSort(group, hook)
-            hook.sortPress = nil
         end
         subscribeHook(group, hook, ui.Hook.ONRELEASE, observe(released))
         subscribeHook(group, hook, ui.Hook.ONDRAGCOMPLETE, observe(released))

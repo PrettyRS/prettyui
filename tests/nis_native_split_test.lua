@@ -22,6 +22,113 @@ local function assertMixedRow(f, scene, panel, remaining)
     f.expect(f.hitAt(scene.area, left + 45, top + 10), tab.hit, "own tab receives input in the surviving nest")
 end
 
+Fixture.run("rapid native selections leave a leading PrettyUI tab and five native slots intact", function(f)
+    local scene = nativeScene(f)
+    local hosts = {
+        scene.notes,
+        scene.ranged,
+        scene.magic,
+        scene.host(3000, "NECROMANCY", false),
+        scene.host(3100, "MELEE", false),
+    }
+    local icons = { 9001, 9002, 9003, 9004, 9005 }
+    for i, host in ipairs(hosts) do
+        host.frame:SetPos(500, 100)
+        host:rebuild(icons, i)
+    end
+    local panel = f:panel({ id = "rapid", x = 300, y = 480 })
+    f:begin(panel)
+    f:move(panel, 510, 128)
+    f:release(panel)
+    local pointer = { x = 0, y = 0 }
+    Mouse.GetPosition = function() return pointer end
+    local current = hosts[1]
+    local function expectRow(host)
+        local origin = host.tabs.xyGlobal
+        local own = panel._nisNative.tabs[panel._nisNative.group.current]
+        f.expect(scene.paintedAt(scene.area, origin.x + 12, origin.y + 12), own.artwork.children[2], "leading own icon")
+        for i, icon in ipairs(icons) do
+            local x = 40 + (i - 1) * 44
+            f.expect(host.backgrounds[i].x, x, "no gap before native tab " .. i)
+            local painted = scene.paintedAt(scene.area, origin.x + x + 20, origin.y + 12)
+            f.expect(painted and painted.spriteID, icon, "native icon remains in slot " .. i)
+        end
+    end
+    for _, index in ipairs({ 3, 4, 5, 4, 3, 5 }) do
+        local nextHost = hosts[index]
+        local source = current.backgrounds[index]
+        pointer.x, pointer.y = source.xyGlobal.x + 10, source.xyGlobal.y + 10
+        nativeHook(source, ui.Hook.ONCLICK)
+        -- Native HOLD on a slightly moving click is not a native DRAG.
+        for _, hold in pairs(source.namedSubscriptions[ui.Hook.ONHOLD] or {}) do
+            hold(source, 11, 10)
+        end
+        nextHost.frame.nativeShown = true
+        nextHost.frame:MoveToFront()
+        nativeHook(nextHost.tabs, ui.Hook.ONRELEASE)
+        nextHost:rebuild(icons, index)
+        f:emit("Draw")
+        pointer.x = nextHost.tabs.xyGlobal.x + 12
+        f:emit("Draw")
+        expectRow(nextHost)
+        current.frame.nativeShown = false
+        current = nextHost
+        f:emit("Draw") -- next click can precede Logic
+    end
+    cycle(f)
+    for _, x in ipairs({ 241, 189, 98, 12 }) do
+        pointer.x = current.tabs.xyGlobal.x + x
+        cycle(f)
+        expectRow(current)
+    end
+    f.expect(f:saved("rapid").native.beforeNative, 0, "selection never persists a reorder")
+    assert(current.body.visibleGlobal and panel.root.hidden)
+    assert(panel:SelectTab() and not panel.root.hidden, "own tab still selects content")
+end)
+
+local function dragAcrossLeadingTab(f, transferred)
+    local scene = nativeScene(f)
+    local panel = f:panel({ x = 300, y = 480 })
+    f:begin(panel)
+    f:move(panel, 510, 128)
+    f:release(panel)
+    local source, target = scene.notes.backgrounds[2], scene.ranged.backgrounds[2]
+    local pointer = { x = source.xyGlobal.x + 10, y = source.xyGlobal.y + 10 }
+    Mouse.GetPosition = function() return pointer end
+    nativeHook(source, ui.Hook.ONCLICK)
+    if not transferred then nativeHook(source, ui.Hook.ONDRAG) end
+    scene.notes.frame.nativeShown, scene.ranged.frame.nativeShown = false, true
+    if transferred then
+        nativeHook(scene.ranged.tabs, ui.Hook.ONRELEASE)
+        cycle(f)
+        scene.notes.frame.nativeShown = true
+        target.dragConfig.draggedComponent = target
+    end
+    pointer.x = scene.ranged.tabs.xyGlobal.x + 5
+    cycle(f)
+    local binding = assert(panel._nisNative)
+    f.expect(binding.beforeNative, 1, "a real native drag can cross the leading PrettyUI tab")
+    target.dragConfig.draggedComponent = nil
+    -- The original hook need not get a release. Capture can end on the new
+    -- strip, or the native drag target can disappear before its copy retires.
+    if not transferred then nativeHook(scene.ranged.tabs, ui.Hook.ONDRAGCOMPLETE) end
+    pointer.x = scene.ranged.tabs.xyGlobal.x + 250
+    f:emit("Draw")
+    f.expect(binding.beforeNative, 1, "hover after release cannot reopen the drag")
+    scene.notes.frame.nativeShown = false
+    scene.ranged:rebuild({ 9002, 9001 }, 1)
+    scene.notes:rebuild({ 9002, 9001 }, 2)
+    cycle(f)
+    f.expect(scene.ranged.backgrounds[1].x, 0, "dropped native tab occupies the first slot")
+    f.expect(scene.ranged.backgrounds[2].x, 84, "the native peer stays beyond the own tab")
+    local tab = binding.tabs[binding.group.current]
+    f.expect(tab.hit.x, scene.ranged.frame.x + scene.ranged.tabs.x + 44, "own input follows the committed row")
+    assert(tab.hit.enabled and panel:SelectTab(), "release on the new copy restores own input")
+end
+
+Fixture.run("native drag released on a different copy", function(f) dragAcrossLeadingTab(f, false) end)
+Fixture.run("native capture transferred after an early release", function(f) dragAcrossLeadingTab(f, true) end)
+
 Fixture.run("native tear-out leaves the mixed row in the original nest without a release hook", function(f)
     local scene = nativeScene(f)
     local emotes, first, last = scene.notes, scene.ranged, scene.magic
