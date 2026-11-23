@@ -186,9 +186,9 @@ local function nativeOccupant(staticParent, state, parent, categoryID, dynamicID
     if staticParent.IterateDynamicComponents == nil then error(UNVERIFIABLE, 3) end
     local visited, found = {}, false
     local function visit(collection)
+        if found or collection.IterateDynamicComponents == nil then return end
         local key = visitKey(collection)
-        if found or visited[key] then return end
-        if collection.IterateDynamicComponents == nil then error(UNVERIFIABLE, 3) end
+        if visited[key] then return end
         visited[key] = true
         collection:IterateDynamicComponents(function(child)
             if sameComponent(child.parentStatic, staticParent) then

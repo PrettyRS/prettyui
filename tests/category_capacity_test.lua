@@ -90,9 +90,11 @@ local function component(parent, categoryID, dynamicID, kind)
     }
     static.registry[key] = result
     parent.children[#parent.children + 1] = result
-    function result:IterateDynamicComponents(callback)
-        for _, child in ipairs(self.children) do
-            if not child.destroyed and callback(child, not child.hidden) then return end
+    if kind == "layer" then
+        function result:IterateDynamicComponents(callback)
+            for _, child in ipairs(self.children) do
+                if not child.destroyed and callback(child, not child.hidden) then return end
+            end
         end
     end
     function result:SetPos(x, y, xAnchor, yAnchor)
@@ -673,6 +675,78 @@ do
         expect(chrome[1].destroyed, true, "last modal destroys shared chrome")
     end
     Vector4 = savedVector
+end
+
+-- Real client leaf controls lack IterateDynamicComponents; fallback walks must
+-- skip leaf children without throwing UNVERIFIABLE while still seeing their IDs.
+do
+    local C = require("src/core/components")
+    local function freshHandle(target, freshParentStatic)
+        if target == nil then return nil end
+        local proxy = {}
+        if freshParentStatic and target.parentStatic ~= nil then
+            proxy.parentStatic = freshHandle(target.parentStatic, false)
+        end
+        return setmetatable(proxy, { __index = target })
+    end
+
+    local originalGetComponent = ui.Interfaces.GetComponent
+    local freshHost = host(46)
+    local walks = 0
+    local originalIterate = freshHost.IterateDynamicComponents
+    function freshHost:IterateDynamicComponents(callback)
+        walks = walks + 1
+        return originalIterate(self, callback)
+    end
+    local freshLayer = ui.Layer.new(freshHost)
+    ui.Sprite.new(freshLayer, 1, 0)
+    ui.Interfaces.GetComponent = function(self, interfaceID, staticID, categoryID, dynamicID)
+        local resolved = originalGetComponent(self, interfaceID, staticID, categoryID, dynamicID)
+        return freshHandle(resolved, true)
+    end
+    local first = C.new(ui.Text, freshLayer, { categoryID = "auto" })
+    expect(first.categoryID, 1, "fresh-handle GetComponent allocates in category 1")
+    expect(first.dynamicID, 1, "fresh-handle GetComponent skips occupied leaf sprite")
+    local walksBefore = walks
+    local second = C.new(ui.Text, freshLayer, { categoryID = "auto" })
+    expect(second.dynamicID, 2, "second allocation advances cleanly under fresh-handle lookup")
+    expect(walks, walksBefore, "fresh GetComponent handles keep fullLookup active")
+
+    local fallbackHost = host(47)
+    local fallbackLayer = ui.Layer.new(fallbackHost)
+    local nestedLayer = ui.Layer.new(fallbackLayer)
+    ui.Sprite.new(nestedLayer, 1, 0)
+    ui.Rectangle.new(nestedLayer, 1, 1)
+    ui.Button.new(nestedLayer, 0, 2)
+    local function wrapFreshIteration(node)
+        local base = node.IterateDynamicComponents
+        function node:IterateDynamicComponents(callback)
+            return base(self, function(child, visible)
+                return callback(freshHandle(child, true), visible)
+            end)
+        end
+    end
+    wrapFreshIteration(fallbackHost)
+    wrapFreshIteration(fallbackLayer)
+    wrapFreshIteration(nestedLayer)
+    ui.Interfaces.GetComponent = function() return nil end
+
+    local fallbackAuto = C.new(ui.Text, fallbackLayer, { categoryID = "auto" })
+    expect(fallbackAuto.categoryID, 1, "fallback walk allocates in category 1")
+    expect(fallbackAuto.dynamicID, 2, "fallback walk skips leaf sprite and rectangle without throwing")
+    local fallbackLegacy = C.new(ui.Text, fallbackLayer)
+    expect(fallbackLegacy.categoryID, 0, "fallback legacy preflight succeeds past leaf controls")
+    local fallbackView = prettyui.SimpleView.new(fallbackLayer, {
+        categoryID = "auto", width = 200, height = 160, scrollable = true,
+    })
+    local fallbackTip = prettyui.Tooltip.attach(fallbackAuto, fallbackHost, {
+        categoryID = "auto", text = "Tooltip under fallback walk",
+    })
+    fallbackTip:Show()
+    expect(fallbackTip.root.hidden, false, "Tooltip builds and shows under fallback walk with leaf controls")
+    fallbackTip:Destroy()
+    fallbackView:Destroy()
+    ui.Interfaces.GetComponent = originalGetComponent
 end
 
 print("category_capacity_test: ok")
