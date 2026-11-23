@@ -228,6 +228,7 @@ local autoHandle, autoEntry = captureEntry(buffLayer, function()
     })
 end, true)
 expect(autoEntry.sprite.categoryID > 0, true, "opted-in native buffs use managed IDs")
+expect(autoEntry.tooltipTarget.clickthrough, true, "buff tooltips do not block camera input")
 expect(autoEntry.tooltipRoot.categoryID, 0,
     "the raw-compatible auto tooltip root inherits the render layer's zero category")
 autoHandle:SetTooltip(nil)
@@ -235,6 +236,7 @@ autoHandle:SetTooltip({ text = "Reopened tooltip" })
 local replacementTarget = buffLayer.dynamicComponents[#buffLayer.dynamicComponents - 1]
 expect(replacementTarget.categoryID > 0, true,
     "later tooltip targets inherit their original auto entry policy")
+expect(replacementTarget.clickthrough, true, "recreated buff tooltips do not block camera input")
 BuffBar.removeBuff(autoHandle)
 
 local firstHandle, first = captureEntry(buffLayer, function()
@@ -329,7 +331,7 @@ expect(debuff.border.rgba, 0xCC0000FF, "debuffs ignore border overrides and rema
 expect(debuff.background.rgba, 0x112233CC, "debuffs can override their background colour")
 expect(debuff.label.rgba, 0xFFFFFFFF, "labels default to white")
 expect(debuff.label.font, DEFAULT_FONT_ID, "labels default to Noto Sans Bold")
-expect(debuff.tooltipTarget.clickthrough, false, "tooltip target receives pointer events")
+expect(debuff.tooltipTarget.clickthrough, true, "debuff tooltips do not block camera input")
 expect(debuff.tooltipRoot.hidden, true, "tooltip starts hidden")
 expect(debuff.sprite.x, 32, "debuffs avoid native debuffs independently")
 expect(debuff.sprite.y, 101, "debuff layout follows the native row")
