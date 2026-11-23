@@ -3,6 +3,7 @@ local Components = require("src/core/components")
 local Sprites = require("src/core/sprites")
 local TabLayout = require("src/nis/native_tab_layout")
 local Overflow = require("src/nis/native_overflow")
+local Split = require("src/nis/native_split")
 
 local NativeReconcile = {}
 
@@ -220,6 +221,27 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         for _, child in ipairs(host.children) do subscribeHost(group, child) end
     end
 
+    local function ordinaryAnchor(group, found, preferred)
+        local fallback
+        for _, host in ipairs(found) do
+            if group.frames[host.key] and host.grouped == group.grouped then
+                if host.frame.visibleGlobal then return host end
+                if not fallback or host.key == preferred.key then fallback = host end
+            end
+        end
+        return fallback
+    end
+
+    local function adoptStandalone(group, host)
+        local roots = Host.nativeRootsFor(host)
+        if not roots then error("remaining native page has no compatible standalone content") end
+        group.grouped, group.nativeRoots = false, roots
+        for _, root in ipairs(roots) do
+            root.changed = true
+            applyLayout(root.component, root.inset)
+        end
+    end
+
     -- A former frame identity anchors the group. Rectangles and matching tab
     -- art alone cannot confer ownership of an unrelated native window.
     local function reconcile(group)
@@ -241,24 +263,19 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         local found = discover(group.area)
         local previous = {}
         for _, host in ipairs(group.hosts) do previous[host.key] = host end
-        local anchor
+        local split = group.split
         local preferred = group.hosts[group.current]
-        for _, host in ipairs(found) do
-            if group.frames[host.key] and host.grouped == group.grouped
-                and host.frame.visibleGlobal then anchor = host; break end
+        local anchor
+        if split then
+            local removed
+            anchor, removed = Split.anchor(group, found)
+            if not anchor then return nil end
+            Split.settle(group, anchor, removed)
+            if not removed then split = nil end
+        else
+            anchor = ordinaryAnchor(group, found, preferred)
         end
         if not anchor then
-            for _, host in ipairs(found) do
-                if group.frames[host.key] and host.key == preferred.key
-                    and host.grouped == group.grouped then anchor = host; break end
-            end
-        end
-        if not anchor then
-            for _, host in ipairs(found) do
-                if group.frames[host.key] and host.grouped == group.grouped then anchor = host; break end
-            end
-        end
-        if not anchor or anchor.grouped ~= group.grouped then
             if not selectedFrame(group) then
                 for _, host in pairs(group.frames) do
                     local frame = component(host.spec.frame)
@@ -276,7 +293,7 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
                 hosts[#hosts + 1] = host
             end
         end
-        if group.grouped and #hosts == 1 and #group.hosts > 1 then
+        if not split and group.grouped and #hosts == 1 and #group.hosts > 1 then
             local function pendingHidden(host)
                 local saved = group.frames[host.key]
                 return saved and saved.sortPending and not host.frame.visibleGlobal
@@ -310,7 +327,7 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
                 local matches = related(anchor, captured)
                 retained = matches or saved.sortPending and not captured.frame.visibleGlobal
                 if matches or captured.frame.visibleGlobal then saved.sortPending = nil end
-            else
+            elseif not (split and split.away[key]) then
                 local frame = component(saved.spec.frame)
                 retained = frame and identity(frame) == key and same(frame.parent, group.area)
                     and not frame.visibleGlobal
@@ -349,6 +366,7 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
                 restoreFlag(group, flag)
             end
         end
+        if group.grouped and not anchor.grouped then adoptStandalone(group, anchor) end
         releaseObservers(group)
         for _, panel in ipairs(group.members) do
             local tabs = {}

@@ -4,6 +4,7 @@ local Tooltip = require("src/tooltip")
 local InterfaceMouse = require("src/core/mouse")
 local TabLayout = require("src/nis/native_tab_layout")
 local WorldMap = require("src/core/world_map")
+local Split = require("src/nis/native_split")
 
 local NativeSort = {}
 
@@ -201,12 +202,15 @@ function NativeSort.new(Host, View, warn)
         table.insert(row, destination, source)
     end
 
+    local stopSortInputs
+
     local function presentNativeSort(group)
         local sort = group.nativeSort
         if not sort or editingLocked(group) then return end
-        for _, host in ipairs(group.hosts) do
-            local frame = component(host.spec.frame)
-            if frame and identity(frame) == host.key then host.frame = frame end
+        local _, separate = Split.visibleCopies(Host, group)
+        if separate then
+            Split.release(group, stopSortInputs, View.suspend)
+            return
         end
         local current = selectedFrame(group)
         if current then group.current = current end
@@ -311,7 +315,7 @@ function NativeSort.new(Host, View, warn)
 
     -- Native scripts retain their page, source capture and final native order;
     -- our listeners only release the temporary mixed-row presentation.
-    local function stopSortInputs(group)
+    stopSortInputs = function(group)
         local sort = group.nativeSort
         if not sort then return end
         local failed
@@ -371,7 +375,8 @@ function NativeSort.new(Host, View, warn)
                         InterfaceMouse.CalibrateFromHook(hook.component, x, y)
                         local pointer = InterfaceMouse.GetPosition()
                         return { host = host.key, index = index, x = bg.component.x,
-                            pointerX = pointer and pointer.x }
+                            pointerX = pointer and pointer.x, backgrounds = host.backgrounds,
+                            frameX = host.frame.x, frameY = host.frame.y, signature = host.signature }
                     end
                 end
             end
@@ -379,7 +384,7 @@ function NativeSort.new(Host, View, warn)
     end
 
     local function beginNativeSort(group, hook, x, y, press)
-        if group.nativeSort or group.dead or #group.members == 0 or editingLocked(group) then return end
+        if group.nativeSort or group.split or group.dead or #group.members == 0 or editingLocked(group) then return end
         press = press or hook.sortPress or nativeSortPress(group, hook, x, y)
         if not press then return end
         local host
@@ -387,7 +392,7 @@ function NativeSort.new(Host, View, warn)
             if candidate.key == press.host then host = candidate; break end
         end
         if not host then return end
-        local sort = { source = hook, sourceHost = host.key, mapped = {},
+        local sort = { source = hook, sourceHost = host.key, press = press, mapped = {},
             sourceStart = press.x, sourceX = press.x, pointerStart = press.pointerX,
             members = { table.unpack(group.members) },
             baseX = host.grouped and host.backgrounds[1].layout.x or 0 }
@@ -405,7 +410,7 @@ function NativeSort.new(Host, View, warn)
         -- old own-tab offset would move it logically before the pointer moves.
         group.nativeSort = sort
         startSlides(group)
-        presentNativeSort(group)
+        -- Subscribe before presenting: the first sample may already show a split.
         sort.keySubscribed = true
         Event.KeyDown.Subscribe(group.hookID, function(event)
             if event.gameKey == GameKey.ESCAPE then
@@ -416,30 +421,23 @@ function NativeSort.new(Host, View, warn)
         Event.WindowFocusChanged.Subscribe(group.hookID, function(event)
             if event.hasFocus == false then finishNativeSort(group, nil, true) end
         end)
+        presentNativeSort(group)
     end
 
     -- Native scripts hand capture between frame copies: RELEASE can arrive before
     -- the drag begins, with no subsequent ONDRAG/ONHOLD on the original component.
-    -- Retain the group's press across that handoff. Two previously bound copies at
-    -- the same bounds identify the live native drag; one visible copy ends it.
+    -- Retain the press across that handoff. Coincident visible copies signal an
+    -- in-row sort; independently positioned copies are separate windows.
     local function syncClientSort(group)
-        if not group.nativePress and not (group.nativeSort and group.nativeSort.clientCopies) then return end
-        local count, first, sameBounds = 0, nil, true
-        for _, host in ipairs(group.hosts) do
-            local frame = component(host.spec.frame)
-            if frame and identity(frame) == host.key and same(frame.parent, group.area) then
-                host.frame = frame
-                if frame.visibleGlobal then
-                    count = count + 1
-                    if first and (frame.x ~= first.x or frame.y ~= first.y
-                        or frame.width ~= first.width or frame.height ~= first.height) then sameBounds = false end
-                    first = first or frame
-                end
-            end
+        if not group.nativePress and not group.nativeSort then return end
+        local count, separate, sameSize = Split.visibleCopies(Host, group)
+        if separate then
+            Split.release(group, stopSortInputs, View.suspend)
+            return
         end
         if editingLocked(group) then group.nativePress = nil; return end
         local sort = group.nativeSort
-        if count > 1 and sameBounds then
+        if count > 1 and sameSize then
             if not sort and group.nativePress then
                 local press = group.nativePress
                 beginNativeSort(group, press.hook, nil, nil, press)
@@ -500,6 +498,7 @@ function NativeSort.new(Host, View, warn)
                     or copy.signature ~= current.signature) or nil
             end
         end
+        group.nativePress = nil
         return true
     end
 
@@ -567,7 +566,7 @@ function NativeSort.new(Host, View, warn)
     local function observeHost(group, hook, dragEnabled)
         local function observe(callback)
             return function(...)
-                if WorldMap.isSuspended() then return true end
+                if group.split or WorldMap.isSuspended() then return true end
                 local ok, problem = pcall(callback, ...)
                 if not ok then group.failure = problem end
                 return true -- never intercept original native listeners/scripts
