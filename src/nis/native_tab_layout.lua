@@ -34,16 +34,30 @@ local function position(component)
     return nil
 end
 
+local function positionMatches(component, original, offset)
+    local current = component.position
+    if current.x ~= original[1] + offset then return false end
+    for index = 2, 6 do
+        if current[positions[index]] ~= original[index] then return false end
+    end
+    return true
+end
+
 local function matches(component, original, offset)
-    local ok, same = pcall(function()
-        local current = component.position
-        if current.x ~= original[1] + offset then return false end
-        for index = 2, 6 do
-            if current[positions[index]] ~= original[index] then return false end
-        end
-        return true
-    end)
-    return ok and same
+    local ok, result = pcall(positionMatches, component, original, offset)
+    return ok and result
+end
+
+function NativeTabLayout.unchanged(record, child)
+    local entry = record._entry
+    local owner = tracked[record._tabsKey]
+    return owner ~= nil
+        and owner.records[record.key] == entry
+        and entry ~= nil
+        and child.x == record.x + record.offset
+        and child.width == record.width
+        and child.height == record.height
+        and positionMatches(child, entry.original, entry.offset)
 end
 
 local function copy(values)
@@ -137,7 +151,7 @@ function NativeTabLayout.track(tabs, records, allowReset)
                     and (old.original == record.original or samePosition(old.original, record.original))
                     and old.original
                 or copy(record.original),
-            offset = record.offset,
+            offset = record.offset + (record.correction or 0),
             blocked = blocked,
         }
         saved.records[record.key] = entry
@@ -157,12 +171,15 @@ function NativeTabLayout.move(record, offset)
         "native tab position changed since capture"
     )
     if entry.blocked then return false end
-    if offset == entry.offset then return true end
+    -- The mixed slot may be based on the last coherent row. Track the physical
+    -- displacement from the client's current anchors so restoration stays exact.
+    local physical = offset + (record.correction or 0)
+    if physical == entry.offset then return true end
     -- SetPos can apply a layout and then throw. Record ownership first so the
     -- next capture or restore can recognize the actual post-error position.
-    entry.offset, record.offset = offset, offset
+    entry.offset, record.offset = physical, offset
     local original = entry.original
-    record.component:SetPos(original[1] + offset, original[2], original[3], original[4], original[5], original[6])
+    record.component:SetPos(original[1] + physical, original[2], original[3], original[4], original[5], original[6])
     return true
 end
 

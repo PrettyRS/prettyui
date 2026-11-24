@@ -32,6 +32,29 @@ local function reorder(f, panel, x, commit)
     Mouse.GetPosition = function() return nil end
 end
 
+run("idle nesting leaves unrelated rows alone and follows same-ID input replacements", function(f)
+    local scene = nativeScene(f)
+    local panel = f:panel()
+    assert(panel:DockTo(scene.notes.frame))
+    nativeClick(f, scene.notes.backgrounds[1])
+    local scans = 0
+    local iterate = scene.magic.tabs.IterateDynamicComponents
+    scene.magic.tabs.IterateDynamicComponents = function(tabs, callback)
+        scans = scans + 1
+        return iterate(tabs, callback)
+    end
+    for _ = 1, 12 do
+        f:emit("Logic")
+        f:emit("Draw")
+    end
+    f.expect(scans, 0, "an unrelated window is not walked to maintain an unchanged nest")
+    scene.notes:rebuild({ 9001, 9002 }, 1)
+    f:emit("Logic")
+    nativeClick(f, scene.notes.backgrounds[1])
+    panel:SelectTab()
+    assert(not panel.root.hidden and scene.notes.body.hidden, "both pages remain selectable after the idle rebuild")
+end)
+
 run("native preview cancels cleanly; docking retains content and undocking restores bounds", function(f)
     local scene = nativeScene(f)
     local panel = f:panel({

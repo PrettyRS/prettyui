@@ -20,11 +20,12 @@ hero:
   compact: true
 ---
 
-## Unreleased {#unreleased}
+
+## 1.4.0 (submitted for review) {#v1-4-0}
 
 ### Added
 - PrettyUI now has user facing settings accessible from the plugin menu, the ribbon and the Classic sidebar.
-- Added `prettyui.IsClassicUI()` to read the player's current Classic Interface mode independently of Classic Combat and slim headers.
+- Added `prettyui.IsClassicUI()` to read if the player is currently in Classic Interface mode.
 - Added [Table](index.html#tables-api) component, this can be used to easily display data in a responsive table format.
 - Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
 - Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
@@ -56,6 +57,13 @@ hero:
 - Fixed an issue where middle-mouse camera rotation would stop when crossing PrettyUI buffs or debuffs.
 - Fixed a crash that might occur when pressing alt after destroying a panel mounted on a parent.
 - Fixed how Text added to a [collapse button](index.html#collapse-button-api) wraps and resizes to avoid clipping.
+
+### Credits
+This version of PrettyUI contains changes from multiple community developers, a big thank you to:
+- [Psymansayz](https://github.com/Psymansayz)
+- [CJ Fritz](https://github.com/cjfritz9)
+- [Keensta](https://github.com/keensta)
+- [TheJoshJ](https://github.com/TheJoshJ)
 
 ## 1.3.0 2026-11-19 {#v1-3-0}
 

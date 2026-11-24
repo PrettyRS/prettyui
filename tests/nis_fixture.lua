@@ -85,6 +85,7 @@ function Fixture.new()
         end
         function result:SetSize(width, height, widthAnchor, heightAnchor)
             size = { width, height, widthAnchor or 0, heightAnchor or 0 }
+            self.size = { width = width, height = height, widthParentPc = size[3], heightParentPc = size[4] }
             self:Relayout()
         end
         function result:SetWidth(width, anchor)
