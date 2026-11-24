@@ -20,7 +20,8 @@ hero:
   compact: true
 ---
 
-## Unreleased {#unreleased}
+
+## 1.4.0 (submitted for review) {#v1-4-0}
 
 ### Added
 - PrettyUI now has user facing settings accessible from the plugin menu, the ribbon and the Classic sidebar.
@@ -56,6 +57,13 @@ hero:
 - Fixed an issue where middle-mouse camera rotation would stop when crossing PrettyUI buffs or debuffs.
 - Fixed a crash that might occur when pressing alt after destroying a panel mounted on a parent.
 - Fixed how Text added to a [collapse button](index.html#collapse-button-api) wraps and resizes to avoid clipping.
+
+### Credits
+This version of PrettyUI contains changes from multiple community developers, a big thank you to:
+- [Psymansayz](https://github.com/Psymansayz)
+- [CJ Fritz](https://github.com/cjfritz9)
+- [Keensta](https://github.com/keensta)
+- [TheJoshJ](https://github.com/TheJoshJ)
 
 ## 1.3.0 2026-11-19 {#v1-3-0}
 
