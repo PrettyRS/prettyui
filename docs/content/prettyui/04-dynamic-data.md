@@ -62,6 +62,16 @@ function PluginShutdown()
 end
 ```
 
+### Classic UI detection
+
+```lua
+local isClassicUI = prettyui.IsClassicUI()
+```
+
+Returns `true` for Classic Interface and `false` for Modern Interface. Reads the current `TOPLEVEL_V2_LEGACY_INTERFACE` varbit on every call.
+
+To react to mode changes, watch `Event.VarTransmit` for `event.var.id == id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP`, then call `prettyui.IsClassicUI()` again. The helper does not create subscriptions.
+
 {{% api-grid compact="true" %}}
 
 {{% api-card %}}
@@ -93,7 +103,8 @@ Clean up subscriptions
 : Unsubscribe plugin-owned events during **PluginShutdown**.
 
 Account for layout
-: Changing a value redraws its component, but does not automatically resize every flow row. Use stable dimensions or explicitly resize dynamic multiline content.
+: Changing a value redraws its component, but does not automatically resize every flow row. After
+  changing content in place, such as a label's text, call **RefreshLayout()**.
 
 {{% /api-card %}}
 

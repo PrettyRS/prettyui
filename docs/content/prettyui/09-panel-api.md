@@ -137,8 +137,7 @@ Panel.new(parent, options)
 : Initial position of the pop-out in its overlay parent.
 
 `popoutWidth`, `popoutHeight`
-: Optional initial dimensions for the pop-out. Interactive and programmatic
-  resizing subsequently synchronize both panel surfaces.
+: Optional initial dimensions for the pop-out.
 
 {{% /api-card %}}
 
@@ -173,6 +172,27 @@ Panel.new(parent, options)
 
 {{% api-card %}}
 
+### Hiding and closing
+
+`onClose`
+: Callback receiving the panel, invoked by `Close()`.
+
+`destroyOnClose`
+: Makes `Close()` destroy the panel instead of hiding it.
+
+`Hide()`
+: Hides the panel without invoking **onClose**. 
+
+`Show()`
+: Shows and raises the panel.
+
+`Close()`
+: Invokes **onClose**, then hides or destroys the panel in accordance with the **destroyOnClose** setting.
+
+{{% /api-card %}}
+
+{{% api-card %}}
+
 ### Player interface settings
 
 `useNativeTransparency`
@@ -181,15 +201,16 @@ Panel.new(parent, options)
   and **popoutBackgroundAlpha**, so both still apply. Defaults to false.
 
 `respectInterfaceLock`
-: Stops the panel from being moved or resized while the player's interface is
-  locked. Defaults to true. 
+: In Modern UI, prevents moving and resizing while the interface is locked and
+  the player's [PrettyUI lock setting](#settings-layer) is enabled. Defaults to
+  true.
 
 `SetUseNativeTransparency(enabled)`
 : Changes **useNativeTransparency**. Turning it off restores the panel's own
   alpha values.
 
 `SetRespectInterfaceLock(enabled)`
-: Changes **respectInterfaceLock**. Turning it off unlocks the panel.
+: Changes **respectInterfaceLock** for this panel in Modern UI.
 
 {{% /api-card %}}
 

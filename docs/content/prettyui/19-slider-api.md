@@ -64,6 +64,9 @@ Slider.new(parent, options)
 `SetDisabled(value)`
 : Changes availability.
 
+`Refresh()`
+: Updates the position of the marker based on the slider's current width. 
+
 `AddSlider(options)`
 : Adds a width-filling slider to supported containers.
 

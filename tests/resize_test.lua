@@ -56,6 +56,10 @@ local function component(parent, kind, categoryID, dynamicID)
         w, h, aw, ah = width, height, widthAnchor or 0, heightAnchor or 0
         self:ResolveGeometry()
     end
+    function result:SetX(x)
+        px = x
+        self:ResolveGeometry()
+    end
     function result:SetWidth(width, anchor)
         w, aw = width, anchor or 0
         self:ResolveGeometry()
@@ -335,6 +339,11 @@ end
 local flowHost = Window.new(parent, { title = "Inline resize", width = 800, height = 600 })
 local flowPanel = flowHost:AddPanel({ resizable = true, popout = true, width = 300, height = 200 })
 local inlineSibling = flowHost:AddPanel({ inline = true, width = 100, height = 160 })
+expect(flowPanel.dockTooltipContext.parentContext, flowHost.tooltipContext,
+    "a docked panel's tooltip context links to its window's")
+expect(flowPanel.dock.scroll.ownerWindow, flowHost, "a docked panel's scroll finds its window")
+expect(flowPanel.dock.scroll.parentScroll, flowHost._scroll, "a docked panel's scroll links to its window's")
+expect(flowPanel.overlay.scroll.parentScroll, nil, "a popout's scroll has its own viewport")
 local flowHandle = begin(flowPanel.dockResize, "e", flowPanel.root)
 fire(flowHandle, ui.Hook.ONHOLD, 42, 2)
 finish(flowPanel.dockResize, flowHandle)
@@ -342,11 +351,83 @@ flowPanel:SetPoppedOut(true)
 flowHandle = begin(flowPanel.overlayResize, "e", flowPanel.overlay.root)
 fire(flowHandle, ui.Hook.ONHOLD, 62, 2)
 finish(flowPanel.overlayResize, flowHandle)
+expect(flowPanel.overlay.root.width, 360, "a popout resize starts from the popout's own width")
 flowPanel:SetPoppedOut(false)
-expect(flowPanel.root.width, 400, "redocking retains both surface resize increments")
+expect(flowPanel.root.width, 340, "redocking keeps the docked width, not the popout's")
 expect(inlineSibling.root.x >= flowPanel.root.x + flowPanel.root.width, true,
-    "redocking reflows inline siblings using the new width")
+    "redocking reflows inline siblings using the docked width")
+flowPanel:SetPoppedOut(true)
+expect(flowPanel.overlay.root.width, 360, "popping out again restores the popout's width")
+flowPanel:SetPoppedOut(false)
 flowHost:Destroy()
+
+-- A docked panel filling its window's width keeps following it unless its width is resized by hand (issue #58).
+local fillHost = Window.new(parent, { title = "Fill", width = 600, height = 400 })
+local fillPanel = fillHost:AddPanel({ resizable = true, popout = true, height = 120 })
+local function fillGap() return fillHost.contentWidth - fillPanel.root.width end
+local startGap = fillGap()
+fillHost:SetSize(650, 400)
+expect(fillGap(), startGap, "an unresized panel follows the window's width")
+local fillHandle = begin(fillPanel.dockResize, "s", fillPanel.root)
+fire(fillHandle, ui.Hook.ONHOLD, 2, 32)
+finish(fillPanel.dockResize, fillHandle)
+expect(fillPanel.root.height, 150, "a height resize changes the height")
+fillHost:SetSize(700, 400)
+expect(fillGap(), startGap, "a height-only resize keeps the panel following the window's width")
+fillHandle = begin(fillPanel.dockResize, "n", fillPanel.root)
+fire(fillHandle, ui.Hook.ONHOLD, 2, 12)
+finish(fillPanel.dockResize, fillHandle)
+fillHost:SetSize(720, 400)
+expect(fillGap(), startGap, "a resize from the top edge keeps the panel following too")
+fillHandle = begin(fillPanel.dockResize, "e", fillPanel.root)
+fire(fillHandle, ui.Hook.ONHOLD, -38, 2)
+finish(fillPanel.dockResize, fillHandle)
+local fixedWidth = fillPanel.root.width
+fillHost:SetSize(760, 400)
+expect(fillPanel.root.width, fixedWidth, "a width resize stops the panel following the window")
+fillHost:Destroy()
+
+-- A height resize that makes the window's scrollbar appear narrows the panel mid-resize; that is not a width resize.
+local barHost = Window.new(parent, { title = "Scrollbar", width = 600, height = 300, scrollable = true })
+local barPanel = barHost:AddPanel({ resizable = true, height = 100 })
+local function barGap() return barHost.contentWidth - barPanel.root.width end
+local barGapBefore = barGap()
+expect(barHost._scroll.scrollbarVisible, false, "the window starts without a scrollbar")
+local barHandle = begin(barPanel.dockResize, "s", barPanel.root)
+fire(barHandle, ui.Hook.ONHOLD, 2, 302)
+finish(barPanel.dockResize, barHandle)
+expect(barHost._scroll.scrollbarVisible, true, "the taller panel brings up the window's scrollbar")
+expect(barGap(), barGapBefore, "the panel narrows with the scrollbar")
+barHost:SetSize(700, 300)
+expect(barGap(), barGapBefore, "and still follows the window's width after the resize")
+barHost:Destroy()
+
+-- A popout keeps its own size: docking brings back the docked panel as it was, still following its window.
+local popoutHost = Window.new(parent, { title = "Popout", width = 600, height = 400 })
+local popoutPanel = popoutHost:AddPanel({ resizable = true, popout = true, height = 120 })
+local function popoutGap() return popoutHost.contentWidth - popoutPanel.root.width end
+local dockedGap, dockedHeight = popoutGap(), popoutPanel.root.height
+popoutPanel:SetPoppedOut(true)
+local popoutBefore = rect(popoutPanel.overlay.root)
+local popoutHandle = begin(popoutPanel.overlayResize, "se_v", popoutPanel.overlay.root)
+fire(popoutHandle, ui.Hook.ONHOLD, 32, 22)
+finish(popoutPanel.overlayResize, popoutHandle)
+local popoutResized = rect(popoutPanel.overlay.root)
+expect(popoutResized.width, popoutBefore.width + 30, "the popout resizes")
+popoutPanel:SetPoppedOut(false)
+expect(popoutPanel.root.height, dockedHeight, "docking brings back the docked height")
+expect(popoutGap(), dockedGap, "docking brings back the docked width")
+popoutHost:SetSize(680, 400)
+expect(popoutGap(), dockedGap, "a popout resize leaves the docked panel following its window")
+popoutPanel:SetPoppedOut(true)
+expectRect(popoutPanel.overlay.root, popoutResized, "popping out again brings back the popout's size")
+popoutPanel:SetPoppedOut(false)
+local fitSection = popoutPanel:AddCollapseButton("Fit", { resizeParent = true })
+fitSection:AddText({ text = "Body", height = 60 })
+fitSection:Toggle()
+popoutHost:SetSize(720, 400)
+expect(popoutGap(), dockedGap, "fitting the panel's height to its content keeps it following its window")
+popoutHost:Destroy()
 
 -- Click-through popouts expose resize edges only while Alt is held. Changing
 -- either input state cancels a resize that is no longer allowed.
@@ -491,7 +572,14 @@ headerWindow:Destroy()
 -- the containing area is too small even for the configured minimum.
 local bounds = component(nil, "bounds")
 bounds:SetSize(600, 400)
-for _, kind in ipairs({ "titled", "standalone", "popout" }) do
+-- A window's box may hang past its parent's edges by the transparent strip in its border sprites,
+-- so its border sits flush. A title bar's top has no strip; an untitled window's top does.
+local NO_EDGES = { left = 0, top = 0, right = 0, bottom = 0 }
+local KIND_EDGES = {
+    titled = { left = 2, top = 0, right = 2, bottom = 2 },
+    untitled = { left = 2, top = 2, right = 2, bottom = 2 },
+}
+for _, kind in ipairs({ "titled", "untitled", "standalone", "popout" }) do
     for _, sample in ipairs({
         { direction = "se_v", delta = 1000, expected = { x = 100, y = 80, width = 360, height = 250 } },
         { direction = "se_v", delta = -1000, expected = { x = 100, y = 80, width = 100, height = 80 } },
@@ -521,13 +609,16 @@ for _, kind in ipairs({ "titled", "standalone", "popout" }) do
         end
         owner:Destroy()
     end
+    local edges = KIND_EDGES[kind] or NO_EDGES
     for _, direction in ipairs({ "se_v", "nw_v" }) do
         local owner, root, controller = createSurface(kind, bounds, { width = 300, height = 200 })
         handle = begin(controller, direction, root)
         local delta = direction == "se_v" and 10000 or -10000
         fire(handle, ui.Hook.ONHOLD, 2 + delta, 2 + delta)
-        expectRect(root, direction == "se_v" and { x = 100, y = 80, width = 500, height = 320 }
-            or { x = 0, y = 0, width = 400, height = 280 }, kind .. " stops at viewport boundary")
+        local expected = direction == "se_v"
+            and { x = 100, y = 80, width = 500 + edges.right, height = 320 + edges.bottom }
+            or { x = -edges.left, y = -edges.top, width = 400 + edges.left, height = 280 + edges.top }
+        expectRect(root, expected, kind .. " stops at viewport boundary")
         expectGold(controller, root)
         finish(controller, handle)
         owner:Destroy()
@@ -538,7 +629,8 @@ for _, kind in ipairs({ "titled", "standalone", "popout" }) do
     })
     handle = begin(controller, "nw_v", root)
     fire(handle, ui.Hook.ONHOLD, 1000, 1000)
-    expectRect(root, { x = 0, y = 0, width = 220, height = 140 }, "undersized viewport retains minimum and pins origin")
+    expectRect(root, { x = -edges.left, y = -edges.top, width = 220, height = 140 },
+        "undersized viewport retains minimum and pins origin")
     expectGold(controller, root)
     finish(controller, handle)
     owner:Destroy()
@@ -673,6 +765,41 @@ expect(autoResize.feedback.active.categoryID > 0, true,
     "deferred resize feedback follows the auto owner's policy")
 finish(autoResize, autoHandle)
 autoResize:Destroy()
+-- Optional geometry constraints can reject a motion without releasing the
+-- capture or its outline, and can return a different safe edge on the next hold.
+local limitedOwner = component(resizeHost, "limited-owner")
+limitedOwner:SetPos(100, 100)
+limitedOwner:SetSize(100, 80)
+local allowResize = false
+local limitedResize = Resize.new(resizeHost, limitedOwner, {
+    isVisible = function() return true end,
+    setRect = function(x, y, width, height)
+        limitedOwner:SetPos(x, y)
+        limitedOwner:SetSize(width, height)
+    end,
+    constrainRect = function(x, y, width, height, edge)
+        expect(edge.east, true, "constraint receives the grabbed edge")
+        if not allowResize then return nil end
+        return x, y, math.min(width, 120), height
+    end,
+})
+local limitedHandle = begin(limitedResize, "e", limitedOwner)
+local limitedFeedback = limitedResize.feedback
+fire(limitedHandle, ui.Hook.ONHOLD, 42, 2)
+expectRect(limitedOwner, { x = 100, y = 100, width = 100, height = 80 },
+    "rejected motion keeps the source rectangle")
+expect(limitedResize.feedback, limitedFeedback, "rejected motion retains resize feedback")
+expect(limitedResize.dragState ~= nil, true, "rejected motion retains capture")
+allowResize = true
+fire(limitedHandle, ui.Hook.ONHOLD, 62, 2)
+expectRect(limitedOwner, { x = 100, y = 100, width = 120, height = 80 },
+    "accepted motion applies the constrained rectangle")
+expectGold(limitedResize, limitedOwner)
+finish(limitedResize, limitedHandle)
+limitedResize:Destroy()
+expect(limitedResize.constrainRect, nil, "destroy clears the constraint callback")
+limitedOwner:Destroy()
+
 
 local autoPhysicalHost = Components.new(ui.Layer, overlayParent, { categoryID = "auto" })
 autoPhysicalHost:SetSize(360, 220)
@@ -697,6 +824,34 @@ legacyResize:Destroy()
 autoOwner:Destroy()
 legacyOwner:Destroy()
 autoPhysicalHost:Destroy()
+
+-- A slider several scrolls deep follows a resize of the outermost window: each scroll
+-- finds the one around it through the tooltip contexts, and refreshes its children.
+-- Panels can't hold panels directly, so the deepest nesting is window, panel, tab page, panel.
+local deepWindow = Window.new(parent, { title = "Deep", width = 600, height = 500 })
+local outerPanel = deepWindow:AddPanel({ height = 400 })
+local deepPage = outerPanel:AddTabs({ "Page" }, { height = 300 }).dock:GetPage(1)
+local innerPanel = deepPage:AddPanel({ height = 200 })
+local deepSliders = {
+    deepWindow:AddSlider({ value = 100 }),
+    outerPanel:AddSlider({ value = 100 }).dock,
+    deepPage:AddSlider({ value = 100 }),
+    innerPanel:AddSlider({ value = 100 }).dock,
+}
+expect(innerPanel.dock.scroll.parentScroll, deepPage._scroll, "the inner panel links to the tab page")
+expect(deepPage._scroll.parentScroll, outerPanel.dock.scroll, "the tab page links to the outer panel")
+expect(outerPanel.dock.scroll.parentScroll, deepWindow._scroll, "the outer panel links to the window")
+local deepest = deepSliders[4]
+local deepWidth = deepest.track.width
+for _, width in ipairs({ 760, 520 }) do
+    deepWindow:SetSize(width, 500)
+    expect(deepest.track.width, deepWidth + width - 600, "the deepest track stretches with the window")
+    for index, slider in ipairs(deepSliders) do
+        expect(slider.thumb.x, slider.track.width - slider.thumb.width,
+            "slider " .. index .. "'s marker stays at its track end")
+    end
+end
+deepWindow:Destroy()
 
 -- A vanished native interface must be detected before touching any stale handle.
 local unloadedWindow, unloadedRoot, unloadedResize = createSurface("titled", parent)

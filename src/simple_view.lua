@@ -1,5 +1,6 @@
 local ContentMethods = require("src/core/content_methods")
 local Layout = require("src/core/layout")
+local RowBackgrounds = require("src/core/row_backgrounds")
 local Scroll = require("src/core/scroll")
 local Tooltip = require("src/tooltip")
 
@@ -37,6 +38,8 @@ function SimpleView.new(parent, options)
         end,
     })
     local self = setmetatable(controller, SimpleView)
+    self.rowBackgroundColours = options.rowBackgroundColours or options.rowBackgroundColors
+    self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
     self.tooltipContext = Tooltip.registerContext(
         self.content,
         tooltipParent,
@@ -56,6 +59,17 @@ ContentMethods.installSingle(SimpleView)
 function SimpleView:_FitContent()
     self.root:SetHeight(math.max(1, self.contentHeight))
     self:Refresh()
+end
+
+function SimpleView:RefreshRowBackgrounds()
+    if self.rowBackgroundColours == nil and self.rowBackgrounds == nil then return end
+    RowBackgrounds.clear(self.rowBackgrounds, self.interfaceID)
+    self.rowBackgrounds = RowBackgrounds.apply(
+        self.content, self.height, self, self.rowBackgroundColours, self.rowBackgroundEdgeToEdge)
+end
+
+function SimpleView:RefreshLayout()
+    Layout.refresh(self)
 end
 
 function SimpleView:SetTooltip(value)

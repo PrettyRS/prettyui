@@ -133,6 +133,9 @@
             "enabled": "boolean"
           }
         },
+        "Hide": {
+          "params": {}
+        },
         "Close": {
           "params": {}
         },
@@ -149,6 +152,92 @@
         }
       }
     },
+    "NisPanel": {
+      "options": {
+        "id": "string",
+        "dockTo": "string",
+        "active": "boolean",
+        "x": "number",
+        "y": "number",
+        "xAnchor": "number",
+        "yAnchor": "number",
+        "width": "number",
+        "height": "number",
+        "categoryID": "number|'auto'",
+        "_categoryPolicy": "'auto'|'legacy'",
+        "minWidth": "number",
+        "minHeight": "number",
+        "maxWidth": "number",
+        "maxHeight": "number",
+        "tabIcon": "any",
+        "tabText": "string",
+        "scrollable": "boolean",
+        "scrollStep": "number",
+        "contentHeight": "number",
+        "layout": "PrettyUI.LayoutOptions",
+        "textLayout": "PrettyUI.LayoutOptions",
+        "tooltip": "string|PrettyUI.TooltipOptions",
+        "rowBackgroundColours": "number[]",
+        "rowBackgroundColors": "number[]",
+        "rowBackgroundEdgeToEdge": "boolean",
+        "buildContent": "fun(panel: PrettyUI.NisPanel): (fun()|nil)",
+        "onClose": "fun(panel: PrettyUI.NisPanel)",
+        "onBoundsChange": "fun(panel: PrettyUI.NisPanel, x: number, y: number, width: number, height: number)",
+        "destroyOnClose": "boolean"
+      },
+      "fields": {
+        "root": "any",
+        "content": "any?",
+        "viewport": "any?",
+        "width": "number",
+        "height": "number",
+        "scrollable": "boolean",
+        "scrollbarVisible": "boolean",
+        "scrollY": "number",
+        "contentHeight": "number",
+        "contentWidth": "number"
+      },
+      "methods": {
+        "new": {
+          "params": { "options": "PrettyUI.NisPanelOptions?" },
+          "returns": ["PrettyUI.NisPanel"],
+          "overloads": [
+            {
+              "params": { "parent": "any", "options": "PrettyUI.NisPanelOptions?" },
+              "returns": ["PrettyUI.NisPanel"]
+            }
+          ]
+        },
+        "Subscribe": {
+          "params": { "event": "any", "callback": "fun(...: any)" },
+          "returns": ["nil"]
+        },
+        "OnCleanup": {
+          "params": { "callback": "fun()" },
+          "returns": ["nil"]
+        },
+        "SetSize": { "params": { "width": "number", "height": "number" }, "returns": ["nil"] },
+        "DockTo": { "params": { "target": "PrettyUI.NisPanel|number|userdata" }, "returns": ["boolean"] },
+        "Undock": { "params": {}, "returns": ["nil"] },
+        "SelectTab": { "params": {}, "returns": ["nil"] },
+        "SetActive": { "params": { "active": "boolean" }, "returns": ["nil"] },
+        "IsActive": { "params": {}, "returns": ["boolean"] },
+        "Show": { "params": {}, "returns": ["nil"] },
+        "Hide": { "params": {}, "returns": ["nil"] },
+        "Close": { "params": {}, "returns": ["nil"] },
+        "Destroy": { "params": {}, "returns": ["nil"] },
+        "SetTooltip": {
+          "params": { "value": "string|PrettyUI.TooltipOptions|nil" },
+          "returns": ["boolean"]
+        },
+        "RefreshRowBackgrounds": { "params": {}, "returns": ["nil"] },
+        "SetScrollable": { "params": { "value": "boolean" }, "returns": ["nil"] },
+        "SetScrollPosition": { "params": { "y": "number" }, "returns": ["nil"] },
+        "ScrollBy": { "params": { "delta": "number" }, "returns": ["nil"] },
+        "ScrollToChild": { "params": { "child": "any", "topOffset": "number?" }, "returns": ["nil"] },
+        "SetContentHeight": { "params": { "height": "number" }, "returns": ["nil"] }
+      }
+    },
     "SimpleView": {
       "options": {
         "x": "number",
@@ -162,6 +251,9 @@
         "scrollable": "boolean",
         "scrollStep": "number",
         "contentHeight": "number",
+        "rowBackgroundColours": "number[]",
+        "rowBackgroundColors": "number[]",
+        "rowBackgroundEdgeToEdge": "boolean",
         "tooltip": "string|PrettyUI.TooltipOptions",
         "layout": "PrettyUI.LayoutOptions",
         "textLayout": "PrettyUI.LayoutOptions"
@@ -176,6 +268,7 @@
         "contentWidth": "number"
       },
       "methods": {
+        "RefreshRowBackgrounds": { "params": {}, "returns": ["nil"] },
         "new": {
           "params": {
             "parent": "any",
@@ -265,6 +358,8 @@
         "useNativeTransparency": "boolean",
         "respectInterfaceLock": "boolean",
         "onPopoutChange": "fun(panel: PrettyUI.Panel, poppedOut: boolean)",
+        "onClose": "fun(panel: PrettyUI.Panel)",
+        "destroyOnClose": "boolean",
         "tooltip": "string|PrettyUI.TooltipOptions",
         "layout": "PrettyUI.LayoutOptions",
         "textLayout": "PrettyUI.LayoutOptions"
@@ -305,6 +400,15 @@
           "params": {
             "enabled": "boolean"
           }
+        },
+        "Hide": {
+          "params": {}
+        },
+        "Show": {
+          "params": {}
+        },
+        "Close": {
+          "params": {}
         },
         "SetPopoutClickthrough": {
           "params": {
@@ -1586,6 +1690,7 @@
       "options": {
         "selectedValue": "any",
         "inline": "boolean",
+        "maxLines": "integer",
         "disabled": "boolean",
         "onChange": "fun(group: PrettyUI.RadioButton, value: any)",
         "colour": "number",
@@ -1627,6 +1732,7 @@
       "options": {
         "selectedValues": "any[]|table<any, boolean>",
         "inline": "boolean",
+        "maxLines": "integer",
         "disabled": "boolean",
         "onChange": "fun(group: PrettyUI.CheckboxButton, values: any[], changedValue: any, selected: boolean)",
         "colour": "number",
@@ -2005,6 +2111,9 @@
             "disabled": "boolean"
           }
         },
+        "Refresh": {
+          "params": {}
+        },
         "SetTooltip": {
           "params": {
             "value": "string|PrettyUI.TooltipOptions|nil"
@@ -2302,7 +2411,7 @@
         "new": {
           "params": {
             "parent": "any",
-            "spriteID": "number",
+            "spriteID": "any",
             "action": "fun(button: PrettyUI.RibbonButton)?",
             "options": "PrettyUI.RibbonButtonOptions?"
           },
@@ -2312,7 +2421,7 @@
         },
         "SetIcon": {
           "params": {
-            "spriteID": "number"
+            "spriteID": "any"
           }
         },
         "SetActive": {

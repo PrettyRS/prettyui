@@ -45,7 +45,7 @@ end
 
 local function component(parent, categoryID, dynamicID, kind)
     constructed = constructed + 1
-    local static = parent.parentStatic or parent
+    local static = parent.categoryID == -1 and parent or parent.parentStatic or parent
     if static.rejectExplicitStatic and parent == static and categoryID ~= nil then
         error("categorized constructor on static parent", 0)
     end
@@ -63,15 +63,18 @@ local function component(parent, categoryID, dynamicID, kind)
     local result = {
         parent = parent, parentStatic = static, interfaceID = static.interfaceID,
         categoryID = category, dynamicID = dynamic, kind = kind,
+        staticID = static.staticID,
         children = {}, subscriptions = {}, x = 0, y = 0, width = 0, height = 0,
         hidden = false, cursorConfig = {}, text = {},
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
     }
     static.registry[key] = result
     parent.children[#parent.children + 1] = result
-    function result:IterateDynamicComponents(callback)
-        for _, child in ipairs(self.children) do
-            if not child.destroyed and callback(child, not child.hidden) then return end
+    if kind == "layer" then
+        function result:IterateDynamicComponents(callback)
+            for _, child in ipairs(self.children) do
+                if not child.destroyed and callback(child, not child.hidden) then return end
+            end
         end
     end
     function result:SetPos(x, y, xAnchor, yAnchor)
@@ -150,6 +153,14 @@ Keyboard = { IsAvailable = function() return false end }
 Event = {
     Logic = { Subscribe = function() end, Unsubscribe = function() end },
     VarTransmit = { Subscribe = function() end, Unsubscribe = function() end },
+    SettingsLayerReady = { Subscribe = function() end, Unsubscribe = function() end },
+}
+var = { VarPlayer = { TOPLEVEL_V2_LEGACY_INTERFACE = { value = 0 } } }
+id.VarPlayer = { TOPLEVEL_V2_GENERAL_VARP = 14 }
+PersistentDB = {
+    GetString = function() return "left" end,
+    GetBool = function() return false end,
+    GetInt = function() return nil end,
 }
 package.loaded["src/minimenu"] = { Start = function() end, Shutdown = function() end }
 
@@ -378,6 +389,56 @@ do
     end
 end
 
+-- Different Lua handles can identify the same native parent. Lookups and
+-- iteration must still protect components created through the original handle.
+do
+    local C = require("src/core/components")
+    local fullLookup = ui.Interfaces.GetComponent
+    for _, mode in ipairs({ "full", "unresolved" }) do
+        local static = host(46)
+        local parent = ui.Layer.new(static)
+        local foreign = ui.Text.new(parent, 1, 0)
+        foreign.content = "Other plugin"
+        local staticAlias = setmetatable({}, { __index = static })
+        local parentAlias = setmetatable({ parentStatic = staticAlias }, { __index = parent })
+        if mode == "unresolved" then ui.Interfaces.GetComponent = function() return nil end end
+        local control = C.new(ui.Text, parentAlias, { categoryID = "auto" })
+        control.content = "This plugin"
+        expect(static.registry[pair(foreign.categoryID, foreign.dynamicID)].content, "Other plugin",
+            "aliased parent preserves the other plugin's control: " .. mode)
+        expect(static.registry[pair(control.categoryID, control.dynamicID)].content, "This plugin",
+            "aliased parent creates a separately addressable control: " .. mode)
+        control:Destroy()
+        expect(foreign.destroyed, nil, "aliased allocation cleanup cannot destroy a foreign control")
+        ui.Interfaces.GetComponent = fullLookup
+    end
+end
+
+-- A static component can have a static ancestor without sharing its namespace.
+do
+    local ancestor = host(47)
+    local area = host(47)
+    area.parent, area.parentStatic = ancestor, ancestor
+    local foreignRoot = ui.Layer.new(area)
+    local foreign = ui.Sprite.new(foreignRoot, 1, 0)
+    foreign.content = "Existing plugin"
+    local window = prettyui.Window.new(area, { categoryID = "auto", title = "Static descendant" })
+    local text = window:AddText("Independent window")
+    expect(text.parentStatic, area, "managed content uses the supplied static area's namespace")
+    expect(area.registry[pair(1, 0)], foreign, "managed construction preserves another plugin's sprite")
+    expect(next(ancestor.registry), nil, "managed construction does not allocate in the static ancestor")
+    window:Destroy()
+    expect(foreign.content, "Existing plugin", "destroying the new window preserves existing content")
+    local grouped = prettyui.BuildCategoryGroup(area, 1, function(new)
+        return new(ui.Text, foreignRoot)
+    end)
+    grouped.content = "Reserved group"
+    expect(grouped.parentStatic, area, "reserved groups use the supplied static area's namespace")
+    expect(area.registry[pair(1, 0)], foreign, "reserved groups preserve the existing plugin's slot")
+    grouped:Destroy()
+    foreignRoot:Destroy()
+end
+
 do
     local C = require("src/core/components")
     for _, ids in ipairs({ { 7, 234 }, { 0, 4095 } }) do
@@ -531,6 +592,78 @@ do
         expect(chrome[1].destroyed, true, "last modal destroys shared chrome")
     end
     Vector4 = savedVector
+end
+
+-- Real client leaf controls lack IterateDynamicComponents; fallback walks must
+-- skip leaf children without throwing UNVERIFIABLE while still seeing their IDs.
+do
+    local C = require("src/core/components")
+    local function freshHandle(target, freshParentStatic)
+        if target == nil then return nil end
+        local proxy = {}
+        if freshParentStatic and target.parentStatic ~= nil then
+            proxy.parentStatic = freshHandle(target.parentStatic, false)
+        end
+        return setmetatable(proxy, { __index = target })
+    end
+
+    local originalGetComponent = ui.Interfaces.GetComponent
+    local freshHost = host(46)
+    local walks = 0
+    local originalIterate = freshHost.IterateDynamicComponents
+    function freshHost:IterateDynamicComponents(callback)
+        walks = walks + 1
+        return originalIterate(self, callback)
+    end
+    local freshLayer = ui.Layer.new(freshHost)
+    ui.Sprite.new(freshLayer, 1, 0)
+    ui.Interfaces.GetComponent = function(self, interfaceID, staticID, categoryID, dynamicID)
+        local resolved = originalGetComponent(self, interfaceID, staticID, categoryID, dynamicID)
+        return freshHandle(resolved, true)
+    end
+    local first = C.new(ui.Text, freshLayer, { categoryID = "auto" })
+    expect(first.categoryID, 1, "fresh-handle GetComponent allocates in category 1")
+    expect(first.dynamicID, 1, "fresh-handle GetComponent skips occupied leaf sprite")
+    local walksBefore = walks
+    local second = C.new(ui.Text, freshLayer, { categoryID = "auto" })
+    expect(second.dynamicID, 2, "second allocation advances cleanly under fresh-handle lookup")
+    expect(walks, walksBefore, "fresh GetComponent handles keep fullLookup active")
+
+    local fallbackHost = host(47)
+    local fallbackLayer = ui.Layer.new(fallbackHost)
+    local nestedLayer = ui.Layer.new(fallbackLayer)
+    ui.Sprite.new(nestedLayer, 1, 0)
+    ui.Rectangle.new(nestedLayer, 1, 1)
+    ui.Button.new(nestedLayer, 0, 2)
+    local function wrapFreshIteration(node)
+        local base = node.IterateDynamicComponents
+        function node:IterateDynamicComponents(callback)
+            return base(self, function(child, visible)
+                return callback(freshHandle(child, true), visible)
+            end)
+        end
+    end
+    wrapFreshIteration(fallbackHost)
+    wrapFreshIteration(fallbackLayer)
+    wrapFreshIteration(nestedLayer)
+    ui.Interfaces.GetComponent = function() return nil end
+
+    local fallbackAuto = C.new(ui.Text, fallbackLayer, { categoryID = "auto" })
+    expect(fallbackAuto.categoryID, 1, "fallback walk allocates in category 1")
+    expect(fallbackAuto.dynamicID, 2, "fallback walk skips leaf sprite and rectangle without throwing")
+    local fallbackLegacy = C.new(ui.Text, fallbackLayer)
+    expect(fallbackLegacy.categoryID, 0, "fallback legacy preflight succeeds past leaf controls")
+    local fallbackView = prettyui.SimpleView.new(fallbackLayer, {
+        categoryID = "auto", width = 200, height = 160, scrollable = true,
+    })
+    local fallbackTip = prettyui.Tooltip.attach(fallbackAuto, fallbackHost, {
+        categoryID = "auto", text = "Tooltip under fallback walk",
+    })
+    fallbackTip:Show()
+    expect(fallbackTip.root.hidden, false, "Tooltip builds and shows under fallback walk with leaf controls")
+    fallbackTip:Destroy()
+    fallbackView:Destroy()
+    ui.Interfaces.GetComponent = originalGetComponent
 end
 
 print("category_capacity_test: ok")

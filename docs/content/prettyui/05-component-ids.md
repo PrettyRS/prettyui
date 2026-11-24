@@ -7,7 +7,7 @@ weight: 5
 
 ## Component IDs {#component-ids}
 
-Set `categoryID = "auto"` on a root window, view, panel, or component for higher-capacity allocation. Children and later Add calls inherit the choice.
+Set `categoryID = "auto"` on a root window, view, panel, or component for higher-capacity allocation. Children and later Add calls inherit the choice. `NisPanel` is the exception: it uses automatic allocation when `categoryID` is omitted.
 
 ```lua
 local window = prettyui.Window.new(parent, {
@@ -20,7 +20,7 @@ local layer = prettyui.NewComponent(ui.Layer, window.content)
 prettyui.NewComponent(ui.Text, layer)
 ```
 
-Owned tooltips, dropdowns, and other detached controls retain the owner's policy. Separately constructed roots need their own opt-in. Shared parents and sibling trees are not changed.
+Owned tooltips, dropdowns, and other detached controls retain the owner's policy. Separately constructed roots need their own opt-in unless they are `NisPanel` instances. Shared parents and sibling trees are not changed.
 
 {{% api-grid compact="true" %}}
 
@@ -32,7 +32,10 @@ Owned tooltips, dropdowns, and other detached controls retain the owner's policy
 : Assigns free nonzero category/dynamic-ID pairs to managed controls and decorations of any native type. Numeric categories are not a PrettyUI option.
 
 Omitted `categoryID`
-: Keeps native parent-category inheritance. Existing calls continue to work, but emit one migration warning per loaded allocator module. Omitted selection will be deprecated in a future version.
+: `NisPanel` defaults to automatic allocation. Other components keep native
+  parent-category inheritance and emit one migration warning per loaded allocator
+  module. Omitting the option for those components will be deprecated in a future
+  version.
 
 Static parents
 : Use native root ID assignment even in auto mode. Their PrettyUI descendants retain the auto policy.

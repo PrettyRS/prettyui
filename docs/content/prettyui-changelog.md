@@ -20,11 +20,50 @@ hero:
   compact: true
 ---
 
-## Unreleased {#unreleased}
+
+## 1.4.0 (submitted for review) {#v1-4-0}
+
+### Added
+- PrettyUI now has user facing settings accessible from the plugin menu, the ribbon and the Classic sidebar.
+- Added `prettyui.IsClassicUI()` to read if the player is currently in Classic Interface mode.
+- Added [Table](index.html#tables-api) component, this can be used to easily display data in a responsive table format.
+- Added `Hide()` to [windows](index.html#window-api), which hides the window without invoking `onClose`.
+- Added `Hide()`, `Show()` and `Close()` methods and `onClose` and `destroyOnClose` options to [panels](index.html#panel-api).
+- Added snapping to [windows](index.html#window-api), on by default. While being dragged, windows snap to other PrettyUI windows, the game's own interfaces that use snapping, and the screen edges. Set `snapToEdges = false` to opt out.
+- Added the [NisPanel](index.html#nis-panel-api) component, matching the visuals and behavior of panels in the modern interface. Set a stable `id` to persist bounds, tab groups, order, and the active tab; `dockTo` supplies a first-use docking default. On classic interface mode, NisPanels adapt to an osrs-like sidebar layout.
+- [Collapse buttons](index.html#collapse-button-api) now accept every `Add…` method a window has except `AddTabs`, `AddPanel` and `AddCollapseButton`.
+- Added `RefreshLayout()` to windows, simple views, panels, tab pages and collapse buttons. Call it after changing content in place, such as a label's text, to re-wrap text and re-flow the content.
+
+### Changed
+- PrettyUI components are now hidden while the player is viewing the world map.
+- Added `Refresh()` to [sliders](index.html#slider-api), which can update the marker's position again after the slider's width changes.
+- Titles and body text now wrap and resize vertically as their available width changes.
+- Titles no longer default to a single-line limit.
+- [Radio and checkbox button](index.html#selection-button-api) labels can now wrap to fit the parent's width. Set the `maxLines` option to allow it.
+- [Collapse buttons](index.html#collapse-button-api) now lay out their content like windows: controls use window spacing instead of a fixed 4 px gap, `inline` controls share a row, `marginTop` adds to the gap instead of replacing it, and destroying a control moves the ones below it up.
+
 
 ### Fixed
-
+- Controls with a `heightAnchor` no longer make a scrolling page or a collapse section taller each time its layout re-flows.
+- Improved hover feedback on keybind fields and restored the missing clear sprite for resetting keybinds.
+- [Windows](index.html#window-api) can now be positioned visually flush against the edges of their parents.
+- [Slider](index.html#slider-api) markers now move with the track when the window or panel holding them is resized.
+- Nested panels' content now resizes when the parent being resized causes the panel to be resized.
+- Nested Panels are linked to their parent again, which 1.3.0 had broken.
+- Nested [panels](index.html#panel-api) that follow their parent's width keep following it after a height-only resize by the end user or a fit to their content. Only resizing their width or calling setSize() stops it.
+- A [panel's](index.html#panel-api) popped-out size and docked size are now independent of each other.
+- Dragging a scrollbar no longer stops while the mouse passes over a resizable window's edge.
 - Fixed custom buffs and debuffs flickering between rows near the native bar's wrap threshold.
+- Fixed an issue where middle-mouse camera rotation would stop when crossing PrettyUI buffs or debuffs.
+- Fixed a crash that might occur when pressing alt after destroying a panel mounted on a parent.
+- Fixed how Text added to a [collapse button](index.html#collapse-button-api) wraps and resizes to avoid clipping.
+
+### Credits
+This version of PrettyUI contains changes from multiple community developers, a big thank you to:
+- [Psymansayz](https://github.com/Psymansayz)
+- [CJ Fritz](https://github.com/cjfritz9)
+- [Keensta](https://github.com/keensta)
+- [TheJoshJ](https://github.com/TheJoshJ)
 
 ## 1.3.0 2026-11-19 {#v1-3-0}
 

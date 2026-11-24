@@ -59,6 +59,12 @@ window:AddText({
 `shadowed`
 : Set false to disable the default shadow.
 
+`maxLines`
+: Maximum visible lines; defaults to `0` (unlimited) for both body text and titles. Set `1` explicitly for a single-line label.
+
+`lineSpacing`
+: Distance between line baselines. Omit it or use `0` for the font's native spacing.
+
 `x`, `y`, `width`, `height`
 : Optional layout overrides.
 

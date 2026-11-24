@@ -1,4 +1,5 @@
 local Components = require("src/core/components")
+local PanelSurface = require("src/core/panel_surface")
 local Sprites = require("src/core/sprites")
 local ColourPicker = require("src/colour_picker")
 local ComboBox = require("src/combo_box")
@@ -19,6 +20,7 @@ local DragFeedback = require("src/core/drag_feedback")
 local DragBounds = require("src/core/drag_bounds")
 local Resize = require("src/core/resize")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
+local WorldMap = require("src/core/world_map")
 
 local Panel = {}
 Panel.__index = Panel
@@ -91,78 +93,7 @@ local function copyOptions(value)
     return copy
 end
 
-local function sprite(parent, spriteID)
-    local component = Components.new(ui.Sprite, parent)
-    component.spriteID = spriteID
-    component.clickthrough = true
-    return component
-end
 
-local function createSurface(parent, options)
-    local surface = {}
-    local frame = Sprites.HUD_WINDOW
-    surface.root = Components.newContent(parent, options)
-    surface.interfaceID = surface.root.interfaceID
-    surface.root:SetPos(options.x, options.y, options.xAnchor or 0, options.yAnchor or 0)
-    surface.root:SetSize(options.width, options.height, options.widthAnchor or 0, options.heightAnchor or 0)
-    surface.root.clickthrough = options.clickthrough == true
-
-    surface.background = sprite(surface.root, frame.content)
-    surface.background:SetPos(BORDER_SIZE, BORDER_SIZE)
-    surface.background:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
-    surface.background.isTiling = true
-    surface.background.alpha = clampAlpha(options.backgroundAlpha)
-    surface.background.clickthrough = options.clickthrough == true
-
-    surface.top = sprite(surface.root, frame.top)
-    surface.top:SetPos(BORDER_SIZE, 0)
-    surface.top:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
-    surface.top.isTiling = true
-
-    surface.bottom = sprite(surface.root, frame.bottom)
-    surface.bottom:SetPos(BORDER_SIZE, -BORDER_SIZE, 0, 1.0)
-    surface.bottom:SetSize(-BORDER_SIZE * 2, BORDER_SIZE, 1.0)
-    surface.bottom.isTiling = true
-
-    surface.right = sprite(surface.root, frame.side)
-    surface.right:SetPos(-BORDER_SIZE, BORDER_SIZE, 1.0)
-    surface.right:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
-    surface.right.isTiling = true
-
-    surface.left = sprite(surface.root, frame.side)
-    surface.left:SetPos(0, BORDER_SIZE)
-    surface.left:SetSize(BORDER_SIZE, -BORDER_SIZE * 2, 0, 1.0)
-    surface.left.isTiling = true
-    surface.right.isFlippedHorizontally = true
-
-    surface.topRight = sprite(surface.root, frame.cornerTop)
-    surface.topRight:SetPos(-BORDER_SIZE, 0, 1.0)
-    surface.topRight:SetSize(BORDER_SIZE, BORDER_SIZE)
-    surface.topRight.isFlippedHorizontally = true
-
-    surface.topLeft = sprite(surface.root, frame.cornerTop)
-    surface.topLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
-
-    surface.bottomRight = sprite(surface.root, frame.cornerBottom)
-    surface.bottomRight:SetPos(-BORDER_SIZE, -BORDER_SIZE, 1.0, 1.0)
-    surface.bottomRight:SetSize(BORDER_SIZE, BORDER_SIZE)
-    surface.bottomRight.isFlippedHorizontally = true
-
-    surface.bottomLeft = sprite(surface.root, frame.cornerBottom)
-    surface.bottomLeft:SetPos(0, -BORDER_SIZE, 0, 1.0)
-    surface.bottomLeft:SetSize(BORDER_SIZE, BORDER_SIZE)
-
-    surface.container = Components.newContent(surface.root)
-    surface.container:SetPos(BORDER_SIZE, BORDER_SIZE)
-    surface.container:SetSize(-BORDER_SIZE * 2, -BORDER_SIZE * 2, 1.0, 1.0)
-    surface.container.clickthrough = options.clickthrough == true
-    surface.container.enabled = options.clickthrough ~= true
-
-    -- Category-zero content must stay above managed, nonzero-category artwork.
-    surface.background:MoveToBack()
-
-    return surface
-end
 
 local function createToggle(surface, panel, popoutMode)
     local button = Components.new(ui.Sprite, surface.root)
@@ -219,7 +150,7 @@ local function createDragLayer(parent, surface, panel)
     layer:SetSize(surface.root.width, surface.root.height)
     layer.clickthrough = true
     layer.enabled = false
-    layer.hidden = true
+    Components.setHidden(layer, true)
 
     layer:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
         if not isAltDown() then return true end
@@ -350,9 +281,16 @@ local function configureOwner(surface, options, context, overlayParent)
     return owner
 end
 
+-- Each surface fits its own height, keeping its width.
 function PanelContent:_FitContent()
     local panel = self._rowBackgroundPanel
-    panel:SetSize(panel.width, self.contentHeight + BORDER_SIZE * 2)
+    local height = self.contentHeight + BORDER_SIZE * 2
+    if self._rowBackgroundSurface == panel.overlay then
+        panel:_SetPopoutSize(panel.popoutWidth, height)
+    else
+        panel:_SetDockSize(panel.dock.root.width, height)
+    end
+    panel:_RefreshSize()
     panel:RefreshRowBackgrounds()
 end
 
@@ -363,6 +301,7 @@ end
 
 local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     options = options or {}
+    local parentContext = Tooltip.getContext(parent)
     local width, height = Panel.getSize(options)
 
     local self = setmetatable({}, Panel)
@@ -383,6 +322,8 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.locked = false
     self.onPopoutChange = options.onPopoutChange
     self.onPositionChange = options.onPositionChange
+    self.onClose = options.onClose
+    self.destroyOnClose = options.destroyOnClose == true
     self.rowBackgroundColours = options.rowBackgroundColours
         or options.rowBackgroundColors
         or {}
@@ -390,8 +331,9 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.dockRowBackgrounds = {}
     self.overlayRowBackgrounds = {}
     self.poppedOut = self._canPopout and options.poppedOut == true
+    self._hidden = false
 
-    self.dock = createSurface(parent, {
+    self.dock = PanelSurface.new(parent, {
         _categoryPolicy = policy,
         x = options.x or 0,
         y = options.y or 0,
@@ -407,7 +349,7 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
     self.width = self.dock.root.width
     self.height = self.dock.root.height
     self.contentWidth = self.width - BORDER_SIZE * 2
-    self.overlay = createSurface(overlayParent, {
+    self.overlay = PanelSurface.new(overlayParent, {
         _categoryPolicy = policy,
         x = options.popoutX or DEFAULT_POPOUT_X,
         y = options.popoutY or DEFAULT_POPOUT_Y,
@@ -418,6 +360,9 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
         backgroundAlpha = self.popoutBackgroundAlpha,
         clickthrough = self.popoutClickthrough,
     })
+    -- The popout keeps its own size, so docking and popping out again does not change either surface.
+    self.popoutWidth = self.overlay.root.width
+    self.popoutHeight = self.overlay.root.height
     local dockTooltipParent = parentContext and parentContext.parent or parent
     self.dockOwner = configureOwner(self.dock, options, parentContext, dockTooltipParent)
     self.overlayOwner = configureOwner(self.overlay, options, nil, overlayParent)
@@ -503,12 +448,19 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
                     surface.root:MoveToFront()
                 end,
                 setRect = function(x, y, width, height)
-                    if surface == self.dock and self.flowOwner then
-                        Layout.resizeRect(self.flowOwner, self, x, y, width, height)
-                    else
+                    if surface == self.overlay then
                         surface.root:SetPos(x, y)
+                        self:_SetPopoutSize(width, height)
+                    else
+                        local widthChanged = width ~= surface.root.width
+                        if self.flowOwner then
+                            Layout.resizeRect(self.flowOwner, self, x, y, width, height)
+                        else
+                            surface.root:SetPos(x, y)
+                        end
+                        self:_SetDockSize(widthChanged and width or surface.root.width, height)
                     end
-                    self:SetSize(width, height)
+                    self:_RefreshSize()
                 end,
             })
         end
@@ -519,7 +471,18 @@ local function buildPanel(parent, options, flowManaged, overlayParent, policy)
         self:_UpdateResizeEnabled()
     end
     self:_WatchNativeTransparency()
-    self:_WatchNativeLock()
+    NativeInterfaceSettings.watchMovementLock(self, Panel._SetLocked)
+    WorldMap.watch(self, function(suspended)
+        if suspended then
+            self:_StopDrag()
+            if self.dockResize then self.dockResize:Cancel() end
+            if self.overlayResize then self.overlayResize:Cancel() end
+        elseif self.root and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil then
+            if self.dockBounds then self.dockBounds:Refresh() end
+            if self.overlayBounds then self.overlayBounds:Refresh() end
+            self:_UpdateVisibility()
+        end
+    end)
     return self
 end
 
@@ -543,14 +506,6 @@ function Panel:_SetBackgroundTransparency(transparency)
     end
 end
 
-function Panel:_WatchNativeLock()
-    if self.respectInterfaceLock then
-        NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
-    else
-        NativeInterfaceSettings.unwatchLock(self)
-    end
-end
-
 function Panel:_SetLocked(locked)
     if self.locked == locked then return end
     self.locked = locked
@@ -570,8 +525,7 @@ end
 
 function Panel:SetRespectInterfaceLock(enabled)
     self.respectInterfaceLock = enabled == true
-    self:_WatchNativeLock()
-    if not self.respectInterfaceLock then self:_SetLocked(false) end
+    if self.root then NativeInterfaceSettings.watchMovementLock(self, Panel._SetLocked) end
 end
 
 function Panel.new(parent, options, flowManaged)
@@ -584,11 +538,17 @@ function Panel.new(parent, options, flowManaged)
         Components.checkContentParent(parent, policyOptions)
         Components.checkContentParent(overlayParent, policyOptions)
     end
-    return Components.withBatch(parent, function()
+    local panel = Components.withBatch(parent, function()
         return Components.withBatch(overlayParent, function()
             return buildPanel(parent, options, flowManaged, overlayParent, policy)
         end)
     end)
+    if context and flowManaged ~= true then
+        context.ownedWidgets = context.ownedWidgets or {}
+        context.ownedWidgets[panel] = true
+        panel._owningContext = context
+    end
+    return panel
 end
 
 function Panel:_UpdateResizeEnabled()
@@ -601,7 +561,7 @@ end
 
 function Panel:_SetAltDragActive(active, notify)
     local activeSurface
-    if active == true and not self.locked then
+    if active == true and not self.locked and not self._hidden then
         if self.poppedOut and self._canPopout then
             activeSurface = self.overlay
         elseif self._dockDraggable then
@@ -620,7 +580,7 @@ function Panel:_SetAltDragActive(active, notify)
         local enabled = activeSurface == surface
         layer.enabled = enabled
         layer.clickthrough = not enabled
-        layer.hidden = not enabled
+        Components.setHidden(layer, not enabled)
         Cursor.apply(layer, config.Cursor.TOPLEVEL_V2_MOVE, enabled)
         if enabled then
             layer:SetPos(surface.root.x, surface.root.y)
@@ -726,10 +686,10 @@ function Panel:_StopDrag(notify)
 end
 
 function Panel:_UpdateFlowHeight()
-    local height = self.poppedOut and 0 or self.height
+    local height = (self.poppedOut or self._hidden) and 0 or self.height
     if self.flowOwner then
         Layout.resize(self.flowOwner, self, height)
-    elseif not self.poppedOut then
+    elseif not self.poppedOut and not self._hidden then
         self.dock.root:SetHeight(height)
     end
 end
@@ -738,6 +698,30 @@ function Panel:BindFlow(owner)
     self.flowOwner = owner
     self:_UpdateFlowHeight()
     return self
+end
+
+-- Ensures the visual state of the panel is consistent with its properties.
+function Panel:_UpdateVisibility()
+    Components.setHidden(self.dock.root, self._hidden or self.poppedOut)
+    Components.setHidden(self.overlay.root, self._hidden or not self.poppedOut)
+    self:_UpdateFlowHeight()
+    self.dock.scroll:Refresh()
+    self.overlay.scroll:Refresh()
+    local bounds = self.poppedOut and self.overlayBounds or self.dockBounds
+    if bounds then bounds:Clamp() end
+    if not self._hidden then
+        if self.poppedOut then
+            self.overlay.root:MoveToFront()
+        elseif self._dockDraggable then
+            self.dock.root:MoveToFront()
+        end
+    end
+    if self.altDragSurface then
+        (self.altDragSurface == self.overlay and self.overlayDragLayer or self.dockDragLayer):MoveToFront()
+    end
+    self:_SetAltDragActive(isAltDown())
+    if self.dockResize then self.dockResize:Refresh() end
+    if self.overlayResize then self.overlayResize:Refresh() end
 end
 
 function Panel:SetPoppedOut(poppedOut, notify)
@@ -751,21 +735,11 @@ function Panel:SetPoppedOut(poppedOut, notify)
         if field:IsListening() then listening = field; break end
     end
     self.poppedOut = self._canPopout and poppedOut == true
-    self.dock.root.hidden = self.poppedOut
-    self.overlay.root.hidden = not self.poppedOut
+    self:_UpdateVisibility()
     if previous ~= self.poppedOut and listening then
         listening:CancelListening()
         listening:StartListening()
     end
-    self:_UpdateFlowHeight()
-    self.dock.scroll:Refresh()
-    self.overlay.scroll:Refresh()
-    local bounds = self.poppedOut and self.overlayBounds or self.dockBounds
-    if bounds then bounds:Clamp() end
-    if self.poppedOut then self.overlay.root:MoveToFront() end
-    self:_SetAltDragActive(isAltDown())
-    if self.dockResize then self.dockResize:Refresh() end
-    if self.overlayResize then self.overlayResize:Refresh() end
     if notify ~= false and previous ~= self.poppedOut and self.onPopoutChange then
         self.onPopoutChange(self, self.poppedOut)
     end
@@ -773,6 +747,34 @@ end
 
 function Panel:TogglePopout()
     self:SetPoppedOut(not self.poppedOut)
+end
+
+-- Hides the panel without calling onClose().
+function Panel:Hide()
+    if ui.Interfaces:GetInterface(self.dock.interfaceID) == nil then return end
+    self:_StopDrag()
+    if self.dockResize then self.dockResize:Cancel() end
+    if self.overlayResize then self.overlayResize:Cancel() end
+    Tooltip.hideContextTooltips(self.dock.content)
+    Tooltip.hideContextTooltips(self.overlay.content)
+    self._hidden = true
+    self:_UpdateVisibility()
+end
+
+function Panel:Show()
+    if ui.Interfaces:GetInterface(self.dock.interfaceID) == nil then return end
+    self._hidden = false
+    self:_UpdateVisibility()
+end
+
+-- Closes the panel following the destroyOnClose setting.
+function Panel:Close()
+    if self.onClose then self.onClose(self) end
+    if self.destroyOnClose then
+        self:Destroy()
+    else
+        self:Hide()
+    end
 end
 
 function Panel:SetPopoutClickthrough(clickthrough)
@@ -791,16 +793,36 @@ function Panel:SetPopoutBackgroundAlpha(alpha)
 end
 
 function Panel:SetSize(width, height)
-    self.width = clamp(math.floor(width), self.minWidth or BORDER_SIZE * 2 + 1, self.maxWidth)
-    self.height = clamp(math.floor(height), self.minHeight or BORDER_SIZE * 2 + 1, self.maxHeight)
-    self.contentWidth = self.width - BORDER_SIZE * 2
-    self.dock.root:SetWidth(self.width)
-    self.overlay.root:SetSize(self.width, self.height)
+    width, height = self:_ClampSize(width, height)
+    self.dock.root:SetWidth(width) -- removes the widthAnchor.
+    self:_SetDockSize(width, height)
+    self:_SetPopoutSize(width, height)
+    self:_RefreshSize()
+end
+
+function Panel:_ClampSize(width, height)
+    return clamp(math.floor(width), self.minWidth or BORDER_SIZE * 2 + 1, self.maxWidth),
+        clamp(math.floor(height), self.minHeight or BORDER_SIZE * 2 + 1, self.maxHeight)
+end
+
+function Panel:_SetDockSize(width, height)
+    width, height = self:_ClampSize(width, height)
+    if width ~= self.dock.root.width then self.dock.root:SetWidth(width) end
+    self.width, self.height = width, height
+    self.contentWidth = width - BORDER_SIZE * 2
+    self.dockOwner.contentWidth = self.contentWidth
     self:_UpdateFlowHeight()
+end
+
+function Panel:_SetPopoutSize(width, height)
+    self.popoutWidth, self.popoutHeight = self:_ClampSize(width, height)
+    self.overlay.root:SetSize(self.popoutWidth, self.popoutHeight)
+    self.overlayOwner.contentWidth = self.popoutWidth - BORDER_SIZE * 2
+end
+
+function Panel:_RefreshSize()
     if self.dockBounds then self.dockBounds:RememberPosition() end
     if self.overlayBounds then self.overlayBounds:RememberPosition() end
-    self.dockOwner.contentWidth = self.contentWidth
-    self.overlayOwner.contentWidth = self.contentWidth
     self.dock.scroll:Refresh()
     self.overlay.scroll:Refresh()
     if self.dockBounds then self.dockBounds:Clamp() end
@@ -832,6 +854,11 @@ function Panel:SetScrollable(scrollable)
     self.dockOwner.scrollable = self.dock.scroll.scrollable
     self.overlayOwner.scrollable = self.overlay.scroll.scrollable
     self.scrollable = self.dock.scroll.scrollable
+end
+
+function Panel:RefreshLayout()
+    Layout.refresh(self.dockOwner)
+    Layout.refresh(self.overlayOwner)
 end
 
 function Panel:RefreshRowBackgrounds()
@@ -1136,8 +1163,14 @@ function Panel:AddSlider(options)
 end
 
 function Panel:Destroy()
+    if self.root == nil then return end
+    if self._owningContext then
+        self._owningContext.ownedWidgets[self] = nil
+        self._owningContext = nil
+    end
+    WorldMap.unwatch(self)
     NativeInterfaceSettings.unwatchTransparency(self)
-    NativeInterfaceSettings.unwatchLock(self)
+    NativeInterfaceSettings.unwatchMovementLock(self)
     if self.dockResize then self.dockResize:Destroy(); self.dockResize = nil end
     if self.overlayResize then self.overlayResize:Destroy(); self.overlayResize = nil end
     if self.dockBounds then self.dockBounds:Destroy(); self.dockBounds = nil end
@@ -1165,18 +1198,22 @@ function Panel:Destroy()
     local dockLoaded = self.dock and ui.Interfaces:GetInterface(self.dock.interfaceID) ~= nil
     local overlayLoaded = self.overlay and ui.Interfaces:GetInterface(self.overlay.interfaceID) ~= nil
     if self.dockDragLayer then
+        WorldMap.untrack(self.dockDragLayer)
         if dockLoaded then self.dockDragLayer:Destroy() end
         self.dockDragLayer = nil
     end
     if self.overlayDragLayer then
+        WorldMap.untrack(self.overlayDragLayer)
         if overlayLoaded then self.overlayDragLayer:Destroy() end
         self.overlayDragLayer = nil
     end
     if self.dock and self.dock.root then
+        WorldMap.untrack(self.dock.root)
         if dockLoaded then self.dock.root:Destroy() end
         self.dock.root = nil
     end
     if self.overlay and self.overlay.root then
+        WorldMap.untrack(self.overlay.root)
         if overlayLoaded then self.overlay.root:Destroy() end
         self.overlay.root = nil
     end

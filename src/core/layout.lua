@@ -19,6 +19,14 @@ local function finalizeRow(layout)
     layout.row = nil
 end
 
+-- makes components with manually specified y positions occupy height in the layout.
+local function stackBelowPositioned(layout, y, height, gap)
+    if not layout.stackBelowPositioned then return end
+    finalizeRow(layout)
+    layout.nextY = math.max(layout.nextY, y + height + gap)
+    layout.hasItems = true
+end
+
 local function growContent(owner, bottom)
     if owner.SetContentHeight == nil then return end
     local layout = owner._flowLayout
@@ -37,6 +45,7 @@ function Layout.configure(owner, options)
         paddingBottom = options.paddingBottom or options.padding or DEFAULT_PADDING,
         columnGap = options.columnGap or DEFAULT_COLUMN_GAP,
         rowGap = options.rowGap or DEFAULT_ROW_GAP,
+        stackBelowPositioned = options.stackBelowPositioned == true,
         row = nil,
         hasItems = false,
         minimumContentHeight = owner.contentHeight or 0,
@@ -64,6 +73,7 @@ function Layout.place(owner, value, defaults)
     if absolute then
         options.x = options.x or layout.paddingLeft
         options.y = options.y or layout.nextY
+        stackBelowPositioned(layout, options.y, height, gap)
     elseif options.inline == true and layout.row ~= nil then
         options.x = options.x or layout.row.nextX
         options.y = layout.row.y + (options.offsetY or 0)
@@ -141,6 +151,11 @@ local function componentRoot(component)
     return component and (component.root or component) or nil
 end
 
+local function flowHeight(root, placement)
+    if (placement.heightAnchor or 0) ~= 0 then return placement.height or 0 end
+    return root.height or placement.height or 0
+end
+
 local function setFlowPosition(owner, root, placement, x, y)
     root:SetPos(x, y, placement.xAnchor or 0, placement.yAnchor or 0)
     if placement._flowFillWidth then
@@ -161,11 +176,13 @@ local function reflow(owner)
         local root = componentRoot(entry.component)
         local placement = entry.placement
         if root ~= nil then
-            local height = root.height or placement.height or 0
+            local height = flowHeight(root, placement)
             local gap = placement._flowGap or layout.rowGap
 
             if placement._flowAbsolute == true then
-                contentBottom = math.max(contentBottom, (root.y or placement.y or 0) + height)
+                local y = root.y or placement.y or 0
+                contentBottom = math.max(contentBottom, y + height)
+                stackBelowPositioned(layout, y, height, gap)
             elseif placement.inline == true and layout.row ~= nil then
                 local x = placement._flowExplicitX and placement.x or layout.row.nextX
                 local y = layout.row.y + (placement.offsetY or 0)
@@ -225,6 +242,16 @@ local function refreshRowBackgrounds(owner)
     end
 end
 
+function Layout.refresh(owner)
+    for _, entry in ipairs(owner._managedFlowEntries or {}) do
+        if entry.placement._remeasure then entry.placement._remeasure() end
+        local component = entry.component
+        if type(component) == "table" and component.RefreshLayout then component:RefreshLayout() end
+    end
+    reflow(owner)
+    refreshRowBackgrounds(owner)
+end
+
 function Layout.resize(owner, component, height)
     local root = componentRoot(component)
     if root == nil then return end
@@ -242,6 +269,7 @@ function Layout.resizeRect(owner, component, x, y, width, height)
     local root = componentRoot(component)
     if root == nil then return end
     local dy = y - root.y
+    local widthChanged = width ~= root.width
     local hasRow = false
     for _, entry in ipairs(owner._managedFlowEntries or {}) do
         if entry.component == component then
@@ -255,11 +283,13 @@ function Layout.resizeRect(owner, component, x, y, width, height)
             end
             placement.x, placement.y = x, y
             placement.xAnchor, placement.yAnchor = 0, 0
-            placement.width, placement.height = width, height
-            placement.widthAnchor = 0
+            placement.height = height
             placement._flowExplicitX = true
-            placement._flowFillWidth = false
-            placement._flowWidth = nil
+            if widthChanged then
+                placement.width, placement.widthAnchor = width, 0
+                placement._flowFillWidth = false
+                placement._flowWidth = nil
+            end
             break
         end
         if not entry.placement._flowAbsolute then
@@ -267,14 +297,15 @@ function Layout.resizeRect(owner, component, x, y, width, height)
         end
     end
     root:SetPos(x, y)
-    root:SetSize(width, height)
+    if widthChanged then root:SetSize(width, height) else root:SetHeight(height) end
     reflow(owner)
     refreshRowBackgrounds(owner)
 end
 
 function Layout.destroyManaged(owner)
     local entries = owner._managedFlowEntries or {}
-    local loaded = ui.Interfaces:GetInterface(owner.interfaceID) ~= nil
+    local loaded = ui.Interfaces:GetInterface(owner._scroll and owner._scroll.interfaceID
+        or owner.interfaceID) ~= nil
     owner._destroyingManagedFlow = true
     for index = #entries, 1, -1 do
         local entry = entries[index]

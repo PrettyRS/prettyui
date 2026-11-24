@@ -7,6 +7,7 @@ local Scroll = require("src/core/scroll")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
+local WorldMap = require("src/core/world_map")
 
 local Tabs = {}
 Tabs.__index = Tabs
@@ -285,7 +286,7 @@ local function configurePage(tabs, index, options)
     page.root = Components.newContent(tabs.content)
     page.root:SetSize(0, 0, 1.0, 1.0)
     page.root.clickthrough = true
-    page.root.hidden = true
+    Components.setHidden(page.root, true)
 
     local parentContext = tabs.tooltipContext
     local tooltipParent = parentContext and parentContext.parent or tabs.parent
@@ -412,6 +413,10 @@ function Tabs.new(parent, values, options)
     end)
 end
 
+function Tabs:RefreshLayout()
+    for _, page in ipairs(self.pages) do page:RefreshLayout() end
+end
+
 function Tabs:BindFlow(owner)
     self.flowOwner = owner
     return self
@@ -438,7 +443,7 @@ function Tabs:SetActive(index, notify)
     local previous = self.activeIndex
     self.activeIndex = index
     for pageIndex, page in ipairs(self.pages) do
-        page.root.hidden = pageIndex ~= index
+        Components.setHidden(page.root, pageIndex ~= index)
         if page.root.hidden then Tooltip.hideContextTooltips(page.content) end
         page._scroll:Refresh()
     end
@@ -497,6 +502,10 @@ function Tabs:SetScrollable(scrollable)
     for _, page in ipairs(self.pages) do page:SetScrollable(self.scrollable) end
 end
 
+function TabPage:RefreshLayout()
+    Layout.refresh(self)
+end
+
 function TabPage:RefreshRowBackgrounds()
     RowBackgrounds.clear(self.rowBackgrounds, self.interfaceID)
     self.rowBackgrounds = RowBackgrounds.apply(
@@ -521,6 +530,7 @@ function Tabs:Destroy()
     self.tabs = {}
     Tooltip.unbind(self)
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end

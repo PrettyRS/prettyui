@@ -2,6 +2,7 @@ local Components = require("src/core/components")
 local clamp = require("src/core/math").clamp
 local InterfaceMouse = require("src/core/mouse")
 local Sprites = require("src/core/sprites")
+local WorldMap = require("src/core/world_map")
 
 local Scroll = {}
 Scroll.__index = Scroll
@@ -65,6 +66,15 @@ function Scroll.findOwnerWindow(context)
     return findOwnerWindow(context)
 end
 
+function Scroll.findContaining(context)
+    while context do
+        local scroll = scrollByContent[context.collection]
+        if scroll then return scroll end
+        context = context.parentContext
+    end
+    return nil
+end
+
 local function buildScroll(parent, options)
     options = options or {}
 
@@ -85,6 +95,7 @@ local function buildScroll(parent, options)
     self.clickthrough = options.clickthrough == true
     self.clipTargets = {}
     self.childScrolls = {}
+    self.widthTargets = {}
 
     self.root = Components.newContent(parent, options)
     self.interfaceID = self.root.interfaceID
@@ -110,18 +121,8 @@ local function buildScroll(parent, options)
     self.content.clickthrough = self.clickthrough
     self.content.enabled = not self.clickthrough
 
-    -- Follow native ancestry, not tooltip/overlay ancestry: popout surfaces have
-    -- independent viewports even when they share a logical content owner.
-    local ancestor = parent
-    while ancestor do
-        local controller = scrollByContent[ancestor]
-        if controller then
-            self.parentScroll = controller
-            controller.childScrolls[self] = true
-            break
-        end
-        ancestor = ancestor.parent
-    end
+    self.parentScroll = Scroll.findContaining(options.parentContext)
+    if self.parentScroll then self.parentScroll.childScrolls[self] = true end
     scrollByContent[self.content] = self
 
     self.upArrow = sprite(self.root, Sprites.SCROLL_ARROW_UP)
@@ -227,6 +228,9 @@ local function buildScroll(parent, options)
     self.downArrow:Subscribe(ui.Hook.ONSCROLLWHEEL, onWheel)
 
     self:Refresh()
+    WorldMap.watch(self, function(suspended)
+        if suspended then self:_StopDrag() else self:Refresh() end
+    end)
     return self
 end
 
@@ -341,10 +345,12 @@ function Scroll:_LayoutThumbDrag()
         rootY + (self.track.y or 0) + (self.thumb.y or 0)
     )
     self.thumbDrag:SetSize(BAR_WIDTH, self.thumbHeight)
-    self.thumbDrag.hidden = not self:_ShouldShow()
+    Components.setHidden(self.thumbDrag, not self:_ShouldShow())
 end
 
 function Scroll:_Layout()
+    if WorldMap.isSuspended() and self.width ~= nil then return end
+    local previousContentWidth = self.contentWidth
     self.width = math.max(1, self.root.width or 1)
     self.height = math.max(1, self.root.height or 1)
     self.contentHeight = self.requestedContentHeight
@@ -369,10 +375,22 @@ function Scroll:_Layout()
     self.thumb:SetSize(BAR_WIDTH, self.thumbHeight)
     self.thumbCentre:SetSize(BAR_WIDTH, math.max(1, self.thumbHeight - END_SIZE * 2))
 
-    self.track.hidden = not self.scrollbarVisible
-    self.upArrow.hidden = not self.scrollbarVisible
-    self.downArrow.hidden = not self.scrollbarVisible
+    Components.setHidden(self.track, not self.scrollbarVisible)
+    Components.setHidden(self.upArrow, not self.scrollbarVisible)
+    Components.setHidden(self.downArrow, not self.scrollbarVisible)
+    if previousContentWidth ~= nil and previousContentWidth ~= self.contentWidth then
+        for target in pairs(self.widthTargets) do target:_OnContentWidthChanged() end
+        for child in pairs(self.childScrolls) do child:Refresh() end
+    end
     self:SetScrollPosition(self.scrollY)
+end
+
+function Scroll:RegisterWidthTarget(target)
+    self.widthTargets[target] = true
+end
+
+function Scroll:UnregisterWidthTarget(target)
+    self.widthTargets[target] = nil
 end
 
 function Scroll:Refresh()
@@ -418,7 +436,10 @@ function Scroll:_UpdateDrag(component, x, y)
                 self.dragStart.scrollY +
                 (mouse.y - self.dragStart.mouseY) * maxScroll / thumbTravel
             ), 0, maxScroll)
-            if nextPosition ~= self.scrollY then self:SetScrollPosition(nextPosition) end
+            if nextPosition ~= self.scrollY then
+                self:SetScrollPosition(nextPosition)
+                self.thumbDrag:MoveToFront()
+            end
         end
     end
     return false
@@ -478,6 +499,7 @@ function Scroll:SetSize(width, height, widthAnchor, heightAnchor)
 end
 
 function Scroll:Destroy()
+    WorldMap.unwatch(self)
     self:_StopDrag()
     scrollByContent[self.content] = nil
     if self.parentScroll then
@@ -487,15 +509,18 @@ function Scroll:Destroy()
     for child in pairs(self.childScrolls) do child.parentScroll = nil end
     self.childScrolls = {}
     if self.thumbDrag then
+        WorldMap.untrack(self.thumbDrag)
         if self.ownerWindow then self.ownerWindow:_UnregisterOverlay(self.thumbDrag) end
         if ui.Interfaces:GetInterface(self.overlayInterfaceID) ~= nil then self.thumbDrag:Destroy() end
         self.thumbDrag = nil
     end
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
     end
     self.clipTargets = {}
+    self.widthTargets = {}
     self.ownerWindow = nil
     self.overlayParent = nil
     self.parent = nil

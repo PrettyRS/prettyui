@@ -3,6 +3,7 @@ local Components = require("src/core/components")
 local DragFeedback = require("src/core/drag_feedback")
 local InterfaceMouse = require("src/core/mouse")
 local clamp = require("src/core/math").clamp
+local WorldMap = require("src/core/world_map")
 
 local Resize = {}
 Resize.__index = Resize
@@ -33,13 +34,14 @@ local edges = {
 }
 local BORDER = 5
 local CORNER = 35
+local NO_EDGE_OFFSETS = { left = 0, top = 0, right = 0, bottom = 0 }
 
 local function loaded(self)
     return self.root ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
 end
 
 local function available(self)
-    return loaded(self) and self.enabled and not self.root.hidden and
+    return not WorldMap.isSuspended() and loaded(self) and self.enabled and not self.root.hidden and
         self.root.visibleGlobal ~= false and self.isVisible()
 end
 
@@ -80,7 +82,7 @@ end
 local function place(self, key, x, y, width, height, visible, raise)
     local handle = self.handles[key]
     local enabled = visible and width > 0 and height > 0
-    if handle.hidden ~= not enabled then handle.hidden = not enabled end
+    if handle.hidden ~= not enabled then Components.setHidden(handle, not enabled) end
     if handle.enabled ~= enabled then
         handle.enabled = enabled
         handle.clickthrough = not enabled
@@ -183,10 +185,22 @@ function Resize:_Move(component, x, y)
     local dx, dy = mouse.x - drag.mouseX, mouse.y - drag.mouseY
     drag.mouseX, drag.mouseY = mouse.x, mouse.y
     local root, parent, edge = self.root, self.parent, edges[drag.edge]
-    local nextX, width = resizeAxis(root.x, root.width, dx, edge.west, edge.east,
-        parent.width, self.minWidth, self.maxWidth)
-    local nextY, height = resizeAxis(root.y, root.height, dy, edge.north, edge.south,
-        parent.height, self.minHeight, self.maxHeight)
+    local offsets = self.edgeOffsets
+    local nextX, width = resizeAxis(root.x + offsets.left, root.width, dx, edge.west, edge.east,
+        parent.width + offsets.left + offsets.right, self.minWidth, self.maxWidth)
+    local nextY, height = resizeAxis(root.y + offsets.top, root.height, dy, edge.north, edge.south,
+        parent.height + offsets.top + offsets.bottom, self.minHeight, self.maxHeight)
+    nextX, nextY = nextX - offsets.left, nextY - offsets.top
+    if self.constrainRect then
+        local constrainedX, constrainedY, constrainedWidth, constrainedHeight =
+            self.constrainRect(nextX, nextY, width, height, edge)
+        if constrainedX == nil then
+            self:Refresh()
+            return false
+        end
+        nextX, nextY, width, height =
+            constrainedX, constrainedY, constrainedWidth, constrainedHeight
+    end
     if nextX ~= root.x or nextY ~= root.y or width ~= root.width or height ~= root.height then
         -- Owners may synchronously reflow their content and call Refresh again.
         self.applying = true
@@ -203,6 +217,13 @@ function Resize:Cancel()
     return false
 end
 
+function Resize:_Finish()
+    local dragging = self.dragState ~= nil
+    self:Cancel()
+    if dragging and self.onFinish then self.onFinish() end
+    return false
+end
+
 function Resize:SetEnabled(enabled)
     enabled = enabled == true
     if self.enabled == enabled then return end
@@ -213,9 +234,13 @@ end
 
 function Resize:Destroy()
     if self.root == nil then return end
+    WorldMap.unwatch(self)
     self:_Clear()
-    if loaded(self) then
-        for _, key in ipairs(order) do self.handles[key]:Destroy() end
+    local interfaceLoaded = loaded(self)
+    for _, key in ipairs(order) do
+        local handle = self.handles[key]
+        WorldMap.untrack(handle)
+        if interfaceLoaded then handle:Destroy() end
     end
     controllers[self] = nil
     if next(controllers) == nil then Event.Logic.Unsubscribe(EVENT_ID) end
@@ -226,6 +251,8 @@ function Resize:Destroy()
     self.setRect = nil
     self.isVisible = nil
     self.onBegin = nil
+    self.constrainRect = nil
+    self.onFinish = nil
 end
 
 function Resize.new(parent, root, options)
@@ -238,9 +265,12 @@ function Resize.new(parent, root, options)
         minHeight = options.minHeight or 1,
         maxWidth = options.maxWidth or math.huge,
         maxHeight = options.maxHeight or math.huge,
+        edgeOffsets = options.edgeOffsets or NO_EDGE_OFFSETS,
         setRect = options.setRect,
+        constrainRect = options.constrainRect,
         isVisible = options.isVisible,
         onBegin = options.onBegin,
+        onFinish = options.onFinish,
         handles = {},
     }, Resize)
     local policyOptions = { _categoryPolicy = Components.policyOf(root) }
@@ -255,8 +285,8 @@ function Resize.new(parent, root, options)
         handle:Subscribe(ui.Hook.ONHOLD, function(component, x, y)
             return self:_Move(component, x, y)
         end)
-        handle:Subscribe(ui.Hook.ONRELEASE, function() return self:Cancel() end)
-        handle:Subscribe(ui.Hook.ONDRAGCOMPLETE, function() return self:Cancel() end)
+        handle:Subscribe(ui.Hook.ONRELEASE, function() return self:_Finish() end)
+        handle:Subscribe(ui.Hook.ONDRAGCOMPLETE, function() return self:_Finish() end)
     end
     local wasEmpty = next(controllers) == nil
     controllers[self] = true
@@ -266,6 +296,9 @@ function Resize.new(parent, root, options)
         end)
     end
     self:Refresh()
+    WorldMap.watch(self, function(suspended)
+        if suspended then self:_Clear() else self:Refresh() end
+    end)
     return self
 end
 

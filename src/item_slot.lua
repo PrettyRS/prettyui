@@ -3,6 +3,7 @@ local Tooltip = require("src/tooltip")
 local Wheel = require("src/core/wheel")
 local clamp = require("src/core/math").clamp
 local Components = require("src/core/components")
+local WorldMap = require("src/core/world_map")
 
 local ItemSlot = {}
 ItemSlot.__index = ItemSlot
@@ -43,7 +44,7 @@ function ItemSlot:_UpdateDisabled()
     if self.item ~= nil then
         self.item.alpha = self.disabled and DISABLED_ITEM_ALPHA or 1
     end
-    self.disabledOverlay.hidden = not visible
+    Components.setHidden(self.disabledOverlay, not visible)
     if visible then self.disabledOverlay:MoveToFront() end
 end
 
@@ -74,7 +75,7 @@ function ItemSlot:_CreateDragItemSprite()
     self.dragItem:SetPos(self.itemInset, self.itemInset)
     self.dragItem:SetSize(SLOT_SIZE - self.itemInset * 2, SLOT_SIZE - self.itemInset * 2)
     self.dragItem.clickthrough = true
-    self.dragItem.hidden = true
+    Components.setHidden(self.dragItem, true)
     self.dragItem.alpha = 0.5
     if self.outlineWidth ~= nil then self.dragItem.outlineWidth = self.outlineWidth end
     if self.shadowRGBA ~= nil then self.dragItem.shadowRGBA = self.shadowRGBA end
@@ -91,14 +92,14 @@ function ItemSlot:_ShowDragItem()
     else
         self.dragItem.associatedObjectQuantityMode = ui.ObjectQuantityDisplayMode.NEVER
     end
-    self.dragItem.hidden = false
+    Components.setHidden(self.dragItem, false)
     self.dragItem:MoveToFront()
     return true
 end
 
 function ItemSlot:_HideDragItem()
     if self.dragItem and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
-        self.dragItem.hidden = true
+        Components.setHidden(self.dragItem, true)
     end
 end
 
@@ -192,6 +193,7 @@ function ItemSlot:Destroy()
         self.tooltip = nil
     end
     if self.root then
+        WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end
         self.root = nil
         self.background = nil

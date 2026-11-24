@@ -7,7 +7,7 @@ weight: 33
 
 ## Keybind field {#keybind-field-api}
 
-An input-styled field for one key or a two-key chord, displayed as centered text. Tooltips are not supported.
+An input-styled field for one key or a two-key chord, displayed as centered text.
 
 {{< signature >}}
 KeybindField.new(parent, options)
@@ -30,8 +30,6 @@ local held = prettyui.KeybindField.IsDown(binding)
 
 Click to listen. The first one or two distinct keys are committed when all captured keys are released. Repeats, extra keys, and keys held before clicking are ignored. Focus loss cancels unfinished capture.
 
-Hover shows a red clear icon on the right. Clicking it clears the value and starts listening again. With `defaultValue`, right-click offers **Reset to default**.
-
 {{% api-grid compact="true" %}}
 
 {{% api-card %}}
@@ -51,7 +49,7 @@ Hover shows a red clear icon on the right. Clicking it clears the value and star
 : Disables interaction. Defaults to **false**.
 
 `width`, `height`
-: Default size is **240 × 30**. Container helpers fill the content width unless a width is supplied.
+: Default size is **240 × 24**. Container helpers fill the content width unless a width is supplied.
 
 {{% /api-card %}}
 

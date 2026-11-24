@@ -39,7 +39,8 @@ ui = {
 }
 id = {
     Sprite = enum, Font = enum,
-    VarPlayer = { TOPLEVEL_V2_CUSTOMIZATION_LOCK = 11, TOPLEVEL_V2_SKINS_VARP = 12, TOPLEVEL_V2_TRANSPARENCY = 13 },
+    VarPlayer = { TOPLEVEL_V2_CUSTOMIZATION_LOCK = 11, TOPLEVEL_V2_SKINS_VARP = 12,
+        TOPLEVEL_V2_TRANSPARENCY = 13, TOPLEVEL_V2_GENERAL_VARP = 14 },
 }
 local font = {
     baseline = 18,
@@ -53,18 +54,25 @@ Keyboard = {
     IsBlocked = function() return false end,
     IsAltDown = function() return altDown end,
 }
-local varCallbacks = {}
+local varCallbacks, logicCallbacks = {}, {}
 Event = {
-    Logic = { Subscribe = function() end, Unsubscribe = function() end },
+    Logic = {
+        Subscribe = function(name, callback) logicCallbacks[name] = callback end,
+        Unsubscribe = function(name) logicCallbacks[name] = nil end,
+    },
     VarTransmit = {
         Subscribe = function(name, callback) varCallbacks[name] = callback end,
         Unsubscribe = function(name) varCallbacks[name] = nil end,
     },
 }
 local lockValue, transparencyValue = 0, 0
+local classicValue = 0
 var = { VarPlayer = {
     TOPLEVEL_V2_CUSTOMIZATION_LOCK = setmetatable({}, { __index = function() return lockValue end }),
     TOPLEVEL_V2_TRANSPARENCY = setmetatable({}, { __index = function() return transparencyValue end }),
+    TOPLEVEL_V2_LEGACY_INTERFACE = setmetatable({}, { __index = function(_, key)
+        if key == "value" then return classicValue end
+    end }),
 } }
 local function listening()
     local count = 0
@@ -74,8 +82,22 @@ end
 local function transmit(varID)
     for _, callback in pairs(varCallbacks) do callback({ var = { id = varID } }) end
 end
+local function tick()
+    for _, callback in pairs(logicCallbacks) do callback() end
+end
 
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
+expect(NativeInterfaceSettings.isClassicUI(), false, "modern mode is read live")
+expect(listening(), 0, "classic mode reading does not subscribe to variable transmissions")
+classicValue = 1
+expect(NativeInterfaceSettings.isClassicUI(), true, "legacy interface value one enables classic mode")
+classicValue = 2
+expect(NativeInterfaceSettings.isClassicUI(), false, "non-one legacy values are not classic mode")
+classicValue = -1
+expect(NativeInterfaceSettings.isClassicUI(), false, "negative legacy values are not classic mode")
+classicValue = 0
+expect(NativeInterfaceSettings.isClassicUI(), false, "returning to modern mode takes effect immediately")
+expect(listening(), 0, "live mode reads never install setting watchers")
 local Window = require("src/window")
 local Panel = require("src/panel")
 local parent = component()
@@ -138,10 +160,12 @@ expect(window.resize.enabled, true, "unlocking restores resizing")
 expect(window.titleDrag.cursorConfig.mouseOverCursor, 194, "unlocking restores the move cursor")
 window:SetUseNativeTransparency(false)
 expect(window.background.alpha, 1, "turning the option off restores opacity")
+lockValue = 1
+transmit(12)
 window:SetRespectInterfaceLock(false)
-expect(listening(), 0, "a window following nothing stops listening")
+expect(window.resize.enabled, true, "the window can opt out of the Modern lock")
 window:SetRespectInterfaceLock(true)
-expect(listening(), 1, "turning an option on listens again")
+expect(window.resize.enabled, false, "the window can opt back into the Modern lock")
 window:Destroy()
 expect(listening(), 0, "destroying the window stops listening")
 
@@ -154,11 +178,10 @@ expect(plain.resize.enabled, false, "a plain window locks with the interface")
 plain:Destroy()
 expect(listening(), 0, "destroying a plain window stops listening")
 
--- A window that opts out of the lock ignores both settings entirely.
+-- A window can opt out of the Modern lock without following transparency.
 local unlocked = Window.new(parent, {
     title = "Unlocked", width = 300, height = 200, resizable = true, respectInterfaceLock = false,
 })
-expect(listening(), 0, "an opted-out window does not listen")
 expect(unlocked.background.alpha, nil, "an opted-out window never touches its background alpha")
 expect(unlocked.resize.enabled, true, "an opted-out window stays resizable")
 expect(unlocked.titleDrag.cursorConfig.mouseOverCursor, 194, "an opted-out window keeps the move cursor")
@@ -211,7 +234,6 @@ lockValue = 1
 local unlockedPanel = Panel.new(parent, {
     width = 300, height = 200, resizable = true, respectInterfaceLock = false,
 })
-expect(listening(), 0, "an opted-out panel does not listen")
 expect(unlockedPanel.dockResize.enabled, true, "an opted-out panel stays resizable")
 altDown = true
 unlockedPanel:_SetAltDragActive(true)
@@ -219,6 +241,100 @@ expect(unlockedPanel.altDragSurface, unlockedPanel.dock, "an opted-out panel can
 altDown = false
 unlockedPanel:Destroy()
 lockValue = 0
+
+local preferences = {}
+PersistentDB = {
+    GetBool = function(_, key) return preferences[key] end,
+    SetBool = function(_, key, value) preferences[key] = value; return true end,
+}
+local setPreference = require("src/settings").set
+altDown = true
+local liveWindow = Window.new(parent, { title = "Live", width = 300, height = 200, resizable = true })
+local livePanel = Panel.new(parent, {
+    width = 300, height = 200, popout = true, poppedOut = true, resizable = true,
+})
+local function movable(expected, message)
+    expect(liveWindow.titleDrag.cursorConfig.mouseOverCursor, expected and 194 or -1, message .. ": window drag")
+    expect(liveWindow.resize.enabled, expected, message .. ": window resize")
+    expect(livePanel.overlayDragLayer.enabled, expected, message .. ": popped-out panel drag")
+    expect(livePanel.overlayResize.enabled, expected, message .. ": popped-out panel resize")
+end
+classicValue = 1
+tick()
+movable(false, "switching to Classic locks even before the native lock changes")
+lockValue = 1
+tick()
+setPreference("allowClassicMovement", true)
+movable(true, "Classic unlock takes effect with Modern lock respect still on")
+setPreference("allowClassicMovement", false)
+setPreference("respectInterfaceLock", false)
+movable(false, "the Modern preference does not unlock Classic")
+setPreference("allowClassicMovement", true)
+movable(true, "the Classic preference ignores the native lock")
+classicValue = 0
+tick()
+setPreference("allowClassicMovement", false)
+movable(true, "the Classic preference does not lock Modern")
+setPreference("respectInterfaceLock", true)
+movable(false, "restoring Modern lock respect updates existing widgets while locked")
+lockValue = 0
+tick()
+movable(true, "a local Modern unlock restores movement without a transmit")
+lockValue = 1
+tick()
+movable(false, "a local Modern lock disables movement without a transmit")
+classicValue = 1
+transmit(14)
+liveWindow:SetRespectInterfaceLock(false)
+livePanel:SetRespectInterfaceLock(false)
+movable(false, "component-level Modern opt-outs do not unlock Classic")
+classicValue = 0
+transmit(14)
+movable(true, "returning to Modern restores the component-level opt-outs")
+liveWindow:Destroy()
+livePanel:Destroy()
+expect(logicCallbacks.prettyui_native_interface_settings, nil, "destroying movement followers stops polling")
+expect(listening(), 0, "destroying movement followers releases the mode subscription")
+altDown, lockValue = false, 0
+
+-- Transparency and lock may share a base variable: both varbits must refresh
+-- from the same transmission, never from the transparency varbit's own ID.
+local transparencyVar = var.VarPlayer.TOPLEVEL_V2_TRANSPARENCY
+id.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = -13
+var.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = setmetatable({
+    isVarBit = true, baseVar = { id = 12 },
+}, { __index = function(_, key)
+    if key == "value" then return transparencyValue end
+end })
+package.loaded["src/core/native_interface_settings"] = nil
+package.loaded["src/window"] = nil
+local BitSettings = require("src/core/native_interface_settings")
+local BitWindow = require("src/window")
+lockValue, transparencyValue = 0, 51
+local bitCalls = 0
+BitSettings.watchTransparency("bit", function() bitCalls = bitCalls + 1 end)
+local bitWindow = BitWindow.new(parent, {
+    title = "Varbit", width = 300, height = 200,
+    resizable = true, useNativeTransparency = true,
+})
+expect(bitCalls, 1, "a varbit watcher reads the current transparency")
+expect(bitWindow.background.alpha, 0.8, "native-following window reads the transparency varbit")
+expect(bitWindow.resize.enabled, true, "shared-base lock starts unlocked")
+transparencyValue = 102
+lockValue = 1
+transmit(-13)
+transmit(99)
+expect(bitCalls, 1, "own and unrelated variable transmissions do not refresh the varbit")
+expect(bitWindow.background.alpha, 0.8, "unrelated transmissions do not fade the window")
+transmit(12)
+expect(bitCalls, 2, "the base variable transmission refreshes the transparency watcher")
+expect(bitWindow.background.alpha, 0.6, "the base variable transmission fades the window")
+expect(bitWindow.resize.enabled, false, "shared-base transmission also updates interface lock")
+bitWindow:Destroy()
+BitSettings.unwatchTransparency("bit")
+expect(listening(), 0, "destroying the varbit followers releases their subscription")
+id.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = 13
+var.VarPlayer.TOPLEVEL_V2_TRANSPARENCY = transparencyVar
 
 -- A variable the client does not know leaves its setting unwatched: no listening, no
 -- callback, and the component keeps its own behaviour. The other setting still works.
