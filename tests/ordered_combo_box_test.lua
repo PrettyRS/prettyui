@@ -15,46 +15,73 @@ local function component(parent, categoryID, dynamicID)
         width = 0,
         height = 0,
     }
-    function result:SetPos(x, y) self.x, self.y = x, y end
-    function result:SetSize(width, height) self.width, self.height = width, height end
-    function result:Setup() end
-    function result:SetScrollSize(width, height) self.scrollWidth, self.scrollHeight = width, height end
-    function result:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
+    function result:SetPos(x, y)
+        self.x, self.y = x, y
+    end
+    function result:SetSize(width, height)
+        self.width, self.height = width, height
+    end
+    function result.Setup() end
+    function result:SetScrollSize(width, height)
+        self.scrollWidth, self.scrollHeight = width, height
+    end
+    function result:SetScrollPos(x, y)
+        self.scrollX, self.scrollY = x, y
+    end
     function result:Subscribe(hook, callback) self.hooks[hook] = callback end
     function result:MoveToFront() self.movedToFront = true end
     function result:MoveToBack() self.movedToFront = false end
     function result:Destroy()
         if self.destroyed then return end
         self.destroyed = true
-        for _, child in ipairs(self.children) do child:Destroy() end
+        for _, child in ipairs(self.children) do
+            child:Destroy()
+        end
     end
     if parent then parent.children[#parent.children + 1] = result end
     return Interfaces.component(result, parent, categoryID, dynamicID)
 end
 
 ui = {
-    Layer = { new = function(parent, categoryID, dynamicID)
-        return component(parent, categoryID, dynamicID)
-    end },
-    ComboField = { new = function(parent, categoryID, dynamicID)
-        return component(parent, categoryID, dynamicID)
-    end },
-    InputField = { new = function(parent, categoryID, dynamicID)
-        return component(parent, categoryID, dynamicID)
-    end },
-    Rectangle = { new = function(parent, categoryID, dynamicID)
-        return component(parent, categoryID, dynamicID)
-    end },
-    Sprite = { new = function(parent, categoryID, dynamicID)
-        return component(parent, categoryID, dynamicID)
-    end },
-    Text = { new = function(parent, categoryID, dynamicID)
-        return component(parent, categoryID, dynamicID)
-    end },
+    Layer = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, categoryID, dynamicID)
+        end,
+    },
+    ComboField = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, categoryID, dynamicID)
+        end,
+    },
+    InputField = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, categoryID, dynamicID)
+        end,
+    },
+    Rectangle = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, categoryID, dynamicID)
+        end,
+    },
+    Sprite = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, categoryID, dynamicID)
+        end,
+    },
+    Text = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, categoryID, dynamicID)
+        end,
+    },
     Margin = { new = function() return {} end },
     Hook = {
-        ONCLICK = 1, ONCONTENTCHANGED = 2, ONHOLD = 3, ONRELEASE = 4,
-        ONSCROLLWHEEL = 5, ONMOUSEOVER = 6, ONMOUSELEAVE = 7,
+        ONCLICK = 1,
+        ONCONTENTCHANGED = 2,
+        ONHOLD = 3,
+        ONRELEASE = 4,
+        ONSCROLLWHEEL = 5,
+        ONMOUSEOVER = 6,
+        ONMOUSELEAVE = 7,
     },
     AlignMode = { CENTRE = 1 },
     TextContentVisibilityMode = { VISIBLE = 1 },
@@ -91,7 +118,9 @@ function FakeList:SetEntryVisible(entryID, visible)
     return true
 end
 function FakeList:SetSelected(entryID, selected)
-    for _, entry in pairs(self.entries) do entry.selected = false end
+    for _, entry in pairs(self.entries) do
+        entry.selected = false
+    end
     self.entries[entryID].selected = selected
     return true
 end
@@ -142,8 +171,7 @@ expect(combo.entries[4].label, "Zulu", "unordered entries appear last")
 expect(combo:GetSelectedID(), 20, "constructor preserves selected ID")
 expect(combo:GetSelectedLabel(), "Beta", "constructor preserves selected label")
 expect(combo.input.content, "Beta", "closed input displays selected label")
-expect(combo.input.stylesheetID, id.StyleSheet.INPUT_DEFAULT,
-    "header input uses the native input text configuration")
+expect(combo.input.stylesheetID, id.StyleSheet.INPUT_DEFAULT, "header input uses the native input text configuration")
 
 combo:_Open()
 expect(combo.open, true, "opening shows custom dropdown")
@@ -158,11 +186,7 @@ expect(combo:GetSelectedLabel(), "Alpha", "row click restores clean label")
 expect(combo.open, false, "row click closes dropdown")
 expect(changes[1][1], 30, "row click reports selected ID")
 expect(changes[1][2], "Alpha", "row click reports selected label")
-combo.input.hooks[ui.Hook.ONCONTENTCHANGED](
-    combo.input,
-    ui.InputFieldActionResult.CONTENT_CHANGE,
-    "Alpha"
-)
+combo.input.hooks[ui.Hook.ONCONTENTCHANGED](combo.input, ui.InputFieldActionResult.CONTENT_CHANGE, "Alpha")
 expect(combo.open, false, "programmatic selected-label event does not reopen dropdown")
 expect(#combo._pendingInputContents, 0, "acknowledgement clears skipped intermediate values")
 
@@ -172,12 +196,13 @@ combo:SetDisabled(true)
 expect(combo.input.enabled, false, "disabled state reaches input")
 expect(combo.dropdown.disabled, true, "disabled state reaches dropdown")
 
-local validOrder, orderError = pcall(function()
-    OrderedComboBox.sortEntries({ { label = "Invalid", order = 1.5 } })
-end)
+local validOrder, orderError = pcall(
+    function()
+        OrderedComboBox.sortEntries({ { label = "Invalid", order = 1.5 } })
+    end
+)
 expect(validOrder, false, "fractional order is rejected")
-expect(orderError:find("must be an integer", 1, true) ~= nil, true,
-    "invalid order explains the requirement")
+expect(orderError:find("must be an integer", 1, true) ~= nil, true, "invalid order explains the requirement")
 
 combo:Destroy()
 expect(combo.root, nil, "destroy releases root")
@@ -191,15 +216,21 @@ local viewRoot = component()
 local outerContent = component(viewRoot)
 local function clipScroll(content, height, parentScroll)
     local controller = setmetatable({
-        content = content, height = height, scrollY = 0,
-        clipTargets = {}, childScrolls = {}, parentScroll = parentScroll,
+        content = content,
+        height = height,
+        scrollY = 0,
+        clipTargets = {},
+        childScrolls = {},
+        parentScroll = parentScroll,
     }, Scroll)
     if parentScroll then parentScroll.childScrolls[controller] = true end
     return controller
 end
 local outerScroll = clipScroll(outerContent, 80)
 local standalone = OrderedComboBox.new(outerContent, {
-    y = 50, height = 30, _scrollController = outerScroll,
+    y = 50,
+    height = 30,
+    _scrollController = outerScroll,
     entries = { { label = "First", id = 1 }, { label = "Second", id = 2 } },
 })
 expect(outerScroll.clipTargets[1], standalone, "combo registers with its scroll viewport")
@@ -229,7 +260,9 @@ local nestedContent = component(outerContent)
 nestedContent:SetPos(0, 40)
 local nestedScroll = clipScroll(nestedContent, 60, outerScroll)
 local nestedCombo = OrderedComboBox.new(nestedContent, {
-    y = 5, height = 30, _scrollController = nestedScroll,
+    y = 5,
+    height = 30,
+    _scrollController = nestedScroll,
     entries = { { label = "Nested", id = 3 } },
 })
 nestedCombo:_Open()
@@ -267,11 +300,15 @@ function ownerWindow:_SyncOverlays(hidden)
 end
 local overlayParent = component()
 contexts[outerContent] = {
-    active = true, parent = overlayParent, ownerWindow = ownerWindow,
+    active = true,
+    parent = overlayParent,
+    ownerWindow = ownerWindow,
     position = function(root) return root.x or 0, (root.y or 0) - outerScroll.scrollY end,
 }
 local windowCombo = OrderedComboBox.new(outerContent, {
-    y = 30, height = 30, overlayParent = overlayParent,
+    y = 30,
+    height = 30,
+    overlayParent = overlayParent,
     _scrollController = outerScroll,
     entries = { { label = "Visible", id = 4 }, { label = "Clickable", id = 5 } },
 })
@@ -325,8 +362,7 @@ local autoCombo = RealCombo.new(autoOwner, {
 })
 expect(autoCombo.dropdown.root.parent, autoOverlay, "dropdown mounts on the detached overlay")
 expect(autoCombo.dropdown.rows[1].root.categoryID, 0, "dropdown rows support raw extensions")
-expect(ui.Layer.new(autoCombo.dropdown.rows[1].root).categoryID, 0,
-    "raw dropdown row extensions inherit category zero")
+expect(ui.Layer.new(autoCombo.dropdown.rows[1].root).categoryID, 0, "raw dropdown row extensions inherit category zero")
 autoCombo.dropdown.rows[1].root.hooks[ui.Hook.ONCLICK]()
 expect(autoCombo:GetSelectedID(), 1, "real dropdown row remains selectable")
 autoCombo:Destroy()
@@ -336,13 +372,17 @@ local legacyCombo = RealCombo.new(legacyOwner, {
     overlayParent = autoOverlay,
     entries = { { label = "Legacy", id = 2 } },
 })
-expect(legacyCombo.dropdown.rows[1].label.categoryID, 0,
-    "legacy dropdown controls do not inherit the auto overlay's policy")
+expect(
+    legacyCombo.dropdown.rows[1].label.categoryID,
+    0,
+    "legacy dropdown controls do not inherit the auto overlay's policy"
+)
 legacyCombo:Destroy()
 
 local unsafeOverlay = Components.new(ui.Layer, autoOverlay)
 local validOverlay = pcall(RealCombo.new, host, {
-    categoryID = "auto", overlayParent = unsafeOverlay,
+    categoryID = "auto",
+    overlayParent = unsafeOverlay,
 })
 expect(validOverlay, false, "auto combo rejects nonzero overlay")
 
@@ -357,11 +397,15 @@ ui.Layer.new = function(owner, categoryID, dynamicID)
     return layer
 end
 local built, buildError = pcall(RealCombo.new, autoOwner, {
-    categoryID = "auto", overlayParent = autoOverlay,
+    categoryID = "auto",
+    overlayParent = autoOverlay,
 })
 ui.Layer.new = originalLayer
 expect(built, false, "late dropdown failure propagates")
-expect(buildError:find("late dropdown root failure", 1, true) ~= nil,
-    true, "late dropdown preserves the original error")
+expect(
+    buildError:find("late dropdown root failure", 1, true) ~= nil,
+    true,
+    "late dropdown preserves the original error"
+)
 expect(partialRoot.destroyed, true, "dual batch removes the partial combo shell")
 print("ordered_combo_box_test: ok")

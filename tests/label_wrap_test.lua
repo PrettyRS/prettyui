@@ -243,7 +243,9 @@ expect(sectionButton.root.y, 24 + TEXT_GAP, "the section button moves up with th
 -- Lists built directly, outside any page or section, wrap by growing their own root.
 local SelectionButtons = require("src/selection_button")
 local direct = SelectionButtons.CheckboxButton.new(parent, { "Short", LONG }, {
-    width = -600, widthAnchor = 1, maxLines = 0,
+    width = -600,
+    widthAnchor = 1,
+    maxLines = 0,
 })
 local directDefault = SelectionButtons.RadioButton.new(parent, { LONG }, { width = -600, widthAnchor = 1 })
 local directLines = linesAt(direct.root.width - LABEL_X)

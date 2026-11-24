@@ -28,9 +28,10 @@ local function slotGap(options)
 end
 
 local function normalizeEntry(entry)
-    if type(entry) == "table" and
-        (rawget(entry, "object") ~= nil or rawget(entry, "tooltip") ~= nil or
-            rawget(entry, "quantity") ~= nil) then
+    if
+        type(entry) == "table"
+        and (rawget(entry, "object") ~= nil or rawget(entry, "tooltip") ~= nil or rawget(entry, "quantity") ~= nil)
+    then
         return entry.object, entry.tooltip, entry.quantity
     end
     return entry, nil, nil
@@ -39,8 +40,7 @@ end
 function ItemGrid.getSize(options)
     local columns, rows = dimensions(options)
     local gap = slotGap(options)
-    return columns * SLOT_SIZE + (columns - 1) * gap,
-        rows * SLOT_SIZE + (rows - 1) * gap
+    return columns * SLOT_SIZE + (columns - 1) * gap, rows * SLOT_SIZE + (rows - 1) * gap
 end
 
 function ItemGrid:_ResolveTooltip(object, explicit, index)
@@ -275,16 +275,8 @@ function ItemGrid.new(parent, objects, options)
 
     self.interfaceID = parent.interfaceID
     self.root = Components.new(ui.Layer, parent, options)
-    self.root:SetPos(
-        options.x or 0,
-        options.y or 0,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
-    self.root:SetSize(
-        columns * SLOT_SIZE + (columns - 1) * gap,
-        rows * SLOT_SIZE + (rows - 1) * gap
-    )
+    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
+    self.root:SetSize(columns * SLOT_SIZE + (columns - 1) * gap, rows * SLOT_SIZE + (rows - 1) * gap)
     self.root.clickthrough = true
     Wheel.bind(self.root, options)
 
@@ -296,7 +288,9 @@ function ItemGrid.new(parent, objects, options)
     self.tooltipContext = Tooltip.registerContext(self.root, tooltipParent, function(target)
         local rootX = self.root.x or 0
         local rootY = self.root.y or 0
-        if parentContext then rootX, rootY = parentContext.position(self.root) end
+        if parentContext then
+            rootX, rootY = parentContext.position(self.root)
+        end
         return rootX + (target.x or 0), rootY + (target.y or 0)
     end, parentContext)
 
@@ -354,7 +348,9 @@ end
 function ItemGrid:SetTooltip(value)
     if self.root == nil then return false end
     self.tooltipOption = value
-    for index = 1, self.capacity do self:_ApplyEntry(index) end
+    for index = 1, self.capacity do
+        self:_ApplyEntry(index)
+    end
     return true
 end
 
@@ -379,7 +375,9 @@ function ItemGrid:SetDragDropEnabled(enabled)
     if not enabled and self.dragSourceIndex then self:_FinishDrag(false) end
     self.dragDrop = enabled == true
     self:_ClearDropHover()
-    for index = 1, #self.slots do self:_RefreshSlotInteraction(index) end
+    for index = 1, #self.slots do
+        self:_RefreshSlotInteraction(index)
+    end
 end
 
 function ItemGrid:SetObjects(objects)
@@ -398,7 +396,9 @@ function ItemGrid:Destroy()
         Tooltip.unregisterContext(self.root)
         self.tooltipContext = nil
     end
-    for index = #self.slots, 1, -1 do self.slots[index]:Destroy() end
+    for index = #self.slots, 1, -1 do
+        self.slots[index]:Destroy()
+    end
     self.slots = {}
     self.entries = {}
     self.parentTooltipContext = nil

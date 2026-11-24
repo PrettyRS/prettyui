@@ -19,18 +19,12 @@ local DEFAULT_INDENT = 20
 local TEXT_COLOUR = 0xE7D7B0FF
 local DISABLED_TEXT_COLOUR = 0x777777FF
 
-local function copyOptions(value)
-    local copy = {}
-    if type(value) == "table" then
-        for key, option in pairs(value) do copy[key] = option end
-    end
-    return copy
-end
-
 local function measureText(text)
-    local succeeded, width = pcall(function()
-        return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(text, false)
-    end)
+    local succeeded, width = pcall(
+        function()
+            return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(text, false)
+        end
+    )
     return succeeded and width or #text * 7
 end
 
@@ -112,9 +106,10 @@ local function buildCollapseButton(parent, text, options)
     self.contentTooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
         local rootX = self.root.x or 0
         local rootY = self.root.y or 0
-        if parentContext then rootX, rootY = parentContext.position(self.root) end
-        return rootX + (self.content.x or 0) + (target.x or 0),
-            rootY + (self.content.y or 0) + (target.y or 0)
+        if parentContext then
+            rootX, rootY = parentContext.position(self.root)
+        end
+        return rootX + (self.content.x or 0) + (target.x or 0), rootY + (self.content.y or 0) + (target.y or 0)
     end, parentContext)
 
     self.root:Subscribe(ui.Hook.ONMOUSEOVER, function()

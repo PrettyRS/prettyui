@@ -35,7 +35,7 @@ local function nativeSlot(x, spriteID, y)
         graphic = graphic,
         dynamicComponents = { graphic },
     }
-    function slot:IterateStaticComponents() end
+    function slot.IterateStaticComponents() end
     function slot:IterateDynamicComponents(callback)
         for _, item in ipairs(self.dynamicComponents) do
             if callback(item, iteratorVisibility(item)) then return end
@@ -211,42 +211,54 @@ local function captureEntry(layer, addEntry, hasTooltip)
     expect(components[3].kind, "rectangle", "the third entry component is its border")
     expect(components[4].kind, "text", "the fourth entry component is its label")
 
-    return handle, {
-        background = components[1],
-        sprite = components[2],
-        border = components[3],
-        label = components[4],
-        tooltipTarget = components[5],
-        tooltipRoot = components[6],
-        tooltipLabel = components[6] and components[6].dynamicComponents[10],
-    }
+    return handle,
+        {
+            background = components[1],
+            sprite = components[2],
+            border = components[3],
+            label = components[4],
+            tooltipTarget = components[5],
+            tooltipRoot = components[6],
+            tooltipLabel = components[6] and components[6].dynamicComponents[10],
+        }
 end
 
-local autoHandle, autoEntry = captureEntry(buffLayer, function()
-    return BuffBar.addBuff({
-        spriteID = 17, tooltip = "Auto native buff", categoryID = "auto",
-    })
-end, true)
+local autoHandle, autoEntry = captureEntry(
+    buffLayer,
+    function()
+        return BuffBar.addBuff({
+            spriteID = 17,
+            tooltip = "Auto native buff",
+            categoryID = "auto",
+        })
+    end,
+    true
+)
 expect(autoEntry.sprite.categoryID > 0, true, "opted-in native buffs use managed IDs")
 expect(autoEntry.tooltipTarget.clickthrough, true, "buff tooltips do not block camera input")
-expect(autoEntry.tooltipRoot.categoryID, 0,
-    "the raw-compatible auto tooltip root inherits the render layer's zero category")
+expect(
+    autoEntry.tooltipRoot.categoryID,
+    0,
+    "the raw-compatible auto tooltip root inherits the render layer's zero category"
+)
 autoHandle:SetTooltip(nil)
 autoHandle:SetTooltip({ text = "Reopened tooltip" })
 local replacementTarget = buffLayer.dynamicComponents[#buffLayer.dynamicComponents - 1]
-expect(replacementTarget.categoryID > 0, true,
-    "later tooltip targets inherit their original auto entry policy")
+expect(replacementTarget.categoryID > 0, true, "later tooltip targets inherit their original auto entry policy")
 expect(replacementTarget.clickthrough, true, "recreated buff tooltips do not block camera input")
 BuffBar.removeBuff(autoHandle)
 
-local firstHandle, first = captureEntry(buffLayer, function()
-    return BuffBar.addBuff({
-        objId = 42,
-        label = "100%",
-        borderRgba = 0x123456FF,
-        backgroundRgba = 0x654321AA,
-    })
-end)
+local firstHandle, first = captureEntry(
+    buffLayer,
+    function()
+        return BuffBar.addBuff({
+            objId = 42,
+            label = "100%",
+            borderRgba = 0x123456FF,
+            backgroundRgba = 0x654321AA,
+        })
+    end
+)
 expect(first.sprite.x, 32, "buff layout follows the visible native buff with a three-pixel gap")
 expect(first.sprite.y, 1, "buff layout preserves the vertical offset")
 expect(first.border.rgba, 0x123456FF, "buffs can override their border colour")
@@ -318,15 +330,19 @@ expect(firstHandle:SetVisible(false), true, "repeating visibility is still succe
 expect(second.sprite.positionUpdates, hiddenPositionUpdates, "unchanged visibility skips layout writes")
 expect(firstHandle:SetVisible(true), true, "buffs can be shown again")
 
-local debuffHandle, debuff = captureEntry(debuffLayer, function()
-    return BuffBar.addDebuff({
-        spriteID = 8,
-        label = "!",
-        tooltip = "Test debuff",
-        borderRgba = 0x123456FF,
-        backgroundRgba = 0x112233CC,
-    })
-end, true)
+local debuffHandle, debuff = captureEntry(
+    debuffLayer,
+    function()
+        return BuffBar.addDebuff({
+            spriteID = 8,
+            label = "!",
+            tooltip = "Test debuff",
+            borderRgba = 0x123456FF,
+            backgroundRgba = 0x112233CC,
+        })
+    end,
+    true
+)
 expect(debuff.border.rgba, 0xCC0000FF, "debuffs ignore border overrides and remain red")
 expect(debuff.background.rgba, 0x112233CC, "debuffs can override their background colour")
 expect(debuff.label.rgba, 0xFFFFFFFF, "labels default to white")
@@ -367,9 +383,12 @@ expect(debuffHandle:SetVisible(true), false, "removed handles reject visibility 
 expect(debuffHandle:SetLabel("removed"), false, "removed handles reject label changes")
 expect(debuffHandle:SetTooltip("removed"), false, "removed handles reject tooltip changes")
 
-local timedHandle, timed = captureEntry(buffLayer, function()
-    return BuffBar.addBuff({ spriteID = 9, duration = 301 })
-end)
+local timedHandle, timed = captureEntry(
+    buffLayer,
+    function()
+        return BuffBar.addBuff({ spriteID = 9, duration = 301 })
+    end
+)
 expect(timed.label.content, "5m", "timers at or above one minute use minute units")
 expect(timedHandle:SetLabel("manual"), false, "timed entries reject manual label changes")
 expect(timed.label.content, "5m", "rejecting SetLabel preserves the timer label")
@@ -413,9 +432,12 @@ for _, scenario in ipairs({
     layer.width = 169 -- Five icons fit exactly.
     local handles, sprites = {}, {}
     for index = 1, 5 do
-        local handle, entry = captureEntry(layer, function()
-            return scenario.add({ spriteID = index })
-        end)
+        local handle, entry = captureEntry(
+            layer,
+            function()
+                return scenario.add({ spriteID = index })
+            end
+        )
         handles[index], sprites[index] = handle, entry.sprite
     end
 
@@ -441,7 +463,9 @@ for _, scenario in ipairs({
         expectPositions(4)
     end
 
-    for _, handle in ipairs(handles) do scenario.remove(handle) end
+    for _, handle in ipairs(handles) do
+        scenario.remove(handle)
+    end
 end
 
 local invalid = BuffBar.addDebuff({ spriteID = 10, duration = 0 })

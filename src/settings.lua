@@ -10,7 +10,8 @@ local ROW_BACKGROUND_COLOURS = { 0x24211EFF, 0x2E2825FF }
 local definitions = {
     allowClassicMovement = { default = false, text = "Unlock PrettyUI in classic UI mode" },
     respectInterfaceLock = {
-        default = true, text = "Follow native interface lock in modern UI mode",
+        default = true,
+        text = "Follow native interface lock in modern UI mode",
     },
     ribbonBarPosition = {
         default = "left",
@@ -21,7 +22,9 @@ local definitions = {
     },
     ribbonBarAutoHide = { default = false, text = "Auto-hide ribbon" },
     ribbonBarButtonCap = {
-        default = 10, min = 1, max = 50,
+        default = 10,
+        min = 1,
+        max = 50,
         normalize = function(value, definition)
             local number = tonumber(value)
             if number ~= nil and number == number then
@@ -32,7 +35,9 @@ local definitions = {
 }
 
 local values, views, watchers = {}, {}, {}
-for key, definition in pairs(definitions) do values[key] = definition.default end
+for key, definition in pairs(definitions) do
+    values[key] = definition.default
+end
 
 local function normalize(definition, value)
     if value == nil then return definition.default end
@@ -46,15 +51,22 @@ local function update(key, value)
     for host, controls in pairs(views) do
         if ui.Interfaces:GetInterface(host.interfaceID) ~= nil then controls[key](value) end
     end
-    for _, callback in pairs(watchers) do callback(key) end
+    for _, callback in pairs(watchers) do
+        callback(key)
+    end
 end
 
 function Settings.load()
     for key, definition in pairs(definitions) do
-        local kind, value = type(definition.default)
-        if kind == "boolean" then value = PersistentDB:GetBool(key)
-        elseif kind == "string" then value = PersistentDB:GetString(key)
-        else value = PersistentDB:GetInt(key) end
+        local kind = type(definition.default)
+        local value
+        if kind == "boolean" then
+            value = PersistentDB:GetBool(key)
+        elseif kind == "string" then
+            value = PersistentDB:GetString(key)
+        else
+            value = PersistentDB:GetInt(key)
+        end
         update(key, normalize(definition, value))
     end
 end
@@ -66,9 +78,13 @@ end
 function Settings.set(key, value)
     value = normalize(definitions[key], value)
     local kind = type(value)
-    if kind == "boolean" then PersistentDB:SetBool(key, value)
-    elseif kind == "string" then PersistentDB:SetString(key, value)
-    else PersistentDB:SetInt(key, value) end
+    if kind == "boolean" then
+        PersistentDB:SetBool(key, value)
+    elseif kind == "string" then
+        PersistentDB:SetString(key, value)
+    else
+        PersistentDB:SetInt(key, value)
+    end
     update(key, value)
 end
 
@@ -83,7 +99,10 @@ end
 local function addSection(host, title, description)
     host:AddTitle({ text = title, marginBottom = 2, rowBackgroundGroup = title })
     host:AddText({
-        text = description, colour = DESCRIPTION_COLOUR, marginBottom = 8, rowBackgroundGroup = title,
+        text = description,
+        colour = DESCRIPTION_COLOUR,
+        marginBottom = 8,
+        rowBackgroundGroup = title,
     })
 end
 
@@ -124,12 +143,15 @@ function Settings.build(host, showTitle)
         onChange = function(_, _, _, selected) Settings.set("ribbonBarAutoHide", selected) end,
     })
     local capLabel = host:AddText({
-        text = "Visible panel buttons: " .. values.ribbonBarButtonCap, rowBackgroundGroup = ribbon,
+        text = "Visible panel buttons: " .. values.ribbonBarButtonCap,
+        rowBackgroundGroup = ribbon,
     })
     local cap = host:AddSlider({
         rowBackgroundGroup = ribbon,
-        min = definitions.ribbonBarButtonCap.min, max = definitions.ribbonBarButtonCap.max,
-        step = 1, value = values.ribbonBarButtonCap,
+        min = definitions.ribbonBarButtonCap.min,
+        max = definitions.ribbonBarButtonCap.max,
+        step = 1,
+        value = values.ribbonBarButtonCap,
         onChange = function(_, value) Settings.set("ribbonBarButtonCap", value) end,
     })
 

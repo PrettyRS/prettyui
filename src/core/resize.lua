@@ -41,8 +41,12 @@ local function loaded(self)
 end
 
 local function available(self)
-    return not WorldMap.isSuspended() and loaded(self) and self.enabled and not self.root.hidden and
-        self.root.visibleGlobal ~= false and self.isVisible()
+    return not WorldMap.isSuspended()
+        and loaded(self)
+        and self.enabled
+        and not self.root.hidden
+        and self.root.visibleGlobal ~= false
+        and self.isVisible()
 end
 
 local function resizeAxis(position, size, delta, leading, trailing, extent, minimum, maximum)
@@ -146,7 +150,6 @@ function Resize:Refresh()
     self:_Refresh(true)
 end
 
-
 function Resize:_Begin(key, component, x, y)
     if not available(self) then return true end
     self:Cancel()
@@ -186,10 +189,26 @@ function Resize:_Move(component, x, y)
     drag.mouseX, drag.mouseY = mouse.x, mouse.y
     local root, parent, edge = self.root, self.parent, edges[drag.edge]
     local offsets = self.edgeOffsets
-    local nextX, width = resizeAxis(root.x + offsets.left, root.width, dx, edge.west, edge.east,
-        parent.width + offsets.left + offsets.right, self.minWidth, self.maxWidth)
-    local nextY, height = resizeAxis(root.y + offsets.top, root.height, dy, edge.north, edge.south,
-        parent.height + offsets.top + offsets.bottom, self.minHeight, self.maxHeight)
+    local nextX, width = resizeAxis(
+        root.x + offsets.left,
+        root.width,
+        dx,
+        edge.west,
+        edge.east,
+        parent.width + offsets.left + offsets.right,
+        self.minWidth,
+        self.maxWidth
+    )
+    local nextY, height = resizeAxis(
+        root.y + offsets.top,
+        root.height,
+        dy,
+        edge.north,
+        edge.south,
+        parent.height + offsets.top + offsets.bottom,
+        self.minHeight,
+        self.maxHeight
+    )
     nextX, nextY = nextX - offsets.left, nextY - offsets.top
     if self.constrainRect then
         local constrainedX, constrainedY, constrainedWidth, constrainedHeight =
@@ -198,8 +217,7 @@ function Resize:_Move(component, x, y)
             self:Refresh()
             return false
         end
-        nextX, nextY, width, height =
-            constrainedX, constrainedY, constrainedWidth, constrainedHeight
+        nextX, nextY, width, height = constrainedX, constrainedY, constrainedWidth, constrainedHeight
     end
     if nextX ~= root.x or nextY ~= root.y or width ~= root.width or height ~= root.height then
         -- Owners may synchronously reflow their content and call Refresh again.
@@ -279,12 +297,18 @@ function Resize.new(parent, root, options)
         self.handles[key] = handle
         handle.enabled = false
         handle.clickthrough = true
-        handle:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
-            return self:_Begin(key, component, x, y)
-        end)
-        handle:Subscribe(ui.Hook.ONHOLD, function(component, x, y)
-            return self:_Move(component, x, y)
-        end)
+        handle:Subscribe(
+            ui.Hook.ONCLICK,
+            function(component, x, y)
+                return self:_Begin(key, component, x, y)
+            end
+        )
+        handle:Subscribe(
+            ui.Hook.ONHOLD,
+            function(component, x, y)
+                return self:_Move(component, x, y)
+            end
+        )
         handle:Subscribe(ui.Hook.ONRELEASE, function() return self:_Finish() end)
         handle:Subscribe(ui.Hook.ONDRAGCOMPLETE, function() return self:_Finish() end)
     end
@@ -292,12 +316,18 @@ function Resize.new(parent, root, options)
     controllers[self] = true
     if wasEmpty then
         Event.Logic.Subscribe(EVENT_ID, function()
-            for controller in pairs(controllers) do controller:_Refresh(false) end
+            for controller in pairs(controllers) do
+                controller:_Refresh(false)
+            end
         end)
     end
     self:Refresh()
     WorldMap.watch(self, function(suspended)
-        if suspended then self:_Clear() else self:Refresh() end
+        if suspended then
+            self:_Clear()
+        else
+            self:Refresh()
+        end
     end)
     return self
 end

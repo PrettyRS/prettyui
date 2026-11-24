@@ -42,6 +42,61 @@ local function sprite(parent, spriteID)
     return component
 end
 
+local function beginDragCapture(self, dragStart, mouse)
+    dragStart.mouseX = mouse.x
+    dragStart.mouseY = mouse.y
+    dragStart.windowX = self.root.x
+    dragStart.windowY = self.root.y
+    self.dragFeedback = DragFeedback.new(self.parent, self.root)
+    self.titleDrag:SetPos(0, 0)
+    self.titleDrag:SetSize(0, 0, 1.0, 1.0)
+    self.titleDrag:MoveToFront()
+    if self.snapToEdges then
+        local ok, positions = pcall(Snap.start, self)
+        if ok then dragStart.snapPositions = positions end
+    end
+end
+
+local function mountContent(self, parent, options, top)
+    local parentTooltipContext = Tooltip.getContext(parent)
+    local tooltipParent = parentTooltipContext and parentTooltipContext.parent or parent
+    Scroll.attach(self, self.root, {
+        x = BORDER,
+        y = top,
+        width = -BORDER * 2,
+        height = -top - BORDER,
+        widthAnchor = 1.0,
+        heightAnchor = 1.0,
+        contentHeight = options.contentHeight,
+        scrollable = options.scrollable,
+        scrollStep = options.scrollStep,
+        _onScrollWheel = options._onScrollWheel,
+        overlayParent = tooltipParent,
+        ownerWindow = self,
+        isVisible = function() return self.root.hidden ~= true end,
+        position = function(scrollRoot)
+            local rootX = self.root.x or 0
+            local rootY = self.root.y or 0
+            if parentTooltipContext then
+                rootX, rootY = parentTooltipContext.position(self.root)
+            end
+            return rootX + (scrollRoot.x or 0), rootY + (scrollRoot.y or 0)
+        end,
+    })
+
+    if self.closeButton then
+        self.closeButton:MoveToFront()
+    end
+
+    self.tooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
+        local rootX, rootY = self._scroll:_AbsolutePosition()
+        return rootX + (target.x or 0), rootY + (target.y or 0) - self._scroll.scrollY
+    end, parentTooltipContext)
+    self.tooltipContext.ownerWindow = self
+    Layout.configure(self, options.layout or options.textLayout)
+    Tooltip.bind(self, self.root, parent, options.tooltip)
+end
+
 local function buildWindow(parent, options)
     options = options or {}
 
@@ -63,20 +118,13 @@ local function buildWindow(parent, options)
     self.snapToEdges = options.snapToEdges ~= false
     self.locked = false
     self.overlays = {}
-    self.rowBackgroundColours = options.rowBackgroundColours
-        or options.rowBackgroundColors
-        or {}
+    self.rowBackgroundColours = options.rowBackgroundColours or options.rowBackgroundColors or {}
     self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
     self.rowBackgrounds = {}
 
     self.root = Components.newContent(parent, options)
     self.root.clickthrough = false
-    self.root:SetPos(
-        options.x or 80,
-        options.y or 80,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
+    self.root:SetPos(options.x or 80, options.y or 80, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(
         clamp(options.width or 480, self.minWidth, self.maxWidth),
         clamp(options.height or 340, self.minHeight, self.maxHeight)
@@ -188,8 +236,7 @@ local function buildWindow(parent, options)
                 self.dragFeedback = nil
             end
             InterfaceMouse.EndCapture(self.titleDrag)
-            if self.root and self.titleDrag and
-                ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
+            if self.root and self.titleDrag and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
                 self.titleDrag:SetPos(self.root.x, self.root.y)
                 self.titleDrag:SetSize(self.root.width - CLOSE_SIZE - 14, TITLE_HEIGHT)
                 self:_SyncOverlays(false)
@@ -206,39 +253,26 @@ local function buildWindow(parent, options)
 
         local function moveDrag(component, x, y)
             local mouse = InterfaceMouse.GetPosition(component, x, y)
-            if dragStart and mouse then
-                if not captureExpanded then
-                    captureExpanded = true
-                    dragStart.mouseX = mouse.x
-                    dragStart.mouseY = mouse.y
-                    dragStart.windowX = self.root.x
-                    dragStart.windowY = self.root.y
-                    self.dragFeedback = DragFeedback.new(self.parent, self.root)
-                    self.titleDrag:SetPos(0, 0)
-                    self.titleDrag:SetSize(0, 0, 1.0, 1.0)
-                    self.titleDrag:MoveToFront()
-                    if self.snapToEdges then
-                        local ok, positions = pcall(Snap.start, self)
-                        if ok then dragStart.snapPositions = positions end
-                    end
-                end
-                local rawX = dragStart.windowX + mouse.x - dragStart.mouseX
-                local rawY = dragStart.windowY + mouse.y - dragStart.mouseY
-                local snappedX, snappedY = rawX, rawY
-                if dragStart.snapPositions then
-                    snappedX, snappedY = Snap.apply(dragStart.snapPositions, rawX, rawY,
-                        self.root.width, self.root.height)
-                end
-                local offsets = self.edgeOffsets
-                local nextX = clamp(snappedX, -offsets.left, self.parent.width - self.root.width + offsets.right)
-                local nextY = clamp(snappedY, -offsets.top, self.parent.height - self.root.height + offsets.bottom)
-                if self.root.x ~= nextX or self.root.y ~= nextY then
-                    self.root:SetPos(nextX, nextY)
-                    self.dragBounds:RememberPosition()
-                    dragStart.positionChanged = true
-                end
-                self.dragFeedback:Update()
+            if not dragStart or not mouse then return false end
+            if not captureExpanded then
+                captureExpanded = true
+                beginDragCapture(self, dragStart, mouse)
             end
+            local rawX = dragStart.windowX + mouse.x - dragStart.mouseX
+            local rawY = dragStart.windowY + mouse.y - dragStart.mouseY
+            local snappedX, snappedY = rawX, rawY
+            if dragStart.snapPositions then
+                snappedX, snappedY = Snap.apply(dragStart.snapPositions, rawX, rawY, self.root.width, self.root.height)
+            end
+            local offsets = self.edgeOffsets
+            local nextX = clamp(snappedX, -offsets.left, self.parent.width - self.root.width + offsets.right)
+            local nextY = clamp(snappedY, -offsets.top, self.parent.height - self.root.height + offsets.bottom)
+            if self.root.x ~= nextX or self.root.y ~= nextY then
+                self.root:SetPos(nextX, nextY)
+                self.dragBounds:RememberPosition()
+                dragStart.positionChanged = true
+            end
+            self.dragFeedback:Update()
             return false
         end
 
@@ -304,64 +338,36 @@ local function buildWindow(parent, options)
         self.closeSprite.clickthrough = true
         self.closeSprite:SetPos(1, 1)
         self.closeSprite:SetSize(CLOSE_SIZE - 2, CLOSE_SIZE - 2)
-        self.closeButton:Subscribe(ui.Hook.ONMOUSEOVER, function()
-            self.closeSprite.spriteID = Sprites.CLOSE_ACTIVE
-        end)
-        self.closeButton:Subscribe(ui.Hook.ONMOUSELEAVE, function()
-            self.closeSprite.spriteID = Sprites.CLOSE
-        end)
+        self.closeButton:Subscribe(
+            ui.Hook.ONMOUSEOVER,
+            function()
+                self.closeSprite.spriteID = Sprites.CLOSE_ACTIVE
+            end
+        )
+        self.closeButton:Subscribe(
+            ui.Hook.ONMOUSELEAVE,
+            function()
+                self.closeSprite.spriteID = Sprites.CLOSE
+            end
+        )
         self.closeButton:Subscribe(ui.Hook.ONCLICK, function()
             self:Close()
             return false
         end)
     end
 
-
-
-    local parentTooltipContext = Tooltip.getContext(parent)
-    local tooltipParent = parentTooltipContext and parentTooltipContext.parent or parent
-    Scroll.attach(self, self.root, {
-        x = BORDER,
-        y = top,
-        width = -BORDER * 2,
-        height = -top - BORDER,
-        widthAnchor = 1.0,
-        heightAnchor = 1.0,
-        contentHeight = options.contentHeight,
-        scrollable = options.scrollable,
-        scrollStep = options.scrollStep,
-        _onScrollWheel = options._onScrollWheel,
-        overlayParent = tooltipParent,
-        ownerWindow = self,
-        isVisible = function() return self.root.hidden ~= true end,
-        position = function(scrollRoot)
-            local rootX = self.root.x or 0
-            local rootY = self.root.y or 0
-            if parentTooltipContext then
-                rootX, rootY = parentTooltipContext.position(self.root)
-            end
-            return rootX + (scrollRoot.x or 0), rootY + (scrollRoot.y or 0)
-        end,
-    })
-
-    if self.closeButton then
-        self.closeButton:MoveToFront()
-    end
-
-    self.tooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
-        local rootX, rootY = self._scroll:_AbsolutePosition()
-        return rootX + (target.x or 0),
-            rootY + (target.y or 0) - self._scroll.scrollY
-    end, parentTooltipContext)
-    self.tooltipContext.ownerWindow = self
-    Layout.configure(self, options.layout or options.textLayout)
-    Tooltip.bind(self, self.root, parent, options.tooltip)
+    mountContent(self, parent, options, top)
     Snap.register(self)
     if options.resizable == true then
         if not self.dragBounds then
-            self.dragBounds = DragBounds.new(self.parent, self.root, function()
-                self:_SyncOverlays(self.root.hidden == true)
-            end, self.edgeOffsets)
+            self.dragBounds = DragBounds.new(
+                self.parent,
+                self.root,
+                function()
+                    self:_SyncOverlays(self.root.hidden == true)
+                end,
+                self.edgeOffsets
+            )
         end
         self.resize = Resize.new(self.parent, self.root, {
             minWidth = self.minWidth,
@@ -400,9 +406,12 @@ end
 
 function Window:_WatchNativeTransparency()
     if self.useNativeTransparency then
-        NativeInterfaceSettings.watchTransparency(self, function(transparency)
-            self:_SetBackgroundTransparency(transparency)
-        end)
+        NativeInterfaceSettings.watchTransparency(
+            self,
+            function(transparency)
+                self:_SetBackgroundTransparency(transparency)
+            end
+        )
     else
         NativeInterfaceSettings.unwatchTransparency(self)
     end
@@ -482,7 +491,8 @@ function Window:RefreshRowBackgrounds()
         self._scroll.height,
         self,
         self.rowBackgroundColours,
-        self.rowBackgroundEdgeToEdge)
+        self.rowBackgroundEdgeToEdge
+    )
 end
 
 -- A window is a standard single-surface content host. Component definitions and
@@ -507,8 +517,7 @@ function Window:_SyncOverlays(hidden)
     for component, overlay in pairs(self.overlays) do
         if ui.Interfaces:GetInterface(overlay.interfaceID) ~= nil then
             if not hidden and overlay.layout then overlay.layout() end
-            Components.setHidden(component, hidden or
-                (overlay.isVisible and not overlay.isVisible() or false))
+            Components.setHidden(component, hidden or (overlay.isVisible and not overlay.isVisible() or false))
             if not component.hidden then component:MoveToFront() end
         end
     end

@@ -33,13 +33,16 @@ local function geometry(record, root)
 end
 
 local function loaded(panel)
-    return panel and not panel._destroyed and panel.root
-        and ui.Interfaces:GetInterface(panel.interfaceID) ~= nil
+    return panel and not panel._destroyed and panel.root and ui.Interfaces:GetInterface(panel.interfaceID) ~= nil
 end
 
 local function busy(panel)
-    return panel._nisNative or panel._nisNativeDetaching or panel._nisNativeTransaction
-        or panel.dragState or panel._nisTabPress or panel._nisTabTransaction
+    return panel._nisNative
+        or panel._nisNativeDetaching
+        or panel._nisNativeTransaction
+        or panel.dragState
+        or panel._nisTabPress
+        or panel._nisTabTransaction
         or panel.resize and panel.resize.dragState
 end
 
@@ -49,14 +52,19 @@ function Persistence.prepare(options)
         return options
     end
     assert(type(options.id) == "string" and options.id ~= "", "NisPanel id must be a nonempty string")
-    assert(options.dockTo == nil or type(options.dockTo) == "string" and options.dockTo ~= ""
-        and options.dockTo ~= options.id, "NisPanel dockTo must identify another panel")
+    assert(
+        options.dockTo == nil
+            or type(options.dockTo) == "string" and options.dockTo ~= "" and options.dockTo ~= options.id,
+        "NisPanel dockTo must identify another panel"
+    )
     load()
     assert(live[options.id] == nil, "NisPanel id is already in use: " .. options.id)
     local record = state.panels[options.id]
     if not record then return options end
     local restored = {}
-    for key, value in pairs(options) do restored[key] = value end
+    for key, value in pairs(options) do
+        restored[key] = value
+    end
     if record.x ~= nil and not record.pendingX then
         restored.x, restored.xAnchor = record.x, nil
     end
@@ -66,6 +74,11 @@ function Persistence.prepare(options)
     restored.width, restored.height = record.width or options.width, record.height or options.height
     restored.active = record.active ~= false
     return restored
+end
+
+local function appendUnique(combined, seen, panelID)
+    if seen[panelID] then return end
+    combined[#combined + 1], seen[panelID] = panelID, true
 end
 
 -- Keep absent plugins in the logical group. Runtime groups contain only loaded panels.
@@ -79,18 +92,16 @@ local function join(ids, active)
             key = key or groupID
             oldGroups[groupID] = true
             for _, memberID in ipairs(group.members) do
-                if not seen[memberID] then
-                    combined[#combined + 1], seen[memberID] = memberID, true
-                end
+                appendUnique(combined, seen, memberID)
             end
         end
-        if not seen[panelID] then
-            combined[#combined + 1], seen[panelID] = panelID, true
-        end
+        appendUnique(combined, seen, panelID)
     end
     -- Reorder loaded members without moving the slots of missing members.
     local included, ordered, index = {}, {}, 1
-    for _, panelID in ipairs(ids) do included[panelID] = true end
+    for _, panelID in ipairs(ids) do
+        included[panelID] = true
+    end
     for _, panelID in ipairs(combined) do
         if included[panelID] then
             ordered[#ordered + 1] = ids[index]
@@ -103,15 +114,21 @@ local function join(ids, active)
     if key then
         local old = state.groups[key]
         local same = old.active == active and #old.members == #ordered
-        for i, panelID in ipairs(ordered) do same = same and old.members[i] == panelID end
+        for i, panelID in ipairs(ordered) do
+            same = same and old.members[i] == panelID
+        end
         local count = 0
-        for _ in pairs(oldGroups) do count = count + 1 end
+        for _ in pairs(oldGroups) do
+            count = count + 1
+        end
         if same and count == 1 then return false end
     else
         state.nextGroup = state.nextGroup + 1
         key = tostring(state.nextGroup)
     end
-    for groupID in pairs(oldGroups) do state.groups[groupID] = nil end
+    for groupID in pairs(oldGroups) do
+        state.groups[groupID] = nil
+    end
     state.groups[key] = { members = ordered, active = active }
     for _, panelID in ipairs(ordered) do
         state.panels[panelID].group = key
@@ -122,6 +139,12 @@ local function join(ids, active)
     return true
 end
 
+local function restoreMember(panel, members)
+    panel:_CancelDrag()
+    if panel.resize then panel.resize:Cancel() end
+    members[#members + 1] = panel
+end
+
 local function restore(groups, affected)
     restoring = true
     for groupID in pairs(affected) do
@@ -129,22 +152,22 @@ local function restore(groups, affected)
         local members, parent, active = {}, nil, nil
         for _, panelID in ipairs(saved.members) do
             local panel = live[panelID]
-            if loaded(panel) and not panel._nisClassic and not panel._nisHidden then
-                if parent == nil then parent = panel.parent end
-                if sameComponent(panel.parent, parent) then
-                    panel:_CancelDrag()
-                    if panel.resize then panel.resize:Cancel() end
-                    members[#members + 1] = panel
-                    if panelID == saved.active then active = panel end
-                end
-            end
+            local eligible = loaded(panel) and not panel._nisClassic and not panel._nisHidden
+            if eligible and parent == nil then parent = panel.parent end
+            eligible = eligible and sameComponent(panel.parent, parent)
+            if eligible then restoreMember(panel, members) end
+            if eligible and panelID == saved.active then active = panel end
         end
         if #members > 0 then
             local record = state.panels[saved.active] or state.panels[members[1]._nisPersistenceID]
             if #members > 1 then
                 groups.restore({
-                    members = members, active = active or members[1],
-                    x = record.x, y = record.y, width = record.width, height = record.height,
+                    members = members,
+                    active = active or members[1],
+                    x = record.x,
+                    y = record.y,
+                    width = record.width,
+                    height = record.height,
                 }, false)
             else
                 local panel = members[1]
@@ -152,7 +175,10 @@ local function restore(groups, affected)
                 local height = math.max(panel.minHeight, math.min(panel.maxHeight or math.huge, record.height))
                 panel:_ApplyRectSingle(
                     math.max(0, math.min(record.x, panel.parent.width - width)),
-                    math.max(0, math.min(record.y, panel.parent.height - height)), width, height)
+                    math.max(0, math.min(record.y, panel.parent.height - height)),
+                    width,
+                    height
+                )
             end
             for _, panel in ipairs(members) do
                 local root = panel.root
@@ -161,6 +187,22 @@ local function restore(groups, affected)
         end
     end
     restoring = false
+end
+
+local function resolveDefaultDock(panelID, record, affected)
+    local target = record.dockTo and state.panels[record.dockTo]
+    if not target then return false end
+    local targetID = record.dockTo
+    record.dockTo = nil
+    join({ targetID, panelID }, panelID)
+    local group = state.groups[record.group]
+    if group then
+        affected[record.group] = true
+        for _, memberID in ipairs(group.members) do
+            geometry(state.panels[memberID], target)
+        end
+    end
+    return true
 end
 
 function Persistence.register(panel, options, groups)
@@ -182,20 +224,7 @@ function Persistence.register(panel, options, groups)
         changed = true
     end
     for panelID, record in pairs(state.panels) do
-        local target = record.dockTo and state.panels[record.dockTo]
-        if target then
-            local targetID = record.dockTo
-            record.dockTo = nil
-            join({ targetID, panelID }, panelID)
-            local group = state.groups[record.group]
-            if group then
-                affected[record.group] = true
-                for _, memberID in ipairs(group.members) do
-                    geometry(state.panels[memberID], target)
-                end
-            end
-            changed = true
-        end
+        if resolveDefaultDock(panelID, record, affected) then changed = true end
     end
     for groupID in pairs(affected) do
         if state.groups[groupID] == nil then affected[groupID] = nil end
@@ -221,8 +250,19 @@ end
 
 function Persistence.bounds(panel)
     local panelID = panel._nisPersistenceID
-    if panel._nisClassic or WorldMap.isSuspended() or not panelID or restoring or not loaded(panel)
-        or panel._nisHidden or panel._nisAutoX or panel._nisAutoY or busy(panel) then return end
+    if
+        panel._nisClassic
+        or WorldMap.isSuspended()
+        or not panelID
+        or restoring
+        or not loaded(panel)
+        or panel._nisHidden
+        or panel._nisAutoX
+        or panel._nisAutoY
+        or busy(panel)
+    then
+        return
+    end
     local record = state.panels[panelID]
     local group = record.group and state.groups[record.group]
     local changed = false
@@ -241,8 +281,9 @@ function Persistence.bounds(panel)
 end
 
 function Persistence.capture(panel)
-    if panel._nisClassic or WorldMap.isSuspended()
-        or restoring or not state or not loaded(panel) then return end
+    if panel._nisClassic or WorldMap.isSuspended() or restoring or not state or not loaded(panel) then
+        return
+    end
     local group = panel._nisGroup
     if not group then return Persistence.bounds(panel) end
     for _, member in ipairs(group.members) do
@@ -270,18 +311,36 @@ function Persistence.native(panel, snapshot)
     local record = state.panels[panelID]
     local old = record.native
     local changed = geometry(record, snapshot.free)
-    local same = old and old.frame == snapshot.frame and old.index == snapshot.index
+    local same = old
+        and old.frame == snapshot.frame
+        and old.index == snapshot.index
         and old.beforeNative == snapshot.beforeNative
-        and old.selected == snapshot.selected and #old.frames == #snapshot.frames
+        and old.selected == snapshot.selected
+        and #old.frames == #snapshot.frames
     if same then
         for index, frame in ipairs(snapshot.frames) do
-            if old.frames[index] ~= frame then same = false; break end
+            if old.frames[index] ~= frame then
+                same = false
+                break
+            end
         end
     end
     if changed or not same then
         record.native = snapshot
         flush()
     end
+end
+
+local function remainingActive(group)
+    local selected
+    for _, memberID in ipairs(group.members) do
+        local member = live[memberID]
+        if loaded(member) and not member._nisHidden then
+            selected = selected or memberID
+            if not member.root.hidden then return memberID end
+        end
+    end
+    return selected or group.members[1]
 end
 
 function Persistence.detach(panel)
@@ -292,21 +351,18 @@ function Persistence.detach(panel)
     local changed = record.group ~= nil or record.dockTo ~= nil or record.native ~= nil
     if group then
         for index, memberID in ipairs(group.members) do
-            if memberID == panelID then table.remove(group.members, index); break end
+            if memberID == panelID then
+                table.remove(group.members, index)
+                break
+            end
         end
         if group.active == panelID then
-            local selected
-            for _, memberID in ipairs(group.members) do
-                local member = live[memberID]
-                if loaded(member) and not member._nisHidden then
-                    selected = selected or memberID
-                    if not member.root.hidden then selected = memberID; break end
-                end
-            end
-            group.active = selected or group.members[1]
+            group.active = remainingActive(group)
         end
         if #group.members < 2 then
-            for _, memberID in ipairs(group.members) do state.panels[memberID].group = nil end
+            for _, memberID in ipairs(group.members) do
+                state.panels[memberID].group = nil
+            end
             state.groups[record.group] = nil
         end
     end

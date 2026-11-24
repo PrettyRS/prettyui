@@ -16,8 +16,7 @@ local activePanel
 local EVENT_ID = "prettyui_nis_panel_drag"
 
 local function locked(panel)
-    return panel._nisClassic or WorldMap.isSuspended()
-        or panel.locked or NativeInterfaceSettings.isLocked()
+    return panel._nisClassic or WorldMap.isSuspended() or panel.locked or NativeInterfaceSettings.isLocked()
 end
 
 local function scaleSetting()
@@ -54,23 +53,13 @@ local function rectLess(a, b)
 end
 
 local function sameRect(a, b)
-    return a and b and a.x == b.x and a.y == b.y
-        and a.width == b.width and a.height == b.height
+    return a and b and a.x == b.x and a.y == b.y and a.width == b.width and a.height == b.height
 end
 
 -- Normalize before comparing: registry order, duplicate obstacles and fractional
 -- changes within the same occupied units must not invalidate the free-space cache.
-local function collectSpaces(panel, drag, reindex)
-    local width, height = math.floor(panel.parent.width), math.floor(panel.parent.height)
-    -- The full-viewport plugin host is not a placement obstacle.
-    local ok = pcall(Snap.collect, panel, drag.rects, true,
-        id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM, not reindex and drag.nativeCache or nil)
-    if not ok then
-        drag.spaces = nil
-        drag.snapshotValid = false
-        return
-    end
-    local rects, count = drag.rects, 0
+local function normalizeRects(rects, width, height)
+    local count = 0
     for index = 1, #rects do
         local rect = rects[index]
         local left, top = math.max(0, math.floor(rect.x)), math.max(0, math.floor(rect.y))
@@ -82,7 +71,9 @@ local function collectSpaces(panel, drag, reindex)
             rect.x, rect.y, rect.width, rect.height = left, top, right - left, bottom - top
         end
     end
-    for index = #rects, count + 1, -1 do rects[index] = nil end
+    for index = #rects, count + 1, -1 do
+        rects[index] = nil
+    end
     table.sort(rects, rectLess)
     count = 0
     for index = 1, #rects do
@@ -92,15 +83,44 @@ local function collectSpaces(panel, drag, reindex)
             rects[index], rects[count] = rects[count], rect
         end
     end
-    for index = #rects, count + 1, -1 do rects[index] = nil end
+    for index = #rects, count + 1, -1 do
+        rects[index] = nil
+    end
+    return count
+end
+
+local function collectSpaces(panel, drag, reindex)
+    local width, height = math.floor(panel.parent.width), math.floor(panel.parent.height)
+    -- The full-viewport plugin host is not a placement obstacle.
+    local ok = pcall(
+        Snap.collect,
+        panel,
+        drag.rects,
+        true,
+        id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM,
+        not reindex and drag.nativeCache or nil
+    )
+    if not ok then
+        drag.spaces = nil
+        drag.snapshotValid = false
+        return
+    end
+    local rects = drag.rects
+    local count = normalizeRects(rects, width, height)
     local snapshot = drag.snapshot
     local minWidth, minHeight = NisGroup.limits(panel)
-    local changed = not drag.snapshotValid or #snapshot ~= count
-        or drag.parentWidth ~= width or drag.parentHeight ~= height
-        or drag.minWidth ~= minWidth or drag.minHeight ~= minHeight
+    local changed = not drag.snapshotValid
+        or #snapshot ~= count
+        or drag.parentWidth ~= width
+        or drag.parentHeight ~= height
+        or drag.minWidth ~= minWidth
+        or drag.minHeight ~= minHeight
     if not changed then
         for index, rect in ipairs(rects) do
-            if not sameRect(snapshot[index], rect) then changed = true; break end
+            if not sameRect(snapshot[index], rect) then
+                changed = true
+                break
+            end
         end
     end
     if changed then
@@ -109,7 +129,9 @@ local function collectSpaces(panel, drag, reindex)
             snapshot[index] = saved
             saved.x, saved.y, saved.width, saved.height = rect.x, rect.y, rect.width, rect.height
         end
-        for index = #snapshot, count + 1, -1 do snapshot[index] = nil end
+        for index = #snapshot, count + 1, -1 do
+            snapshot[index] = nil
+        end
         drag.parentWidth, drag.parentHeight = width, height
         drag.minWidth, drag.minHeight = minWidth, minHeight
         drag.spaces = NisLayout.spaces(rects, width, height, minWidth, minHeight)
@@ -118,11 +140,10 @@ local function collectSpaces(panel, drag, reindex)
 end
 
 local function contains(rect, x, y)
-    return x >= rect.x and x < rect.x + rect.width
-        and y >= rect.y and y < rect.y + rect.height
+    return x >= rect.x and x < rect.x + rect.width and y >= rect.y and y < rect.y + rect.height
 end
 
-local function preview(panel, drag)
+local function nisCandidate(panel, drag)
     local candidate
     if drag.snapshotValid ~= false or drag.spaces ~= nil then
         candidate = NisGroup.candidate(panel, drag.pointerX, drag.pointerY)
@@ -131,40 +152,62 @@ local function preview(panel, drag)
     if candidate and transaction then
         for _, member in ipairs(transaction.members) do
             if member == candidate and not contains(transaction.tabBounds, drag.pointerX, drag.pointerY) then
-                candidate = nil
-                break
+                return nil
             end
         end
     end
-    NisGroup.preview(panel, candidate)
-    drag.nisTarget = candidate
+    return candidate
+end
+
+local function nativeCandidate(panel, drag, candidate)
     local nativeTarget = not candidate and Native.candidate(panel, drag.pointerX, drag.pointerY)
-    transaction = panel._nisNativeTransaction
+    local transaction = panel._nisNativeTransaction
     if nativeTarget and transaction and transaction.tabBounds then
         for _, frame in ipairs(transaction.frames) do
-            if nativeTarget.spec.frame == frame
-                and not contains(transaction.tabBounds, drag.pointerX, drag.pointerY) then
-                nativeTarget = nil
-                break
+            if
+                nativeTarget.spec.frame == frame
+                and not contains(transaction.tabBounds, drag.pointerX, drag.pointerY)
+            then
+                return nil
             end
         end
     end
-    drag.nativeTarget = nativeTarget
-    local target
-    if nativeTarget then
-        target = Native.rect(panel, nativeTarget)
-    elseif candidate then
+    return nativeTarget
+end
+
+local function placementTarget(panel, drag, candidate, nativeTarget)
+    if nativeTarget then return Native.rect(panel, nativeTarget) end
+    if candidate then
         local root = candidate.root
-        target = drag.targetRect
+        local target = drag.targetRect
         target.x, target.y, target.width, target.height = root.x, root.y, root.width, root.height
-    else
-        local minWidth, minHeight, maxWidth, maxHeight = NisGroup.limits(panel)
-        local width = math.max(minWidth, math.min(maxWidth or math.huge, drag.width))
-        local height = math.max(minHeight, math.min(maxHeight or math.huge, drag.height))
-        target = drag.spaces and NisLayout.fit(drag.spaces, drag.pointerX, drag.pointerY,
-            width, height, drag.gripFractionX, drag.gripY,
-            maxWidth, maxHeight, drag.targetRect)
+        return target
     end
+    local minWidth, minHeight, maxWidth, maxHeight = NisGroup.limits(panel)
+    local width = math.max(minWidth, math.min(maxWidth or math.huge, drag.width))
+    local height = math.max(minHeight, math.min(maxHeight or math.huge, drag.height))
+    return drag.spaces
+        and NisLayout.fit(
+            drag.spaces,
+            drag.pointerX,
+            drag.pointerY,
+            width,
+            height,
+            drag.gripFractionX,
+            drag.gripY,
+            maxWidth,
+            maxHeight,
+            drag.targetRect
+        )
+end
+
+local function preview(panel, drag)
+    local candidate = nisCandidate(panel, drag)
+    NisGroup.preview(panel, candidate)
+    drag.nisTarget = candidate
+    local nativeTarget = nativeCandidate(panel, drag, candidate)
+    drag.nativeTarget = nativeTarget
+    local target = placementTarget(panel, drag, candidate, nativeTarget)
     drag.target = target
     local feedback = panel.dragFeedback
     local hidden = target == nil
@@ -184,8 +227,16 @@ local function preview(panel, drag)
     end
     if drag.raisedTarget ~= candidate then
         drag.raisedTarget = candidate
-        if candidate then candidate.root:MoveToFront() else panel.root:MoveToFront() end
-        if candidate then candidate._nisTabs:Sync(false) else panel._nisTabs:Sync(false) end
+        if candidate then
+            candidate.root:MoveToFront()
+        else
+            panel.root:MoveToFront()
+        end
+        if candidate then
+            candidate._nisTabs:Sync(false)
+        else
+            panel._nisTabs:Sync(false)
+        end
         feedback.origin:MoveToFront()
         feedback.active:MoveToFront()
         drag.capture:MoveToFront()
@@ -194,8 +245,7 @@ local function preview(panel, drag)
     drag.nativeInsertion = insertion
     -- Only a displayed incoming tab replaces the dragged body. Free placement,
     -- including an invalid drop position, keeps the original-size body visible.
-    local previewHidden = nativeChrome ~= nil
-        or candidate ~= nil and candidate._nisTabs.root.hidden ~= true
+    local previewHidden = nativeChrome ~= nil or candidate ~= nil and candidate._nisTabs.root.hidden ~= true
     local visibilityChanged = drag.previewHidden ~= previewHidden
     if visibilityChanged then
         drag.previewHidden = previewHidden
@@ -217,6 +267,51 @@ local function unsubscribe(panel)
     Event.WindowFocusChanged.Unsubscribe(EVENT_ID)
 end
 
+local function settleDrop(panel, drag, loaded, target, nisTarget)
+    if not loaded then
+        panel._nisTabTransaction = nil
+        panel._nisNativeTransaction = nil
+        return
+    end
+    if
+        target
+        and drag.nativeTarget
+        and Native.dock(panel, drag.nativeTarget, panel._nisNativeTransaction and panel._nisNativeTransaction.free or {
+            x = drag.x,
+            y = drag.y,
+            width = drag.width,
+            height = drag.height,
+        }, drag.nativeInsertion)
+    then
+        panel._nisTabTransaction = nil
+        panel._nisNativeTransaction = nil
+    elseif nisTarget and NisGroup.dock(panel, nisTarget, false) then
+        if drag.tab then NisGroup.reorder(panel, drag.pointerX) end
+        panel._nisTabTransaction = nil
+        panel._nisNativeTransaction = nil
+    elseif target and not nisTarget and not drag.nativeTarget then
+        NisGroup.apply(panel, target.x, target.y, target.width, target.height)
+        if panel._nisTabTransaction then
+            Persistence.detach(panel)
+            panel._nisTabTransaction = nil
+        end
+        if panel._nisNativeTransaction then
+            Persistence.detach(panel)
+            panel._nisNativeTransaction = nil
+        end
+    else
+        NisGroup.apply(panel, drag.x, drag.y, drag.width, drag.height)
+        if panel._nisTabTransaction then
+            NisGroup.restore(panel._nisTabTransaction)
+            panel._nisTabTransaction = nil
+        end
+        if panel._nisNativeTransaction then
+            Native.restore(panel, panel._nisNativeTransaction)
+            panel._nisNativeTransaction = nil
+        end
+    end
+end
+
 function NisDrag.install(NisPanel)
     function NisPanel:_CheckDragEnvironment()
         local drag = self.dragState or self._nisTabPress
@@ -231,8 +326,13 @@ function NisDrag.install(NisPanel)
             return true
         end
         local origin = self.parent.xyGlobal
-        if self.parent.width ~= drag.viewportWidth or self.parent.height ~= drag.viewportHeight
-            or origin.x ~= drag.parentX or origin.y ~= drag.parentY or scaleSetting() ~= drag.scale then
+        if
+            self.parent.width ~= drag.viewportWidth
+            or self.parent.height ~= drag.viewportHeight
+            or origin.x ~= drag.parentX
+            or origin.y ~= drag.parentY
+            or scaleSetting() ~= drag.scale
+        then
             self:_CancelDrag()
             self.dragBounds:Clamp()
             return true
@@ -241,15 +341,24 @@ function NisDrag.install(NisPanel)
     end
 
     function NisPanel:_BeginDrag(component, x, y, gripX, gripY, retainExpanded)
-        if locked(self) or self.root == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil
-            or self.root.hidden or self.root.visibleGlobal == false then return true end
+        if
+            locked(self)
+            or self.root == nil
+            or ui.Interfaces:GetInterface(self.interfaceID) == nil
+            or self.root.hidden
+            or self.root.visibleGlobal == false
+        then
+            return true
+        end
         if not retainExpanded then InterfaceMouse.CalibrateFromHook(component, x, y) end
         local px, py = pointer(self, component, x, y)
         if px == nil then return false end
         local root = self.root
-        if component == self.dragLayer and not retainExpanded and
-            (px < root.x or px >= root.x + root.width - 12
-                or py < root.y or py >= root.y + 12) then
+        if
+            component == self.dragLayer
+            and not retainExpanded
+            and (px < root.x or px >= root.x + root.width - 12 or py < root.y or py >= root.y + 12)
+        then
             return false
         end
         if activePanel then activePanel:_CancelDrag() end
@@ -257,15 +366,28 @@ function NisDrag.install(NisPanel)
         InterfaceMouse.BeginCapture(component)
         local origin = self.parent.xyGlobal
         self.dragState = {
-            x = root.x, y = root.y, width = root.width, height = root.height,
+            x = root.x,
+            y = root.y,
+            width = root.width,
+            height = root.height,
             sourceHidden = root.hidden == true,
             capture = component,
-            gripFractionX = (gripX or x) / root.width, gripY = gripY or y,
-            pressX = px, pressY = py, pointerX = px, pointerY = py,
-            viewportWidth = self.parent.width, viewportHeight = self.parent.height,
-            parentX = origin.x, parentY = origin.y, scale = scaleSetting(),
+            gripFractionX = (gripX or x) / root.width,
+            gripY = gripY or y,
+            pressX = px,
+            pressY = py,
+            pointerX = px,
+            pointerY = py,
+            viewportWidth = self.parent.width,
+            viewportHeight = self.parent.height,
+            parentX = origin.x,
+            parentY = origin.y,
+            scale = scaleSetting(),
             captureExpanded = retainExpanded == true,
-            rects = {}, snapshot = {}, nativeCache = {}, targetRect = {},
+            rects = {},
+            snapshot = {},
+            nativeCache = {},
+            targetRect = {},
         }
         root:MoveToFront()
         component:MoveToFront()
@@ -276,7 +398,9 @@ function NisDrag.install(NisPanel)
             local drag = self.dragState
             if not drag then return end
             local pxNow, pyNow = pointer(self)
-            if pxNow then drag.pointerX, drag.pointerY = pxNow, pyNow end
+            if pxNow then
+                drag.pointerX, drag.pointerY = pxNow, pyNow
+            end
             if not drag.moved then
                 self:_MoveDrag()
             else
@@ -297,7 +421,9 @@ function NisDrag.install(NisPanel)
         if not self.dragState or self:_CheckDragEnvironment() then return false end
         local drag = self.dragState
         local px, py = pointer(self, component, x, y)
-        if px then drag.pointerX, drag.pointerY = px, py end
+        if px then
+            drag.pointerX, drag.pointerY = px, py
+        end
         if not drag.moved then
             if drag.pointerX == drag.pressX and drag.pointerY == drag.pressY then return false end
             -- Snapshot the source rectangle before moving the panel.
@@ -328,7 +454,9 @@ function NisDrag.install(NisPanel)
         local loaded = ui.Interfaces:GetInterface(self.interfaceID) ~= nil
         if loaded and commit and drag.moved then
             local px, py = pointer(self, component, x, y)
-            if px then drag.pointerX, drag.pointerY = px, py end
+            if px then
+                drag.pointerX, drag.pointerY = px, py
+            end
             -- A drop always checks the complete current native topology.
             collectSpaces(self, drag, true)
             preview(self, drag)
@@ -342,42 +470,7 @@ function NisDrag.install(NisPanel)
         local nisTarget = target and drag.nisTarget
         NisGroup.clearPreview(self)
         Native.clearPreview(self)
-        if loaded then
-            if target and drag.nativeTarget and Native.dock(self, drag.nativeTarget,
-                self._nisNativeTransaction and self._nisNativeTransaction.free or {
-                    x = drag.x, y = drag.y, width = drag.width, height = drag.height,
-                }, drag.nativeInsertion) then
-                self._nisTabTransaction = nil
-                self._nisNativeTransaction = nil
-            elseif nisTarget and NisGroup.dock(self, nisTarget, false) then
-                if drag.tab then NisGroup.reorder(self, drag.pointerX) end
-                self._nisTabTransaction = nil
-                self._nisNativeTransaction = nil
-            elseif target and not nisTarget and not drag.nativeTarget then
-                NisGroup.apply(self, target.x, target.y, target.width, target.height)
-                if self._nisTabTransaction then
-                    Persistence.detach(self)
-                    self._nisTabTransaction = nil
-                end
-                if self._nisNativeTransaction then
-                    Persistence.detach(self)
-                    self._nisNativeTransaction = nil
-                end
-            else
-                NisGroup.apply(self, drag.x, drag.y, drag.width, drag.height)
-                if self._nisTabTransaction then
-                    NisGroup.restore(self._nisTabTransaction)
-                    self._nisTabTransaction = nil
-                end
-                if self._nisNativeTransaction then
-                    Native.restore(self, self._nisNativeTransaction)
-                    self._nisNativeTransaction = nil
-                end
-            end
-        else
-            self._nisTabTransaction = nil
-            self._nisNativeTransaction = nil
-        end
+        settleDrop(self, drag, loaded, target, nisTarget)
         if drag.tab then drag.tab:Release() end
         if self.dragFeedback then
             self.dragFeedback:Destroy()
@@ -394,7 +487,11 @@ function NisDrag.install(NisPanel)
                 self:_SyncOverlays(self.root.hidden == true)
             end
         end
-        if self._nisGroup then NisGroup.notify(self) else self:_NotifyBoundsChange() end
+        if self._nisGroup then
+            NisGroup.notify(self)
+        else
+            self:_NotifyBoundsChange()
+        end
         self:_SyncDragLayer()
         return false
     end
@@ -415,12 +512,19 @@ function NisDrag.install(NisPanel)
         if not source then return false end
         local origin = self.parent.xyGlobal
         self._nisTabPress = {
-            native = true, component = component, tab = tab,
-            snapshot = snapshot, source = source,
-            pressX = px, pressY = py,
+            native = true,
+            component = component,
+            tab = tab,
+            snapshot = snapshot,
+            source = source,
+            pressX = px,
+            pressY = py,
             gripX = px - component.x + (tab and tab.clipOffset or 0),
-            viewportWidth = self.parent.width, viewportHeight = self.parent.height,
-            parentX = origin.x, parentY = origin.y, scale = scaleSetting(),
+            viewportWidth = self.parent.width,
+            viewportHeight = self.parent.height,
+            parentX = origin.x,
+            parentY = origin.y,
+            scale = scaleSetting(),
         }
         if tab then tab.dragOwner = self end
         activePanel = self
@@ -459,8 +563,12 @@ function NisDrag.install(NisPanel)
         if Native.contains(self, px, py) then
             Native.reorder(self, px, press.gripX)
             local source, feedback = press.source, self.dragFeedback
-            feedback:SetTargetRect(math.floor(source.x + px - press.pressX + 0.5),
-                math.floor(source.y + py - press.pressY + 0.5), source.width, source.height)
+            feedback:SetTargetRect(
+                math.floor(source.x + px - press.pressX + 0.5),
+                math.floor(source.y + py - press.pressY + 0.5),
+                source.width,
+                source.height
+            )
             feedback.origin:MoveToFront()
             feedback.active:MoveToFront()
             press.component:MoveToFront()
@@ -475,14 +583,22 @@ function NisDrag.install(NisPanel)
         Native.detach(self)
         if self._destroyed or not self.root then
             self._nisNativeTransaction = nil
-            if self.dragFeedback then self.dragFeedback:Destroy(); self.dragFeedback = nil end
+            if self.dragFeedback then
+                self.dragFeedback:Destroy()
+                self.dragFeedback = nil
+            end
             if press.tab then press.tab:Release() end
             return false
         end
         if self._nisNative then
             self._nisNativeTransaction = nil
-            if self.dragFeedback then self.dragFeedback:Destroy(); self.dragFeedback = nil end
-            if press.tab then press.tab.retained, press.tab.dragOwner = nil, nil end
+            if self.dragFeedback then
+                self.dragFeedback:Destroy()
+                self.dragFeedback = nil
+            end
+            if press.tab then
+                press.tab.retained, press.tab.dragOwner = nil, nil
+            end
             return false
         end
         Components.setHidden(capture, false)
@@ -492,8 +608,7 @@ function NisDrag.install(NisPanel)
         Cursor.apply(capture, config.Cursor.TOPLEVEL_V2_MOVE, true)
         local source = press.source
         self:_ApplyRect(source.x, source.y, source.width, source.height)
-        self:_BeginDrag(capture, press.pressX, press.pressY,
-            press.pressX - source.x, press.pressY - source.y, true)
+        self:_BeginDrag(capture, press.pressX, press.pressY, press.pressX - source.x, press.pressY - source.y, true)
         if self.dragState then
             self.dragState.tab = press.tab
             self.dragState.pressX, self.dragState.pressY = press.pressX, press.pressY
@@ -502,7 +617,10 @@ function NisDrag.install(NisPanel)
         else
             Native.restore(self, press.snapshot)
             self._nisNativeTransaction = nil
-            if self.dragFeedback then self.dragFeedback:Destroy(); self.dragFeedback = nil end
+            if self.dragFeedback then
+                self.dragFeedback:Destroy()
+                self.dragFeedback = nil
+            end
             if press.tab then press.tab:Release() end
         end
         return false
@@ -542,8 +660,14 @@ function NisDrag.install(NisPanel)
     end
 
     function NisPanel:_BeginNisTabDrag(member, component, x, y, tab)
-        if not member or not member._nisGroup or member._nisGroup ~= self._nisGroup
-            or locked(member) or self.locked or ui.Interfaces:GetInterface(member.interfaceID) == nil then
+        if
+            not member
+            or not member._nisGroup
+            or member._nisGroup ~= self._nisGroup
+            or locked(member)
+            or self.locked
+            or ui.Interfaces:GetInterface(member.interfaceID) == nil
+        then
             return false
         end
         if activePanel then activePanel:_CancelDrag() end
@@ -552,16 +676,23 @@ function NisDrag.install(NisPanel)
         if not px then return false end
         local origin = member.parent.xyGlobal
         local press = {
-            owner = self, member = member, component = component,
+            owner = self,
+            member = member,
+            component = component,
             snapshot = NisGroup.snapshot(member),
-            pressX = px, pressY = py,
+            pressX = px,
+            pressY = py,
             gripX = px - component.x,
-            viewportWidth = member.parent.width, viewportHeight = member.parent.height,
-            parentX = origin.x, parentY = origin.y, scale = scaleSetting(),
+            viewportWidth = member.parent.width,
+            viewportHeight = member.parent.height,
+            parentX = origin.x,
+            parentY = origin.y,
+            scale = scaleSetting(),
             tab = tab,
         }
         press.snapshot.tabBounds = {
-            x = member.root.x + 4, y = member.root.y + 16,
+            x = member.root.x + 4,
+            y = member.root.y + 16,
             width = math.min(member.root.width - 8, #press.snapshot.members * 40),
             height = 28,
         }
@@ -615,8 +746,12 @@ function NisDrag.install(NisPanel)
             member._nisTabs:SetDrag(member, px, press.gripX)
             NisGroup.reorder(member, px)
             local feedback = member.dragFeedback
-            feedback:SetTargetRect(math.floor(px - member.root.width / 2 + 0.5),
-                math.floor(py - 6 + 0.5), member.root.width, member.root.height)
+            feedback:SetTargetRect(
+                math.floor(px - member.root.width / 2 + 0.5),
+                math.floor(py - 6 + 0.5),
+                member.root.width,
+                member.root.height
+            )
             feedback.origin:MoveToFront()
             feedback.active:MoveToFront()
             capture:MoveToFront()
@@ -628,8 +763,7 @@ function NisDrag.install(NisPanel)
         NisGroup.undock(member)
         member._nisTabTransaction = press.snapshot
         Cursor.apply(capture, config.Cursor.TOPLEVEL_V2_MOVE, true)
-        member:_BeginDrag(capture, press.pressX, press.pressY,
-            member.root.width / 2, 6, true)
+        member:_BeginDrag(capture, press.pressX, press.pressY, member.root.width / 2, 6, true)
         if member.dragState then
             member.dragState.tab = press.tab
             member.dragState.pressX, member.dragState.pressY = press.pressX, press.pressY
@@ -638,7 +772,10 @@ function NisDrag.install(NisPanel)
         else
             NisGroup.restore(member._nisTabTransaction)
             member._nisTabTransaction = nil
-            if member.dragFeedback then member.dragFeedback:Destroy(); member.dragFeedback = nil end
+            if member.dragFeedback then
+                member.dragFeedback:Destroy()
+                member.dragFeedback = nil
+            end
             if press.tab then press.tab:Release() end
         end
         return false
@@ -676,8 +813,11 @@ function NisDrag.install(NisPanel)
             member.dragFeedback = nil
         end
         if commit == false and press.snapshot then
-            if press.dragging then NisGroup.restore(press.snapshot)
-            else NisGroup.select(press.snapshot.active) end
+            if press.dragging then
+                NisGroup.restore(press.snapshot)
+            else
+                NisGroup.select(press.snapshot.active)
+            end
         end
         local group = member._nisGroup
         if group then group.active._nisTabs:Refresh(group.members, group.active) end

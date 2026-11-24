@@ -43,7 +43,9 @@ local TEXT_COLOUR = 0xF2E2BCFF
 local function copyOptions(options)
     local copy = {}
     if type(options) == "table" then
-        for key, value in pairs(options) do copy[key] = value end
+        for key, value in pairs(options) do
+            copy[key] = value
+        end
     end
     return copy
 end
@@ -81,14 +83,18 @@ local function normalizeTabs(values)
         error("Tabs requires a non-empty array")
     end
     local tabs = {}
-    for index, value in ipairs(values) do tabs[index] = normalizeTab(value, index) end
+    for index, value in ipairs(values) do
+        tabs[index] = normalizeTab(value, index)
+    end
     return tabs
 end
 
 local function measureTextWidth(tab)
-    local succeeded, width = pcall(function()
-        return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(tab.text, false)
-    end)
+    local succeeded, width = pcall(
+        function()
+            return config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(tab.text, false)
+        end
+    )
     local labelWidth = succeeded and width or #tab.text * 7
     local padding = TEXT_PADDING
     if tab.disabled then
@@ -146,17 +152,13 @@ function Tabs:_UpdateTab(tab)
         tab.visual.alpha = 1
         tab.iconSprite.alpha = tab.disabled and DISABLED_ALPHA or 1
     else
-        local sprites = tab.disabled and Sprites.TEXT_TAB.disabled or
-            (active and Sprites.TEXT_TAB.active or Sprites.TEXT_TAB.inactive)
+        local sprites = tab.disabled and Sprites.TEXT_TAB.disabled
+            or (active and Sprites.TEXT_TAB.active or Sprites.TEXT_TAB.inactive)
         setTextSprites(tab, sprites)
         if tab.disabled then
             tab.label.alpha = DISABLED_ALPHA
             tab.label:SetPos(DISABLED_TEXT_LABEL_X, TEXT_LABEL_Y)
-            tab.label:SetSize(
-                -(DISABLED_TEXT_LABEL_X + TEXT_LABEL_RIGHT),
-                TEXT_LABEL_HEIGHT,
-                1.0
-            )
+            tab.label:SetSize(-(DISABLED_TEXT_LABEL_X + TEXT_LABEL_RIGHT), TEXT_LABEL_HEIGHT, 1.0)
         elseif active or tab.hovered then
             tab.label.alpha = 1
             tab.label:SetPos(TEXT_LABEL_X, TEXT_LABEL_Y)
@@ -203,10 +205,7 @@ function Tabs:_CreateIconTab(tab, x, options)
 
     tab.iconSprite = sprite(tab.visual, tab.icon)
     local iconSize = math.max(1, math.floor(tab.iconSize or options.iconSize or ICON_SIZE))
-    tab.iconSprite:SetPos(
-        math.floor((ICON_WIDTH - iconSize) / 2),
-        math.floor((ICON_HEIGHT - iconSize) / 2)
-    )
+    tab.iconSprite:SetPos(math.floor((ICON_WIDTH - iconSize) / 2), math.floor((ICON_HEIGHT - iconSize) / 2))
     tab.iconSprite:SetSize(iconSize, iconSize)
 end
 
@@ -313,10 +312,8 @@ local function configurePage(tabs, index, options)
             if parentContext and parentContext.parentContext then
                 rootX, rootY = parentContext.parentContext.position(tabs.root)
             end
-            return rootX + (tabs.content.x or 0) + (page.root.x or 0) +
-                    (scrollRoot.x or 0),
-                rootY + (tabs.content.y or 0) + (page.root.y or 0) +
-                    (scrollRoot.y or 0)
+            return rootX + (tabs.content.x or 0) + (page.root.x or 0) + (scrollRoot.x or 0),
+                rootY + (tabs.content.y or 0) + (page.root.y or 0) + (scrollRoot.y or 0)
         end,
     })
     Layout.configure(page, options.contentLayout)
@@ -333,8 +330,7 @@ local function configurePage(tabs, index, options)
 
     page.tooltipContext = Tooltip.registerContext(page.content, tooltipParent, function(target)
         local rootX, rootY = page._scroll:_AbsolutePosition()
-        return rootX + (target.x or 0),
-            rootY + (target.y or 0) - page._scroll.scrollY
+        return rootX + (target.x or 0), rootY + (target.y or 0) - page._scroll.scrollY
     end, parentContext)
     return page
 end
@@ -371,7 +367,9 @@ local function buildTabs(parent, values, options)
     self.tooltipContext = Tooltip.registerContext(self.root, tooltipParent, function(target)
         local rootX = self.root.x or 0
         local rootY = self.root.y or 0
-        if parentContext then rootX, rootY = parentContext.position(self.root) end
+        if parentContext then
+            rootX, rootY = parentContext.position(self.root)
+        end
         return rootX + (target.x or 0), rootY + (target.y or 0)
     end, parentContext)
 
@@ -399,7 +397,10 @@ local function buildTabs(parent, values, options)
     local initial = math.floor(options.activeIndex or 1)
     if self.tabs[initial] == nil or self.tabs[initial].disabled then
         for index, tab in ipairs(self.tabs) do
-            if not tab.disabled then initial = index break end
+            if not tab.disabled then
+                initial = index
+                break
+            end
         end
     end
     self:SetActive(initial, false)
@@ -414,7 +415,9 @@ function Tabs.new(parent, values, options)
 end
 
 function Tabs:RefreshLayout()
-    for _, page in ipairs(self.pages) do page:RefreshLayout() end
+    for _, page in ipairs(self.pages) do
+        page:RefreshLayout()
+    end
 end
 
 function Tabs:BindFlow(owner)
@@ -447,7 +450,9 @@ function Tabs:SetActive(index, notify)
         if page.root.hidden then Tooltip.hideContextTooltips(page.content) end
         page._scroll:Refresh()
     end
-    for _, entry in ipairs(self.tabs) do self:_UpdateTab(entry) end
+    for _, entry in ipairs(self.tabs) do
+        self:_UpdateTab(entry)
+    end
     self:_RefreshZOrder()
     if notify ~= false and previous ~= index and self.onChange then
         self.onChange(self, index, tab.value, self.pages[index])
@@ -499,7 +504,9 @@ end
 
 function Tabs:SetScrollable(scrollable)
     self.scrollable = scrollable ~= false
-    for _, page in ipairs(self.pages) do page:SetScrollable(self.scrollable) end
+    for _, page in ipairs(self.pages) do
+        page:SetScrollable(self.scrollable)
+    end
 end
 
 function TabPage:RefreshLayout()
@@ -513,18 +520,24 @@ function TabPage:RefreshRowBackgrounds()
         self._scroll.height,
         self,
         self.rowBackgroundColours,
-        self.rowBackgroundEdgeToEdge)
+        self.rowBackgroundEdgeToEdge
+    )
 end
 
 function Tabs:Destroy()
     if self.root then Tooltip.unregisterContext(self.root) end
-    for _, tab in ipairs(self.tabs) do Tooltip.unbind(tab, "tooltipAttachment") end
+    for _, tab in ipairs(self.tabs) do
+        Tooltip.unbind(tab, "tooltipAttachment")
+    end
     for _, page in ipairs(self.pages) do
         RowBackgrounds.clear(page.rowBackgrounds, page.interfaceID)
         page.rowBackgrounds = {}
         if page.content then Tooltip.unregisterContext(page.content) end
         Layout.destroyManaged(page)
-        if page._scroll then page._scroll:Destroy() page._scroll = nil end
+        if page._scroll then
+            page._scroll:Destroy()
+            page._scroll = nil
+        end
     end
     self.pages = {}
     self.tabs = {}

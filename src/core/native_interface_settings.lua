@@ -74,7 +74,8 @@ local transparency = {
 }
 
 local function anyWatched()
-    return next(lock.watchers) ~= nil or next(transparency.watchers) ~= nil
+    return next(lock.watchers) ~= nil
+        or next(transparency.watchers) ~= nil
         or (canWatchMovement and next(movement.watchers) ~= nil)
 end
 
@@ -83,7 +84,9 @@ local function refresh(setting)
     local value = setting.read()
     if value == setting.value then return end
     setting.value = value
-    for _, callback in pairs(setting.watchers) do callback(value) end
+    for _, callback in pairs(setting.watchers) do
+        callback(value)
+    end
 end
 
 local function onVarTransmit(event)
@@ -136,9 +139,13 @@ function NativeInterfaceSettings.watchMovementLock(owner, callback)
         Settings.watch(movement, onMovementPreferenceChanged)
         if canWatchMovement then Event.Logic.Subscribe(EVENT_ID, pollMovementLock) end
     end
-    watch(movement, owner, function(state)
-        callback(owner, state == "classic" or (state == "modern" and owner.respectInterfaceLock))
-    end)
+    watch(
+        movement,
+        owner,
+        function(state)
+            callback(owner, state == "classic" or (state == "modern" and owner.respectInterfaceLock))
+        end
+    )
 end
 
 function NativeInterfaceSettings.unwatchMovementLock(owner)

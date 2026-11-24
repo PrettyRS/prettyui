@@ -55,17 +55,29 @@ local function loaded(self)
 end
 
 local function placeInitial(self)
-    if not (self._nisAutoX or self._nisAutoY) or self._nisClassic or self._nisHidden
-        or self._nisTopLevelHidden or WorldMap.isSuspended() then return end
+    if
+        not (self._nisAutoX or self._nisAutoY)
+        or self._nisClassic
+        or self._nisHidden
+        or self._nisTopLevelHidden
+        or WorldMap.isSuspended()
+    then
+        return
+    end
     local autoX, autoY = self._nisAutoX, self._nisAutoY
     self._nisAutoX, self._nisAutoY = nil, nil
     if self._nisGroup or self._nisNative or self._nisNativePending then return end
     local root = self.root
     local x, y = RibbonBar.panelPosition(self.parent, root.width, root.height)
     local pos = root.position
-    root:SetPos(autoX and x or pos.x, autoY and y or pos.y,
-        autoX and 0 or pos.xParentPc, autoY and 0 or pos.yParentPc,
-        autoX and 0 or pos.xSelfPc, autoY and 0 or pos.ySelfPc)
+    root:SetPos(
+        autoX and x or pos.x,
+        autoY and y or pos.y,
+        autoX and 0 or pos.xParentPc,
+        autoY and 0 or pos.yParentPc,
+        autoX and 0 or pos.xSelfPc,
+        autoY and 0 or pos.ySelfPc
+    )
     if self.dragBounds then self.dragBounds:RememberPosition() end
     if self._lastBounds then
         self._lastBounds[1], self._lastBounds[2] = root.x, root.y
@@ -75,16 +87,20 @@ local function placeInitial(self)
 end
 
 function NisPanel:OnCleanup(callback)
-    assert(self._contentCleanups and not self._releasingContent,
-        "PrettyUI: NisPanel OnCleanup requires mounted content")
+    assert(
+        self._contentCleanups and not self._releasingContent,
+        "PrettyUI: NisPanel OnCleanup requires mounted content"
+    )
     assert(type(callback) == "function", "PrettyUI: NisPanel OnCleanup requires a function")
     local cleanups = self._contentCleanups
     cleanups[#cleanups + 1] = callback
 end
 
 function NisPanel:Subscribe(event, callback)
-    assert(self._contentCleanups and not self._releasingContent,
-        "PrettyUI: NisPanel Subscribe requires mounted content")
+    assert(
+        self._contentCleanups and not self._releasingContent,
+        "PrettyUI: NisPanel Subscribe requires mounted content"
+    )
     assert(type(callback) == "function", "PrettyUI: NisPanel Subscribe requires a function")
     nextSubscriptionID = nextSubscriptionID + 1
     local key = "prettyui_nis_panel_content_" .. nextSubscriptionID
@@ -111,7 +127,9 @@ function NisPanel:_ReleaseContent()
     end
     if cleanup then release(cleanup) end
     if cleanups then
-        for index = #cleanups, 1, -1 do release(cleanups[index]) end
+        for index = #cleanups, 1, -1 do
+            release(cleanups[index])
+        end
     end
     self.scrollY = scroll.scrollY
     self.scrollable = scroll.scrollable
@@ -160,8 +178,10 @@ local function classicState(self)
     if snapshot then
         local free = snapshot.free
         native = {
-            frame = snapshot.frame, frames = { table.unpack(snapshot.frames) },
-            index = snapshot.index, beforeNative = snapshot.beforeNative,
+            frame = snapshot.frame,
+            frames = { table.unpack(snapshot.frames) },
+            index = snapshot.index,
+            beforeNative = snapshot.beforeNative,
             selected = snapshot.selected,
             free = { x = free.x, y = free.y, width = free.width, height = free.height },
         }
@@ -185,8 +205,14 @@ function NisPanel:_SetClassicMode(enabled)
     self._nisClassicState = saved
     saved.suspended = true
     self:_CancelDrag()
-    if self.resize then self.resize:Cancel(); self.resize:SetEnabled(false) end
-    if self.dragBounds then self.dragBounds:Destroy(); self.dragBounds = nil end
+    if self.resize then
+        self.resize:Cancel()
+        self.resize:SetEnabled(false)
+    end
+    if self.dragBounds then
+        self.dragBounds:Destroy()
+        self.dragBounds = nil
+    end
     local ok, problem = pcall(self._SetClassicHost, self, nil)
     NisGroup.clearPanel(self)
     NisNative.detach(self)
@@ -199,16 +225,36 @@ function NisPanel:_SetClassicMode(enabled)
     if not ok then error(problem, 0) end
 end
 
+local function discardBuildingOverlay(self, component)
+    local overlay = self.overlays[component]
+    if not overlay then return end
+    self.overlays[component] = nil
+    if ui.Interfaces:GetInterface(overlay.interfaceID) ~= nil then
+        pcall(component.Destroy, component)
+    end
+end
+
 function NisPanel:_SyncContent(visible)
     local host = self._nisClassicHost
     if not self._nisClassic and self.surface then host = self.surface.container end
     if self._nisClassic then
-        visible = host ~= nil and not self._nisHidden
+        visible = host ~= nil
+            and not self._nisHidden
             and ui.Interfaces:GetInterface(self._nisClassicHostInterfaceID) ~= nil
     end
-    if not visible then self:_ReleaseContent(); return end
-    if not self._contentReady or self._destroyed or self._buildingContent
-        or self._releasingContent or not loaded(self) then return end
+    if not visible then
+        self:_ReleaseContent()
+        return
+    end
+    if
+        not self._contentReady
+        or self._destroyed
+        or self._buildingContent
+        or self._releasingContent
+        or not loaded(self)
+    then
+        return
+    end
     placeInitial(self)
     if self._scroll then return end
     self._buildingContent = true
@@ -220,7 +266,10 @@ function NisPanel:_SyncContent(visible)
     local ok, problem = pcall(function()
         self._contentHost, self._contentHostInterfaceID = host, host.interfaceID
         Scroll.attach(self, host, {
-            width = 0, height = 0, widthAnchor = 1, heightAnchor = 1,
+            width = 0,
+            height = 0,
+            widthAnchor = 1,
+            heightAnchor = 1,
             contentHeight = self._minimumContentHeight,
             scrollable = self.scrollable,
             scrollStep = self.scrollStep,
@@ -230,7 +279,8 @@ function NisPanel:_SyncContent(visible)
             ownerWindow = self,
             isVisible = function()
                 if classic then
-                    return self._nisClassicHost == host and not self._nisHidden
+                    return self._nisClassicHost == host
+                        and not self._nisHidden
                         and not WorldMap.isSuspended()
                         and ui.Interfaces:GetInterface(self._nisClassicHostInterfaceID) ~= nil
                 end
@@ -242,7 +292,9 @@ function NisPanel:_SyncContent(visible)
                     return hostX + (scrollRoot.x or 0), hostY + (scrollRoot.y or 0)
                 end
                 local rootX, rootY = self.root.x or 0, self.root.y or 0
-                if parentContext then rootX, rootY = parentContext.position(self.root) end
+                if parentContext then
+                    rootX, rootY = parentContext.position(self.root)
+                end
                 return rootX + (self.surface.container.x or 0) + (scrollRoot.x or 0),
                     rootY + (self.surface.container.y or 0) + (scrollRoot.y or 0)
             end,
@@ -258,8 +310,10 @@ function NisPanel:_SyncContent(visible)
         self._contentCleanups = {}
         if self.buildContent then
             local cleanup = self.buildContent(self)
-            assert(cleanup == nil or type(cleanup) == "function",
-                "PrettyUI: NisPanel buildContent must return a cleanup function or nil")
+            assert(
+                cleanup == nil or type(cleanup) == "function",
+                "PrettyUI: NisPanel buildContent must return a cleanup function or nil"
+            )
             self._contentCleanup = cleanup
         end
         self:SetScrollPosition(scrollY)
@@ -270,13 +324,7 @@ function NisPanel:_SyncContent(visible)
         self.interfaceID = self._shellInterfaceID
         pcall(self._ReleaseContent, self)
         for component in pairs(self._buildingOverlays) do
-            local overlay = self.overlays[component]
-            if overlay then
-                self.overlays[component] = nil
-                if ui.Interfaces:GetInterface(overlay.interfaceID) ~= nil then
-                    pcall(component.Destroy, component)
-                end
-            end
+            discardBuildingOverlay(self, component)
         end
         self._buildingOverlays = nil
         self._contentHost, self._contentHostInterfaceID, self._contentInterfaceID = nil, nil, nil
@@ -288,11 +336,15 @@ end
 
 function NisPanel:_SyncDragLayer()
     if not loaded(self) or self.dragLayer == nil then return end
-    local capture = self.dragState and self.dragState.capture == self.dragLayer
-        and self.dragState.captureExpanded
-    local visible = not self._nisClassic and (capture or not self._nisNative
-        and self.root.hidden ~= true and not self.locked
-        and (not self._nisGroup or self._nisGroup.active == self))
+    local capture = self.dragState and self.dragState.capture == self.dragLayer and self.dragState.captureExpanded
+    local visible = not self._nisClassic
+        and (
+            capture
+            or not self._nisNative
+                and self.root.hidden ~= true
+                and not self.locked
+                and (not self._nisGroup or self._nisGroup.active == self)
+        )
     Components.setHidden(self.dragLayer, not visible)
     self.dragLayer.enabled = visible
     if visible and not capture then
@@ -306,24 +358,31 @@ function NisPanel:_SyncOverlays(hidden)
     if not loaded(self) then return end
     local shellHidden = hidden
     if self._nisClassic then
-        hidden = self._nisClassicHost == nil or self._nisHidden or WorldMap.isSuspended()
+        hidden = self._nisClassicHost == nil
+            or self._nisHidden
+            or WorldMap.isSuspended()
             or ui.Interfaces:GetInterface(self._nisClassicHostInterfaceID) == nil
         shellHidden = true
     end
     for component, overlay in pairs(self.overlays) do
         if ui.Interfaces:GetInterface(overlay.interfaceID) ~= nil then
             if not hidden and overlay.layout then overlay.layout() end
-            Components.setHidden(component, hidden or
-                (overlay.isVisible and not overlay.isVisible() or false))
+            Components.setHidden(component, hidden or (overlay.isVisible and not overlay.isVisible() or false))
             if not component.hidden then component:MoveToFront() end
         end
     end
     if self._nisTabs then self._nisTabs:Sync(shellHidden) end
     self:_SyncDragLayer()
     if self.resize then
-        self.resize:SetEnabled(not self._nisClassic and not self._nisNative and not self.locked
-            and not shellHidden and self.dragState == nil and self._nisTabPress == nil
-            and (not self._nisGroup or self._nisGroup.active == self))
+        self.resize:SetEnabled(
+            not self._nisClassic
+                and not self._nisNative
+                and not self.locked
+                and not shellHidden
+                and self.dragState == nil
+                and self._nisTabPress == nil
+                and (not self._nisGroup or self._nisGroup.active == self)
+        )
         self.resize:Refresh()
     end
 end
@@ -343,8 +402,7 @@ end
 
 function NisPanel:_SyncChrome()
     if not loaded(self) then return end
-    local visible = not self._nisClassic and not self._nisNative and not self.locked
-        and self.root.hidden ~= true
+    local visible = not self._nisClassic and not self._nisNative and not self.locked and self.root.hidden ~= true
     Components.setHidden(self.headerLeft, not visible)
     Components.setHidden(self.headerRight, not visible)
     Components.setHidden(self.headerTop, not visible or self.root.width == MIN_WIDTH)
@@ -396,7 +454,9 @@ function NisPanel:_LayoutBody()
     if self._nisClassic or not loaded(self) then return end
     if self._nisNative then
         self.root.clickthrough = false
-        for _, key in ipairs(FRAME_PARTS) do Components.setHidden(self.surface[key], true) end
+        for _, key in ipairs(FRAME_PARTS) do
+            Components.setHidden(self.surface[key], true)
+        end
         Components.setHidden(self.surface.background, true)
         Components.setHidden(self.tabBackground, true)
         Components.setHidden(self.bottomLeftHit, true)
@@ -410,7 +470,9 @@ function NisPanel:_LayoutBody()
         rememberBodyLayout(self)
         return
     end
-    for _, key in ipairs(FRAME_PARTS) do Components.setHidden(self.surface[key], false) end
+    for _, key in ipairs(FRAME_PARTS) do
+        Components.setHidden(self.surface[key], false)
+    end
     Components.setHidden(self.surface.background, false)
     Components.setHidden(self.bottomLeftHit, false)
     Components.setHidden(self.bottomRightHit, false)
@@ -420,7 +482,9 @@ function NisPanel:_LayoutBody()
     local grouped = self._nisGroup ~= nil
     self.root.clickthrough = grouped
     self.surface.background.clickthrough = grouped
-    for _, key in ipairs(FRAME_PARTS) do self.surface[key].clickthrough = not grouped end
+    for _, key in ipairs(FRAME_PARTS) do
+        self.surface[key].clickthrough = not grouped
+    end
     -- Corner artwork extends into the content; only its four-unit edges block input.
     self.surface.bottomLeft.clickthrough = true
     self.surface.bottomRight.clickthrough = true
@@ -476,13 +540,16 @@ function NisPanel:_SetBackgroundTransparency(transparency)
     if loaded(self) then
         self.surface.background.alpha = self.transparencyScale
         self.tabBackground.alpha = self.transparencyScale
-        for _, key in ipairs(FRAME_PARTS) do self.surface[key].alpha = self.transparencyScale end
-        for _, key in ipairs(HEADER_PARTS) do self[key].alpha = self.transparencyScale end
+        for _, key in ipairs(FRAME_PARTS) do
+            self.surface[key].alpha = self.transparencyScale
+        end
+        for _, key in ipairs(HEADER_PARTS) do
+            self[key].alpha = self.transparencyScale
+        end
         self.closeBacking.alpha = self.transparencyScale
         if self._nisTabs then self._nisTabs:SetAlpha(self.transparencyScale) end
     end
 end
-
 
 -- Keep each member's own native surface; grouped geometry is synchronized in Lua.
 function NisPanel:_ApplyRectSingle(x, y, width, height)
@@ -492,9 +559,13 @@ function NisPanel:_ApplyRectSingle(x, y, width, height)
         self.root:SetSize(width, height)
     end
     self.width, self.height = self.root.width, self.root.height
-    if self._bodyWidth ~= self.width or self._bodyHeight ~= self.height
+    if
+        self._bodyWidth ~= self.width
+        or self._bodyHeight ~= self.height
         or self._bodyGrouped ~= (self._nisGroup ~= nil)
-        or self._bodyNative ~= (self._nisNative ~= nil) or self._bodyLocked ~= self.locked then
+        or self._bodyNative ~= (self._nisNative ~= nil)
+        or self._bodyLocked ~= self.locked
+    then
         self:_LayoutBody()
         self:RefreshRowBackgrounds()
     end
@@ -511,18 +582,24 @@ function NisPanel:_ConstrainResize(x, y, width, height, edge)
     if not loaded(self) then return nil end
     local rects = self._resizeRects or {}
     self._resizeRects = rects
-    local ok = pcall(Snap.collect, self, rects, true,
-        id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM)
+    local ok = pcall(Snap.collect, self, rects, true, id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM)
     if not ok then return nil end
     local root = self.root
-    return NisResize.constrain(rects, root.x, root.y, root.width, root.height,
-        x, y, width, height, edge)
+    return NisResize.constrain(rects, root.x, root.y, root.width, root.height, x, y, width, height, edge)
 end
 
 function NisPanel:_NotifyBoundsChange(preserveNative)
-    if self._nisClassic or WorldMap.isSuspended() or not loaded(self) or self._updatingBounds
-        or self.dragState or (self.resize and self.resize.dragState)
-        or self._lastBounds == nil then return end
+    if
+        self._nisClassic
+        or WorldMap.isSuspended()
+        or not loaded(self)
+        or self._updatingBounds
+        or self.dragState
+        or (self.resize and self.resize.dragState)
+        or self._lastBounds == nil
+    then
+        return
+    end
     local root, previous = self.root, self._lastBounds
     local x, y, width, height = root.x, root.y, root.width, root.height
     if previous[1] == x and previous[2] == y and previous[3] == width and previous[4] == height then return end
@@ -553,9 +630,13 @@ function NisPanel:SetSize(width, height)
 end
 
 function NisPanel:_FitContent()
-    self:SetSize(self.width, self.contentHeight +
-        (self.locked and 0 or HEADER_HEIGHT) + BORDER * 2
-        + (self._nisGroup and NisTabs.HEIGHT or 0))
+    self:SetSize(
+        self.width,
+        self.contentHeight
+            + (self.locked and 0 or HEADER_HEIGHT)
+            + BORDER * 2
+            + (self._nisGroup and NisTabs.HEIGHT or 0)
+    )
     self:RefreshRowBackgrounds()
 end
 
@@ -571,8 +652,8 @@ function NisPanel:RefreshRowBackgrounds()
         return
     end
     local host = self._contentHost or self.surface.container
-    self.rowBackgrounds = RowBackgrounds.apply(self.content, host.height, self,
-        self.rowBackgroundColours, self.rowBackgroundEdgeToEdge)
+    self.rowBackgrounds =
+        RowBackgrounds.apply(self.content, host.height, self, self.rowBackgroundColours, self.rowBackgroundEdgeToEdge)
 end
 
 function NisPanel:SetTooltip(value)
@@ -583,52 +664,7 @@ function NisPanel:IsActive()
     return not self._destroyed and not self._nisHidden
 end
 
-function NisPanel:SetActive(active)
-    if not loaded(self) or self._destroyed then return end
-    active = active == true
-    if self._nisClassic then
-        if active then
-            if self._nisHidden then
-                self._nisHidden = false
-                NisPersistence.setActive(self, true, NisGroup)
-                self._nisNativePending = self._nisNativePending or self._nisInactiveNative
-            end
-            RibbonBar.sync(self)
-            return RibbonBar.selectClassic(self, false)
-        end
-        if self._nisHidden then
-            if RibbonBar.isClassicSelected(self) then
-                return RibbonBar.selectClassic(self, true)
-            end
-            return
-        end
-        NisPersistence.capture(self)
-        self._nisInactiveGroup = NisGroup.snapshot(self) or self._nisInactiveGroup
-        self._nisInactiveNative = NisNative.remember(self)
-            or self._nisNativePending or self._nisInactiveNative
-        self._nisHidden = true
-        NisPersistence.setActive(self, false, NisGroup)
-        local ok, problem = pcall(self._ReleaseContent, self)
-        if RibbonBar.isClassicSelected(self) then
-            local collapsed, failure = pcall(RibbonBar.selectClassic, self, true)
-            if not collapsed and ok then ok, problem = false, failure end
-        end
-        if self._nisClassicHost ~= nil then
-            local released, failure = pcall(self._SetClassicHost, self, nil)
-            if not released and ok then ok, problem = false, failure end
-        end
-        NisNative.detach(self)
-        NisGroup.clearPanel(self)
-        NisGroup.undock(self)
-        if loaded(self) then
-            Components.setHidden(self.root, true)
-            self:_SyncChrome()
-            self:_SyncOverlays(true)
-        end
-        RibbonBar.sync(self)
-        if not ok then error(problem, 0) end
-        return
-    end
+local function setModernActive(self, active)
     if active == self:IsActive() then return end
     self:_CancelDrag()
     if self.resize then self.resize:Cancel() end
@@ -668,6 +704,58 @@ function NisPanel:SetActive(active)
     if not ok then error(problem, 0) end
 end
 
+function NisPanel:SetActive(active)
+    if not loaded(self) or self._destroyed then return end
+    active = active == true
+    if self._nisClassic then
+        if active then
+            if self._nisHidden then
+                self._nisHidden = false
+                NisPersistence.setActive(self, true, NisGroup)
+                self._nisNativePending = self._nisNativePending or self._nisInactiveNative
+            end
+            RibbonBar.sync(self)
+            return RibbonBar.selectClassic(self, false)
+        end
+        if self._nisHidden then
+            if RibbonBar.isClassicSelected(self) then
+                return RibbonBar.selectClassic(self, true)
+            end
+            return
+        end
+        NisPersistence.capture(self)
+        self._nisInactiveGroup = NisGroup.snapshot(self) or self._nisInactiveGroup
+        self._nisInactiveNative = NisNative.remember(self) or self._nisNativePending or self._nisInactiveNative
+        self._nisHidden = true
+        NisPersistence.setActive(self, false, NisGroup)
+        local ok, problem = pcall(self._ReleaseContent, self)
+        if RibbonBar.isClassicSelected(self) then
+            local collapsed, failure = pcall(RibbonBar.selectClassic, self, true)
+            if not collapsed and ok then
+                ok, problem = false, failure
+            end
+        end
+        if self._nisClassicHost ~= nil then
+            local released, failure = pcall(self._SetClassicHost, self, nil)
+            if not released and ok then
+                ok, problem = false, failure
+            end
+        end
+        NisNative.detach(self)
+        NisGroup.clearPanel(self)
+        NisGroup.undock(self)
+        if loaded(self) then
+            Components.setHidden(self.root, true)
+            self:_SyncChrome()
+            self:_SyncOverlays(true)
+        end
+        RibbonBar.sync(self)
+        if not ok then error(problem, 0) end
+        return
+    end
+    return setModernActive(self, active)
+end
+
 function NisPanel:Show()
     if not loaded(self) then return end
     if self._nisHidden then return self:SetActive(true) end
@@ -704,7 +792,11 @@ function NisPanel:Close()
     self:SetActive(false)
     if self.onClose then self.onClose(self) end
     if self._destroyed then return end
-    if self.destroyOnClose then self:Destroy() else self:Hide() end
+    if self.destroyOnClose then
+        self:Destroy()
+    else
+        self:Hide()
+    end
 end
 
 function NisPanel:Destroy()
@@ -714,7 +806,9 @@ function NisPanel:Destroy()
     local ok, problem = pcall(RibbonBar.unregister, self)
     self._nisClassicHost, self._nisClassicHostInterfaceID = nil, nil
     local released, releaseProblem = pcall(self._ReleaseContent, self)
-    if not released and ok then ok, problem = false, releaseProblem end
+    if not released and ok then
+        ok, problem = false, releaseProblem
+    end
     WorldMap.unwatch(self)
     self:_CancelDrag()
     NisNative.detach(self)
@@ -724,9 +818,15 @@ function NisPanel:Destroy()
     NativeInterfaceSettings.unwatchLock(self)
     NativeInterfaceSettings.unwatchTransparency(self)
     Snap.unregister(self)
-    if self.resize then self.resize:Destroy(); self.resize = nil end
+    if self.resize then
+        self.resize:Destroy()
+        self.resize = nil
+    end
     self._resizeRects = nil
-    if self.dragBounds then self.dragBounds:Destroy(); self.dragBounds = nil end
+    if self.dragBounds then
+        self.dragBounds:Destroy()
+        self.dragBounds = nil
+    end
     if self._topLevelVisibilityID then Event.Logic.Unsubscribe(self._topLevelVisibilityID) end
     self._topLevelVisibilityID = nil
     if self._resizeHookID and ui.Interfaces:GetInterface(self.interfaceID) ~= nil then
@@ -734,7 +834,10 @@ function NisPanel:Destroy()
     end
     self:_SyncOverlays(true)
     Tooltip.unbind(self)
-    if self._nisTabs then self._nisTabs:Destroy(); self._nisTabs = nil end
+    if self._nisTabs then
+        self._nisTabs:Destroy()
+        self._nisTabs = nil
+    end
     if self.dragLayer then
         InterfaceMouse.EndCapture(self.dragLayer)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.dragLayer:Destroy() end
@@ -846,7 +949,10 @@ function NisPanel:_SyncTopLevelVisibility()
         self:_CancelDrag()
         if self.resize then self.resize:Cancel() end
         self._nisTopLevelBounds = {
-            x = self.root.x, y = self.root.y, width = self.root.width, height = self.root.height,
+            x = self.root.x,
+            y = self.root.y,
+            width = self.root.width,
+            height = self.root.height,
         }
         self._nisTopLevelEnabled = self.root.enabled
         if self.content then Tooltip.hideContextTooltips(self.content) end
@@ -868,7 +974,8 @@ function NisPanel:_SyncTopLevelVisibility()
         NisNative.sync(self)
         return false
     end
-    local visible = not self._nisClassic and not self._nisHidden
+    local visible = not self._nisClassic
+        and not self._nisHidden
         and (not self._nisGroup or self._nisGroup.active == self)
     Components.setHidden(self.root, not visible)
     self.root.enabled = enabled
@@ -904,8 +1011,10 @@ local function buildPanel(parent, options, policy)
     self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
     self.rowBackgrounds = {}
     self.overlays = {}
-    assert(options.buildContent == nil or type(options.buildContent) == "function",
-        "PrettyUI: NisPanel buildContent must be a function")
+    assert(
+        options.buildContent == nil or type(options.buildContent) == "function",
+        "PrettyUI: NisPanel buildContent must be a function"
+    )
     self.buildContent = options.buildContent
     self._contentLayout = options.layout or options.textLayout
     self._minimumContentHeight = options.contentHeight or 0
@@ -980,9 +1089,12 @@ local function buildPanel(parent, options, policy)
     self.closeBacking:SetSize(CLOSE_SIZE, CLOSE_SIZE)
     self.closeSprite = sprite(self.closeButton, art.close)
     self.closeSprite:SetSize(CLOSE_SIZE, CLOSE_SIZE)
-    self.closeButton:Subscribe(ui.Hook.ONMOUSEOVER, function()
-        self.closeSprite.spriteID = art.closeOver
-    end)
+    self.closeButton:Subscribe(
+        ui.Hook.ONMOUSEOVER,
+        function()
+            self.closeSprite.spriteID = art.closeOver
+        end
+    )
     self.closeButton:Subscribe(ui.Hook.ONMOUSELEAVE, function()
         self.closeSprite.spriteID = art.close
     end)
@@ -1004,9 +1116,17 @@ local function buildPanel(parent, options, policy)
     self.dragLayer.clickthrough = false
     Cursor.apply(self.dragLayer, config.Cursor.TOPLEVEL_V2_MOVE, true)
     self.dragLayer:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
-        if not self.locked and not self.dragState and not self._nisTabPress
-            and type(x) == "number" and type(y) == "number"
-            and x >= 0 and x < self.root.width - CLOSE_SIZE and y >= 0 and y < HEADER_HEIGHT then
+        if
+            not self.locked
+            and not self.dragState
+            and not self._nisTabPress
+            and type(x) == "number"
+            and type(y) == "number"
+            and x >= 0
+            and x < self.root.width - CLOSE_SIZE
+            and y >= 0
+            and y < HEADER_HEIGHT
+        then
             self:_BeginDrag(component, x, y)
         end
         return false
@@ -1030,9 +1150,12 @@ local function buildPanel(parent, options, policy)
         return false
     end
     self.dragLayer:Subscribe(ui.Hook.ONRELEASE, release)
-    self.dragLayer:Subscribe(ui.Hook.ONDRAGCOMPLETE, function(component, _, x, y)
-        return release(component, x, y)
-    end)
+    self.dragLayer:Subscribe(
+        ui.Hook.ONDRAGCOMPLETE,
+        function(component, _, x, y)
+            return release(component, x, y)
+        end
+    )
     self:_SyncChrome()
 
     -- DragBounds updates the root before its callback, so this hook must be first.
@@ -1046,11 +1169,16 @@ local function buildPanel(parent, options, policy)
     end)
     self:_CreateDragBounds()
     self.resize = Resize.new(parent, self.root, {
-        minWidth = self.minWidth, minHeight = self.minHeight,
-        maxWidth = self.maxWidth, maxHeight = self.maxHeight,
+        minWidth = self.minWidth,
+        minHeight = self.minHeight,
+        maxWidth = self.maxWidth,
+        maxHeight = self.maxHeight,
         isVisible = function()
-            return not self._nisClassic and not self._nisNative and not self.locked
-                and self.root.hidden ~= true and self.dragState == nil
+            return not self._nisClassic
+                and not self._nisNative
+                and not self.locked
+                and self.root.hidden ~= true
+                and self.dragState == nil
                 and self._nisTabPress == nil
                 and (not self._nisGroup or self._nisGroup.active == self)
         end,
@@ -1065,14 +1193,21 @@ local function buildPanel(parent, options, policy)
             self:_ApplyRect(x, y, width, height)
         end,
         onFinish = function()
-            if self._nisGroup then NisGroup.notify(self) else self:_NotifyBoundsChange() end
+            if self._nisGroup then
+                NisGroup.notify(self)
+            else
+                self:_NotifyBoundsChange()
+            end
         end,
     })
     self:_LayoutBody()
     self:_SyncOverlays(false)
-    NativeInterfaceSettings.watchTransparency(self, function(transparency)
-        self:_SetBackgroundTransparency(transparency)
-    end)
+    NativeInterfaceSettings.watchTransparency(
+        self,
+        function(transparency)
+            self:_SetBackgroundTransparency(transparency)
+        end
+    )
     Snap.register(self)
     NisGroup.register(self)
     NativeInterfaceSettings.watchLock(self, function(locked) self:_SetLocked(locked) end)
@@ -1123,11 +1258,14 @@ function NisPanel.new(parent, options)
     if options == nil and (parent == nil or type(parent) == "table" and parent.interfaceID == nil) then
         options, parent = parent, nil
     end
-    parent = parent or assert(ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA),
-        "PrettyUI: NisPanel requires a loaded GAME_AREA; create it after the game UI is available")
+    parent = parent
+        or assert(
+            ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__GAME_AREA),
+            "PrettyUI: NisPanel requires a loaded GAME_AREA; create it after the game UI is available"
+        )
     options = NisPersistence.prepare(options or {})
-    local policy = Components.checkContentParent(parent,
-        options.categoryID == nil and DEFAULT_CATEGORY_OPTIONS or options)
+    local policy =
+        Components.checkContentParent(parent, options.categoryID == nil and DEFAULT_CATEGORY_OPTIONS or options)
     return Components.withBatch(parent, function()
         return buildPanel(parent, options, policy)
     end)

@@ -30,25 +30,7 @@ local function lineHeight(font, options)
     return BODY_LINE_HEIGHT
 end
 
-local function create(parent, options, isTitle)
-    options = options or {}
-    local width = options.width or 0
-    local widthAnchor = options.widthAnchor
-    if widthAnchor == nil then widthAnchor = width <= 0 and 1.0 or 0 end
-
-    local label = Components.new(ui.Text, parent, options)
-    label:SetPos(
-        options.x or 0,
-        options.y or 0,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
-    label:SetSize(
-        width,
-        options.height or (isTitle and 28 or 24),
-        widthAnchor,
-        options.heightAnchor or 0
-    )
+local function setAppearance(label, options, isTitle)
     label.content = options.text or ""
     label.font = options.font or (isTitle and TITLE_FONT or BODY_FONT)
     label.rgba = options.colour or (isTitle and DEFAULT_TITLE_COLOUR or DEFAULT_TEXT_COLOUR)
@@ -58,6 +40,18 @@ local function create(parent, options, isTitle)
     label.maxLines = options.maxLines or 0
     if options.lineSpacing ~= nil then label.lineSpacing = options.lineSpacing end
     if options.tooltip ~= nil then label.enabled = true end
+end
+
+local function create(parent, options, isTitle)
+    options = options or {}
+    local width = options.width or 0
+    local widthAnchor = options.widthAnchor
+    if widthAnchor == nil then widthAnchor = width <= 0 and 1.0 or 0 end
+
+    local label = Components.new(ui.Text, parent, options)
+    label:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
+    label:SetSize(width, options.height or (isTitle and 28 or 24), widthAnchor, options.heightAnchor or 0)
+    setAppearance(label, options, isTitle)
     Wheel.bind(label, options)
     Tooltip.attach(label, parent, options.tooltip, TOOLTIP_HOVER)
 
@@ -68,7 +62,9 @@ local function textOptions(value)
     if type(value) ~= "table" then return { text = tostring(value or "") } end
 
     local copy = {}
-    for key, option in pairs(value) do copy[key] = option end
+    for key, option in pairs(value) do
+        copy[key] = option
+    end
     return copy
 end
 
@@ -80,9 +76,11 @@ local function bindWrapping(owner, label, options, isTitle)
         local text = label.content
         if width == measuredWidth and text == measuredText then return true end
         local font = fontConfig(label.font, isTitle)
-        local succeeded, count = pcall(function()
-            return font:GetStringLineCount(text, width, false, false, false)
-        end)
+        local succeeded, count = pcall(
+            function()
+                return font:GetStringLineCount(text, width, false, false, false)
+            end
+        )
         if not succeeded then return true end
         measuredWidth, measuredText = width, text
         if label.maxLines > 0 then count = math.min(count, label.maxLines) end

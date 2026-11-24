@@ -40,15 +40,10 @@ function SimpleView.new(parent, options)
     local self = setmetatable(controller, SimpleView)
     self.rowBackgroundColours = options.rowBackgroundColours or options.rowBackgroundColors
     self.rowBackgroundEdgeToEdge = options.rowBackgroundEdgeToEdge == true
-    self.tooltipContext = Tooltip.registerContext(
-        self.content,
-        tooltipParent,
-        function(target)
-            local rootX, rootY = self:_AbsolutePosition()
-            return rootX + (target.x or 0), rootY + (target.y or 0) - self.scrollY
-        end,
-        parentContext
-    )
+    self.tooltipContext = Tooltip.registerContext(self.content, tooltipParent, function(target)
+        local rootX, rootY = self:_AbsolutePosition()
+        return rootX + (target.x or 0), rootY + (target.y or 0) - self.scrollY
+    end, parentContext)
     Layout.configure(self, options.layout or options.textLayout)
     Tooltip.bind(self, self.root, parent, options.tooltip)
     return self
@@ -64,8 +59,8 @@ end
 function SimpleView:RefreshRowBackgrounds()
     if self.rowBackgroundColours == nil and self.rowBackgrounds == nil then return end
     RowBackgrounds.clear(self.rowBackgrounds, self.interfaceID)
-    self.rowBackgrounds = RowBackgrounds.apply(
-        self.content, self.height, self, self.rowBackgroundColours, self.rowBackgroundEdgeToEdge)
+    self.rowBackgrounds =
+        RowBackgrounds.apply(self.content, self.height, self, self.rowBackgroundColours, self.rowBackgroundEdgeToEdge)
 end
 
 function SimpleView:RefreshLayout()

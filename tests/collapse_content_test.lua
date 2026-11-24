@@ -8,26 +8,50 @@ local function moveInRenderOrder(component, front)
     local siblings = component.parent and component.parent.renderOrder
     if not siblings then return end
     for index, sibling in ipairs(siblings) do
-        if sibling == component then table.remove(siblings, index); break end
+        if sibling == component then
+            table.remove(siblings, index)
+            break
+        end
     end
     table.insert(siblings, front and #siblings + 1 or 1, component)
 end
 
 -- Resolve native size anchors on access, including after an ancestor changes size.
 local function component(parent, categoryID, dynamicID)
-    local value = { parent = parent, x = 0, y = 0, hidden = false, subscriptions = {},
-        opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end }, cursorConfig = {} }
-    setmetatable(value, { __index = function(self, key)
-        if key == "width" then return (self.w or 0) + (parent and parent.width or 0) * (self.wa or 0) end
-        if key == "height" then return (self.h or 0) + (parent and parent.height or 0) * (self.ha or 0) end
-    end })
-    function value:SetPos(x, y) self.x, self.y = x, y end
+    local value = {
+        parent = parent,
+        x = 0,
+        y = 0,
+        hidden = false,
+        subscriptions = {},
+        opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
+        cursorConfig = {},
+    }
+    setmetatable(value, {
+        __index = function(self, key)
+            if key == "width" then return (self.w or 0) + (parent and parent.width or 0) * (self.wa or 0) end
+            if key == "height" then return (self.h or 0) + (parent and parent.height or 0) * (self.ha or 0) end
+        end,
+    })
+    function value:SetPos(x, y)
+        self.x, self.y = x, y
+    end
     function value:SetY(y) self.y = y end
-    function value:SetSize(w, h, wa, ha) self.w, self.h, self.wa, self.ha = w, h, wa, ha end
-    function value:SetWidth(w, wa) self.w, self.wa = w, wa end
-    function value:SetHeight(h, ha) self.h, self.ha = h, ha end
-    function value:SetScrollSize(w, h) self.scrollWidth, self.scrollHeight = w, h end
-    function value:SetScrollPos(x, y) self.scrollX, self.scrollY = x, y end
+    function value:SetSize(w, h, wa, ha)
+        self.w, self.h, self.wa, self.ha = w, h, wa, ha
+    end
+    function value:SetWidth(w, wa)
+        self.w, self.wa = w, wa
+    end
+    function value:SetHeight(h, ha)
+        self.h, self.ha = h, ha
+    end
+    function value:SetScrollSize(w, h)
+        self.scrollWidth, self.scrollHeight = w, h
+    end
+    function value:SetScrollPos(x, y)
+        self.scrollX, self.scrollY = x, y
+    end
     function value:Subscribe(hook, name, callback) self.subscriptions[hook] = callback or name end
     function value:Unsubscribe(hook) self.subscriptions[hook] = nil end
     function value:MoveToFront() moveInRenderOrder(self, true) end
@@ -41,8 +65,10 @@ local function component(parent, categoryID, dynamicID)
         parent.renderOrder = siblings
         local position = #siblings + 1
         for index, sibling in ipairs(siblings) do
-            if sibling.categoryID > value.categoryID or
-                (sibling.categoryID == value.categoryID and sibling.dynamicID > value.dynamicID) then
+            if
+                sibling.categoryID > value.categoryID
+                or (sibling.categoryID == value.categoryID and sibling.dynamicID > value.dynamicID)
+            then
                 position = index
                 break
             end
@@ -54,9 +80,12 @@ end
 
 local enum = setmetatable({}, { __index = function(_, key) return key end })
 ui = {
-    Layer = { new = component }, Sprite = { new = component },
-    Text = { new = component }, Rectangle = { new = component },
-    Hook = enum, AlignMode = enum,
+    Layer = { new = component },
+    Sprite = { new = component },
+    Text = { new = component },
+    Rectangle = { new = component },
+    Hook = enum,
+    AlignMode = enum,
 }
 id = { Sprite = enum, Font = enum }
 ui.ObjectQuantityDisplayMode = enum
@@ -107,7 +136,11 @@ controls[#controls + 1] = last
 local function rootOf(control) return control.root or control end
 for index = 2, #controls do
     local previous, current = rootOf(controls[index - 1]), rootOf(controls[index])
-    expect(current.y >= previous.y + previous.height, true, "section control " .. index .. " stacks below the one before")
+    expect(
+        current.y >= previous.y + previous.height,
+        true,
+        "section control " .. index .. " stacks below the one before"
+    )
 end
 expect(section.contentHeight, last.root.y + last.root.height, "the section fits its last control")
 
@@ -121,7 +154,11 @@ local positioned = view:AddCollapseButton("Positioned", { expanded = true })
 positioned:AddSimpleButton("Top", noop)
 local placed = positioned:AddSimpleButton("Placed", noop, { y = 60 })
 local afterPlaced = positioned:AddSimpleButton("After", noop)
-expect(afterPlaced.root.y, placed.root.y + placed.root.height + CONTROL_GAP, "a control placed with y pushes the next down")
+expect(
+    afterPlaced.root.y,
+    placed.root.y + placed.root.height + CONTROL_GAP,
+    "a control placed with y pushes the next down"
+)
 
 -- Destroying a control re-flows the section.
 local removable = view:AddCollapseButton("Removable", { expanded = true })

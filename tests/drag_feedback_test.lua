@@ -18,8 +18,16 @@ end
 
 local function component(parent, kind, categoryID, dynamicID)
     local result = {
-        parent = parent, kind = kind, children = {}, subscriptions = {}, namedSubscriptions = {},
-        x = 0, y = 0, width = 0, height = 0, hidden = false,
+        parent = parent,
+        kind = kind,
+        children = {},
+        subscriptions = {},
+        namedSubscriptions = {},
+        x = 0,
+        y = 0,
+        width = 0,
+        height = 0,
+        hidden = false,
         opConfig = { ClearOpCursors = function() end, SetOpCursor = function() end },
         cursorConfig = {},
     }
@@ -29,7 +37,9 @@ local function component(parent, kind, categoryID, dynamicID)
         self.y = y + ((parent and parent.height or 0) * (yAnchor or 0))
     end
     function result:EmitResize()
-        for _, callback in pairs(self.namedSubscriptions[ui.Hook.ONRESIZE] or {}) do callback(self) end
+        for _, callback in pairs(self.namedSubscriptions[ui.Hook.ONRESIZE] or {}) do
+            callback(self)
+        end
     end
     function result:SetSize(width, height, widthAnchor, heightAnchor)
         self.width = width + ((parent and parent.width or 0) * (widthAnchor or 0))
@@ -78,7 +88,9 @@ local function component(parent, kind, categoryID, dynamicID)
         table.insert(parent.children, 1, self)
     end
     function result:Destroy()
-        while #self.children > 0 do self.children[#self.children]:Destroy() end
+        while #self.children > 0 do
+            self.children[#self.children]:Destroy()
+        end
         removeChild(parent, self)
         self.destroyed = true
     end
@@ -87,18 +99,29 @@ local function component(parent, kind, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent, categoryID, dynamicID)
-        return component(parent, kind, categoryID, dynamicID)
-    end }
+    return {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, kind, categoryID, dynamicID)
+        end,
+    }
 end
 
 ui = {
-    Layer = factory("layer"), Sprite = factory("sprite"),
-    Rectangle = factory("rectangle"), Text = factory("text"),
+    Layer = factory("layer"),
+    Sprite = factory("sprite"),
+    Rectangle = factory("rectangle"),
+    Text = factory("text"),
     Hook = {
-        ONCLICK = 1, ONHOLD = 2, ONDRAG = 3, ONRELEASE = 4,
-        ONDRAGCOMPLETE = 5, ONSCROLLWHEEL = 6, ONMOUSEOVER = 7,
-        ONMOUSELEAVE = 8, ONMOUSEREPEAT = 9, ONRESIZE = 10,
+        ONCLICK = 1,
+        ONHOLD = 2,
+        ONDRAG = 3,
+        ONRELEASE = 4,
+        ONDRAGCOMPLETE = 5,
+        ONSCROLLWHEEL = 6,
+        ONMOUSEOVER = 7,
+        ONMOUSELEAVE = 8,
+        ONMOUSEREPEAT = 9,
+        ONRESIZE = 10,
     },
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
 }
@@ -125,14 +148,18 @@ Keyboard = {
     IsAltDown = function() return altDown end,
 }
 local logicCallbacks = {}
-Event = { Logic = {
-    Subscribe = function(name, callback) logicCallbacks[name] = callback end,
-    Unsubscribe = function(name) logicCallbacks[name] = nil end,
-} }
+Event = {
+    Logic = {
+        Subscribe = function(name, callback) logicCallbacks[name] = callback end,
+        Unsubscribe = function(name) logicCallbacks[name] = nil end,
+    },
+}
 
 local function setAlt(value)
     altDown = value
-    for _, callback in pairs(logicCallbacks) do callback() end
+    for _, callback in pairs(logicCallbacks) do
+        callback()
+    end
 end
 
 local function fire(target, hook, ...)
@@ -152,18 +179,22 @@ end
 
 local function expectClickthrough(root)
     expect(root.clickthrough, true, "feedback must not intercept pointer input")
-    for _, child in ipairs(root.children) do expectClickthrough(child) end
+    for _, child in ipairs(root.children) do
+        expectClickthrough(child)
+    end
 end
 
 local function expectNativeFrame(root, family, message)
     local seenFamily
-    local function visit(component)
-        if component.kind == "sprite" then
-            local actual = component.spriteID:match("^(RS3_FEEDBACK_%u+_FRAME)_%d+$")
+    local function visit(node)
+        if node.kind == "sprite" then
+            local actual = node.spriteID:match("^(RS3_FEEDBACK_%u+_FRAME)_%d+$")
             expect(actual, family, message)
             seenFamily = actual
         end
-        for _, child in ipairs(component.children) do visit(child) end
+        for _, child in ipairs(node.children) do
+            visit(child)
+        end
     end
     visit(root)
     expect(seenFamily, family, message .. " has visible native frame artwork")
@@ -197,8 +228,10 @@ local function startDrag(owner, root, target)
     -- Hook coordinates retain the capture origin when the drag target expands.
     fire(target, ui.Hook.ONHOLD, 49, 32)
     expectRect(root, {
-        x = initial.x + 37, y = initial.y + 23,
-        width = initial.width, height = initial.height,
+        x = initial.x + 37,
+        y = initial.y + 23,
+        width = initial.width,
+        height = initial.height,
     }, "drag moves the surface")
     expectRect(origin, initial, "origin remains at the pre-drag rectangle")
     expectRect(active, rect(root), "active border follows the moved surface")
@@ -206,8 +239,10 @@ local function startDrag(owner, root, target)
 
     fire(target, ui.Hook.ONHOLD, 12, 9)
     expectRect(root, {
-        x = initial.x, y = initial.y,
-        width = initial.width, height = initial.height,
+        x = initial.x,
+        y = initial.y,
+        width = initial.width,
+        height = initial.height,
     }, "drag can reverse direction")
     expectRect(origin, initial, "origin remains stationary after reversing")
     expectRect(active, rect(root), "active border follows reversed movement")
@@ -246,8 +281,11 @@ do
     local feedback = DragFeedback.new(parent, source)
     local original = rect(source)
     feedback:SetTargetRect(400, 444, 120, 200)
-    expectRect(feedback.active, { x = 400, y = 444, width = 120, height = 200 },
-        "explicit destination independently resizes orange")
+    expectRect(
+        feedback.active,
+        { x = 400, y = 444, width = 120, height = 200 },
+        "explicit destination independently resizes orange"
+    )
     expectRect(feedback.origin, original, "explicit destination keeps white fixed")
     expectRect(source, original, "explicit destination does not mutate source")
     source:SetPos(50, 94)
@@ -259,7 +297,11 @@ do
 end
 
 local window = Window.new(parent, {
-    title = "Drag feedback", x = 74, y = 53, width = 340, height = 230,
+    title = "Drag feedback",
+    x = 74,
+    y = 53,
+    width = 340,
+    height = 230,
 })
 simpleClick(window, window.root, window.titleDrag)
 for _, hook in ipairs({ ui.Hook.ONRELEASE, ui.Hook.ONDRAGCOMPLETE }) do
@@ -310,7 +352,8 @@ hidingWindow:Destroy()
 -- and does not. Close then hides the window, or destroys it with destroyOnClose.
 local windowCloses = 0
 local closableWindow = Window.new(parent, {
-    title = "Closable", onClose = function() windowCloses = windowCloses + 1 end,
+    title = "Closable",
+    onClose = function() windowCloses = windowCloses + 1 end,
 })
 closableWindow:Hide()
 expect(windowCloses, 0, "window Hide does not call onClose")
@@ -413,18 +456,28 @@ raisedPanel:Show()
 expect(rootRaisedHidden, false, "Show does not raise the root while it is hidden")
 expect(raisedPanel.dock.root.hidden, false, "Show leaves the root visible")
 expect(isAbove(raisedPanel.dockDragLayer, raisedPanel.dock.root), true, "Show raises the drag layer")
-expect(isAbove(raisedPanel.dockResize.handles.n, raisedPanel.dock.root), true,
-    "Show raises the resize handles")
+expect(isAbove(raisedPanel.dockResize.handles.n, raisedPanel.dock.root), true, "Show raises the resize handles")
 raisedPanel:Show()
-expect(isAbove(raisedPanel.dockDragLayer, raisedPanel.dock.root), true,
-    "Show on a visible panel with Alt held keeps the drag layer on top")
+expect(
+    isAbove(raisedPanel.dockDragLayer, raisedPanel.dock.root),
+    true,
+    "Show on a visible panel with Alt held keeps the drag layer on top"
+)
 raisedPanel:Destroy()
 
 -- A scrollbar drag keeps the mouse while the pointer crosses a resize edge, so its capture stays above the edges.
 local scrolledWindow = Window.new(parent, {
-    title = "Scrolled", x = 60, y = 60, width = 300, height = 200, resizable = true, scrollable = true,
+    title = "Scrolled",
+    x = 60,
+    y = 60,
+    width = 300,
+    height = 200,
+    resizable = true,
+    scrollable = true,
 })
-for index = 1, 12 do scrolledWindow:AddText({ text = "Row " .. index, height = 30 }) end
+for index = 1, 12 do
+    scrolledWindow:AddText({ text = "Row " .. index, height = 30 })
+end
 local thumbCapture = scrolledWindow._scroll.thumbDrag
 expect(thumbCapture.parent, scrolledWindow.resize.handles.e.parent, "the thumb capture is beside the resize edges")
 fire(thumbCapture, ui.Hook.ONCLICK, 1, 1)
@@ -437,15 +490,21 @@ end
 fire(thumbCapture, ui.Hook.ONRELEASE)
 scrolledWindow:Destroy()
 
-local raisedPopout = Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true,
-    popout = true, poppedOut = true })
+local raisedPopout =
+    Panel.new(parent, { x = 60, y = 80, width = 260, height = 140, resizable = true, popout = true, poppedOut = true })
 raisedPopout:Show()
-expect(isAbove(raisedPopout.overlayDragLayer, raisedPopout.overlay.root), true,
-    "Show on a visible popout with Alt held keeps the drag layer on top")
+expect(
+    isAbove(raisedPopout.overlayDragLayer, raisedPopout.overlay.root),
+    true,
+    "Show on a visible popout with Alt held keeps the drag layer on top"
+)
 raisedPopout:SetPoppedOut(false)
 expect(isAbove(raisedPopout.dock.root, raisedPopout.overlay.root), true, "docking raises a standalone panel")
-expect(isAbove(raisedPopout.dockDragLayer, raisedPopout.dock.root), true,
-    "docking with Alt held keeps the drag layer on top")
+expect(
+    isAbove(raisedPopout.dockDragLayer, raisedPopout.dock.root),
+    true,
+    "docking with Alt held keeps the drag layer on top"
+)
 raisedPopout:Destroy()
 
 -- A hidden panel gives up its height in a content flow, as a popped-out one does, and takes
@@ -475,9 +534,17 @@ standalonePanel:Destroy()
 -- A popped-out panel hides its popout, stays hidden when popped in or out, and Show reveals
 -- whichever surface it is on.
 local hidingPopout = Panel.new(parent, {
-    x = 40, y = 60, width = 240, height = 130, popout = true, poppedOut = true,
+    x = 40,
+    y = 60,
+    width = 240,
+    height = 130,
+    popout = true,
+    poppedOut = true,
     overlayParent = overlayParent,
-    popoutX = 150, popoutY = 100, popoutWidth = 280, popoutHeight = 160,
+    popoutX = 150,
+    popoutY = 100,
+    popoutWidth = 280,
+    popoutHeight = 160,
 })
 hidingPopout:Hide()
 expect(hidingPopout.overlay.root.hidden, true, "Hide hides the popout")
@@ -500,7 +567,10 @@ hidingPopout:Destroy()
 -- does not call onClose.
 local panelCloses = 0
 local closablePanel = Panel.new(parent, {
-    x = 50, y = 70, width = 260, height = 140,
+    x = 50,
+    y = 70,
+    width = 260,
+    height = 140,
     onClose = function() panelCloses = panelCloses + 1 end,
 })
 closablePanel:Hide()
@@ -511,7 +581,11 @@ expect(panelCloses, 1, "panel Close calls onClose")
 expect(closablePanel.dock.root.hidden, true, "panel Close hides the panel")
 closablePanel:Destroy()
 local destroyingPanel = Panel.new(parent, {
-    x = 50, y = 70, width = 260, height = 140, destroyOnClose = true,
+    x = 50,
+    y = 70,
+    width = 260,
+    height = 140,
+    destroyOnClose = true,
 })
 setAlt(true)
 feedback = startDrag(destroyingPanel, destroyingPanel.dock.root, destroyingPanel.dockDragLayer)
@@ -519,9 +593,17 @@ destroyingPanel:Close()
 expectRemoved(destroyingPanel, feedback, "destroy-on-close panel")
 
 local popout = Panel.new(parent, {
-    x = 31, y = 48, width = 260, height = 145, popout = true,
-    overlayParent = overlayParent, popoutX = 130, popoutY = 95,
-    popoutWidth = 310, popoutHeight = 180, popoutClickthrough = true,
+    x = 31,
+    y = 48,
+    width = 260,
+    height = 145,
+    popout = true,
+    overlayParent = overlayParent,
+    popoutX = 130,
+    popoutY = 95,
+    popoutWidth = 310,
+    popoutHeight = 180,
+    popoutClickthrough = true,
 })
 feedback = startDrag(popout, popout.dock.root, popout.dockDragLayer)
 popout:SetPoppedOut(true)
@@ -554,13 +636,13 @@ local function exerciseBounds(owner, root, target, bounds, edges)
     local parentWidth, parentHeight = bounds.width, bounds.height
     fire(target, ui.Hook.ONCLICK, 12, 9)
     fire(target, ui.Hook.ONHOLD, 12, 9)
-    local feedback = owner.dragFeedback
+    local currentFeedback = owner.dragFeedback
     local function move(x, y, expectedX, expectedY)
         fire(target, ui.Hook.ONHOLD, x, y)
         expect(root.x, expectedX, "horizontal movement stays inside the containing area")
         expect(root.y, expectedY, "vertical movement stays inside the containing area")
-        expectRect(feedback.active, rect(root), "gold frame follows the clamped surface")
-        expectRect(feedback.origin, initial, "clamping preserves the original reference")
+        expectRect(currentFeedback.active, rect(root), "gold frame follows the clamped surface")
+        expectRect(currentFeedback.origin, initial, "clamping preserves the original reference")
     end
     local maxX, maxY = parentWidth - root.width + edges.right, parentHeight - root.height + edges.bottom
     move(-10000, -10000, -edges.left, -edges.top)
@@ -582,8 +664,13 @@ local function exerciseBounds(owner, root, target, bounds, edges)
 end
 
 local boundedWindow = Window.new(parent, {
-    title = "Bounded window", x = -170, y = -115,
-    xAnchor = 0.5, yAnchor = 0.5, width = 340, height = 230,
+    title = "Bounded window",
+    x = -170,
+    y = -115,
+    xAnchor = 0.5,
+    yAnchor = 0.5,
+    width = 340,
+    height = 230,
 })
 exerciseBounds(boundedWindow, boundedWindow.root, boundedWindow.titleDrag, parent, TITLED_EDGES)
 
@@ -592,8 +679,13 @@ setAlt(true)
 exerciseBounds(boundedPanel, boundedPanel.root, boundedPanel.dockDragLayer, parent)
 
 local boundedPopout = Panel.new(parent, {
-    popout = true, poppedOut = true, overlayParent = overlayParent,
-    popoutX = 100, popoutY = 80, popoutWidth = 310, popoutHeight = 180,
+    popout = true,
+    poppedOut = true,
+    overlayParent = overlayParent,
+    popoutX = 100,
+    popoutY = 80,
+    popoutWidth = 310,
+    popoutHeight = 180,
 }, true)
 exerciseBounds(boundedPopout, boundedPopout.overlay.root, boundedPopout.overlayDragLayer, overlayParent)
 
@@ -603,35 +695,58 @@ local WINDOW_EDGE = 2
 local area = component(nil, "resizing-parent")
 area:SetSize(1000, 700)
 local centered = Window.new(area, {
-    title = "Centered", x = -150, y = -100 + WINDOW_EDGE / 2, xAnchor = 0.5, yAnchor = 0.5,
-    width = 300, height = 200,
+    title = "Centered",
+    x = -150,
+    y = -100 + WINDOW_EDGE / 2,
+    xAnchor = 0.5,
+    yAnchor = 0.5,
+    width = 300,
+    height = 200,
 })
 local edged = Window.new(area, {
-    title = "Edge", x = 700 + WINDOW_EDGE, y = 500 + WINDOW_EDGE, width = 300, height = 200,
+    title = "Edge",
+    x = 700 + WINDOW_EDGE,
+    y = 500 + WINDOW_EDGE,
+    width = 300,
+    height = 200,
 })
 edged:Close()
 local corner = Panel.new(area, { x = 0, y = 0, width = 250, height = 150 })
 local fractional = Panel.new(parent, {
-    popout = true, overlayParent = area, popoutX = 170, popoutY = 390,
-    popoutWidth = 320, popoutHeight = 180,
+    popout = true,
+    overlayParent = area,
+    popoutX = 170,
+    popoutY = 390,
+    popoutWidth = 320,
+    popoutHeight = 180,
 }, true)
 local dockPosition = rect(fractional.dock.root)
 setAlt(false)
 local otherResizeCalls = 0
 area:Subscribe(ui.Hook.ONRESIZE, "consumer", function() otherResizeCalls = otherResizeCalls + 1 end)
 local function expectRelativePlacement()
-    expect(centered.root.x, math.floor((area.width - 300 + WINDOW_EDGE * 2) / 2 + 0.5) - WINDOW_EDGE,
-        "window stays horizontally centered")
-    expect(centered.root.y, math.floor((area.height - 200 + WINDOW_EDGE) / 2 + 0.5),
-        "window stays vertically centered")
+    expect(
+        centered.root.x,
+        math.floor((area.width - 300 + WINDOW_EDGE * 2) / 2 + 0.5) - WINDOW_EDGE,
+        "window stays horizontally centered"
+    )
+    expect(centered.root.y, math.floor((area.height - 200 + WINDOW_EDGE) / 2 + 0.5), "window stays vertically centered")
     expect(centered.titleDrag.x, centered.root.x, "title handle follows relative placement")
     expect(centered.titleDrag.y, centered.root.y, "title handle stays aligned vertically")
     expect(edged.root.x, area.width - 300 + WINDOW_EDGE, "right edge remains attached")
     expect(edged.root.y, area.height - 200 + WINDOW_EDGE, "bottom edge remains attached")
     expect(corner.root.x, 0, "left edge remains attached")
     expect(corner.root.y, 0, "top edge remains attached")
-    expect(fractional.overlay.root.x, math.floor((area.width - 320) / 4 + 0.5), "popout retains quarter-width placement")
-    expect(fractional.overlay.root.y, math.floor((area.height - 180) * 0.75 + 0.5), "popout retains three-quarter-height placement")
+    expect(
+        fractional.overlay.root.x,
+        math.floor((area.width - 320) / 4 + 0.5),
+        "popout retains quarter-width placement"
+    )
+    expect(
+        fractional.overlay.root.y,
+        math.floor((area.height - 180) * 0.75 + 0.5),
+        "popout retains three-quarter-height placement"
+    )
     expectRect(fractional.dock.root, dockPosition, "flow-managed dock is not repositioned")
 end
 area:SetSize(1400, 900)
@@ -652,8 +767,11 @@ for _ = 1, 10 do
 end
 -- An exact fit leaves a window only its edge strips to travel; an undersized area pins its box
 -- to hang past the leading edges.
-for _, size in ipairs({ {300, 200, 0, 1, WINDOW_EDGE}, {100, 80, -WINDOW_EDGE, 0, -WINDOW_EDGE},
-    {0, 0, -WINDOW_EDGE, 0, -WINDOW_EDGE} }) do
+for _, size in ipairs({
+    { 300, 200, 0, 1, WINDOW_EDGE },
+    { 100, 80, -WINDOW_EDGE, 0, -WINDOW_EDGE },
+    { 0, 0, -WINDOW_EDGE, 0, -WINDOW_EDGE },
+}) do
     area:SetSize(size[1], size[2])
     expect(centered.root.x, size[3], "centered window clamps when no horizontal travel remains")
     expect(centered.root.y, size[4], "centered window clamps when no vertical travel remains")
@@ -679,11 +797,14 @@ area:SetSize(1000, 700)
 
 -- An untitled window's top keeps the strip too: its top border is the bottom tile flipped. Only
 -- resizable untitled windows keep their placement, as they can't be dragged.
-local untitled = Window.new(area, { x = -150, y = -100, xAnchor = 0.5, yAnchor = 0.5,
-    width = 300, height = 200, resizable = true })
+local untitled =
+    Window.new(area, { x = -150, y = -100, xAnchor = 0.5, yAnchor = 0.5, width = 300, height = 200, resizable = true })
 area:SetSize(1400, 900)
-expect(untitled.root.y, math.floor((900 - 200 + WINDOW_EDGE * 2) / 2 + 0.5) - WINDOW_EDGE,
-    "an untitled window's vertical travel includes its top strip")
+expect(
+    untitled.root.y,
+    math.floor((900 - 200 + WINDOW_EDGE * 2) / 2 + 0.5) - WINDOW_EDGE,
+    "an untitled window's vertical travel includes its top strip"
+)
 area:SetSize(100, 80)
 expect(untitled.root.x, -WINDOW_EDGE, "an undersized area pins an untitled window's box past the left edge")
 expect(untitled.root.y, -WINDOW_EDGE, "an undersized area pins an untitled window's box past the top edge")
@@ -740,8 +861,13 @@ exerciseRelativeDrag(relativeWindow, relativeWindow.root, relativeWindow.titleDr
 local relativePanel = Panel.new(area, { x = 350, y = 250, width = 300, height = 200 })
 exerciseRelativeDrag(relativePanel, relativePanel.root, relativePanel.dockDragLayer)
 local relativePopout = Panel.new(parent, {
-    popout = true, poppedOut = true, overlayParent = area,
-    popoutX = 350, popoutY = 250, popoutWidth = 300, popoutHeight = 200,
+    popout = true,
+    poppedOut = true,
+    overlayParent = area,
+    popoutX = 350,
+    popoutY = 250,
+    popoutWidth = 300,
+    popoutHeight = 200,
 }, true)
 exerciseRelativeDrag(relativePopout, relativePopout.overlay.root, relativePopout.overlayDragLayer)
 local callsBeforeTeardown = otherResizeCalls
@@ -752,13 +878,23 @@ expect(otherResizeCalls, callsBeforeTeardown + 1, "teardown leaves consumer resi
 local galleryArea = component(nil, "gallery-area")
 galleryArea:SetSize(1000, 700)
 local galleryWindow = Window.new(galleryArea, {
-    title = "Gallery", x = -270, y = -200, xAnchor = 0.5, yAnchor = 0.5,
-    width = 540, height = 400,
+    title = "Gallery",
+    x = -270,
+    y = -200,
+    xAnchor = 0.5,
+    yAnchor = 0.5,
+    width = 540,
+    height = 400,
 })
 local galleryTabs = galleryWindow:AddTabs({ "UI" }, { height = 330 })
 local galleryPanel = galleryTabs:GetPage(1):AddPanel({
-    popout = true, width = 458, height = 154,
-    popoutX = -764, popoutY = -90, popoutXAnchor = 0.5, popoutYAnchor = 0.5,
+    popout = true,
+    width = 458,
+    height = 154,
+    popoutX = -764,
+    popoutY = -90,
+    popoutXAnchor = 0.5,
+    popoutYAnchor = 0.5,
 })
 local dockX, dockY = galleryPanel.dock.root.x, galleryPanel.dock.root.y
 galleryPanel:SetPoppedOut(true)
@@ -793,13 +929,21 @@ liveArea:SetSize(1000, 700)
 local liveWindow = Window.new(liveArea, { title = "Live gallery", width = 540, height = 400 })
 local liveTabs = liveWindow:AddTabs({ "UI" }, { height = 330 })
 local livePanel = liveTabs:GetPage(1):AddPanel({
-    popout = true, poppedOut = true, width = 300, height = 200,
-    popoutX = -150, popoutY = -100, popoutXAnchor = 0.5, popoutYAnchor = 0.5,
+    popout = true,
+    poppedOut = true,
+    width = 300,
+    height = 200,
+    popoutX = -150,
+    popoutY = -100,
+    popoutXAnchor = 0.5,
+    popoutYAnchor = 0.5,
 })
 expect(livePanel.overlayParent, liveArea, "nested gallery popout uses the game-area viewport")
 setAlt(false)
 local function tickPanels()
-    for _, callback in pairs(logicCallbacks) do callback() end
+    for _, callback in pairs(logicCallbacks) do
+        callback()
+    end
 end
 liveArea:EmitResize()
 liveArea.width, liveArea.height = 600, 400
@@ -845,8 +989,8 @@ local function exercisePositionCallback(create, poppedOut)
     local events = {}
     local owner, root, target
     local destroyOnChange = false
-    local function onPositionChange(component, x, y, overlay)
-        expect(component, owner, "position callback receives the PrettyUI owner")
+    local function onPositionChange(changedOwner, x, y, overlay)
+        expect(changedOwner, owner, "position callback receives the PrettyUI owner")
         expect(root.x, x, "callback observes the final horizontal position")
         expect(root.y, y, "callback observes the final vertical position")
         expect(owner.dragFeedback, nil, "drag feedback is removed before notifying")
@@ -966,9 +1110,12 @@ local function exercisePositionCallback(create, poppedOut)
     if cleanup then cleanup() end
 
     setAlt(true)
-    local cancelled, _, cancelTarget, cancelCleanup = create(callbackArea, function()
-        error("destroying an active drag must not notify")
-    end)
+    local cancelled, _, cancelTarget, cancelCleanup = create(
+        callbackArea,
+        function()
+            error("destroying an active drag must not notify")
+        end
+    )
     fire(cancelTarget, ui.Hook.ONCLICK, 12, 9)
     fire(cancelTarget, ui.Hook.ONHOLD, 12, 9)
     fire(cancelTarget, ui.Hook.ONHOLD, 49, 32)
@@ -977,27 +1124,44 @@ local function exercisePositionCallback(create, poppedOut)
 end
 
 setAlt(true)
-exercisePositionCallback(function(area, onPositionChange)
-    local owner = Window.new(area, {
-        title = "Position callback", x = -150, y = -100,
-        xAnchor = 0.5, yAnchor = 0.5, width = 300, height = 200,
+exercisePositionCallback(function(callbackArea, onPositionChange)
+    local owner = Window.new(callbackArea, {
+        title = "Position callback",
+        x = -150,
+        y = -100,
+        xAnchor = 0.5,
+        yAnchor = 0.5,
+        width = 300,
+        height = 200,
         onPositionChange = onPositionChange,
     })
     return owner, owner.root, owner.titleDrag
 end, nil)
-exercisePositionCallback(function(area, onPositionChange)
-    local owner = Panel.new(area, {
-        x = -150, y = -100, xAnchor = 0.5, yAnchor = 0.5,
-        width = 300, height = 200, onPositionChange = onPositionChange,
+exercisePositionCallback(function(callbackArea, onPositionChange)
+    local owner = Panel.new(callbackArea, {
+        x = -150,
+        y = -100,
+        xAnchor = 0.5,
+        yAnchor = 0.5,
+        width = 300,
+        height = 200,
+        onPositionChange = onPositionChange,
     })
     return owner, owner.root, owner.dockDragLayer
 end, false)
-exercisePositionCallback(function(area, onPositionChange)
-    local host = Window.new(area, { title = "Panel host" })
+exercisePositionCallback(function(callbackArea, onPositionChange)
+    local host = Window.new(callbackArea, { title = "Panel host" })
     local owner = host:AddPanel({
-        popout = true, poppedOut = true, popoutClickthrough = true,
-        popoutX = -150, popoutY = -100, popoutXAnchor = 0.5, popoutYAnchor = 0.5,
-        width = 300, height = 200, onPositionChange = onPositionChange,
+        popout = true,
+        poppedOut = true,
+        popoutClickthrough = true,
+        popoutX = -150,
+        popoutY = -100,
+        popoutXAnchor = 0.5,
+        popoutYAnchor = 0.5,
+        width = 300,
+        height = 200,
+        onPositionChange = onPositionChange,
     })
     return owner, owner.overlay.root, owner.overlayDragLayer, function() host:Destroy() end
 end, true)
@@ -1008,10 +1172,13 @@ local function unexpectedUnloadCallback()
     error("unloading an active drag must not notify")
 end
 local unloadWindow = Window.new(unloadArea, {
-    title = "Unload", onPositionChange = unexpectedUnloadCallback,
+    title = "Unload",
+    onPositionChange = unexpectedUnloadCallback,
 })
 local unloadPanel = Panel.new(unloadArea, {
-    popout = true, poppedOut = true, onPositionChange = unexpectedUnloadCallback,
+    popout = true,
+    poppedOut = true,
+    onPositionChange = unexpectedUnloadCallback,
 })
 startDrag(unloadWindow, unloadWindow.root, unloadWindow.titleDrag)
 startDrag(unloadPanel, unloadPanel.overlay.root, unloadPanel.overlayDragLayer)
@@ -1033,10 +1200,16 @@ local legacyOwner = Components.new(ui.Layer, autoPhysicalHost, {
 })
 legacyOwner:SetSize(90, 65)
 local legacyFrames = DragFeedback.new(autoPhysicalHost, legacyOwner)
-expect(legacyFrames.active.categoryID, autoPhysicalHost.categoryID,
-    "legacy owner overrides an auto physical overlay for the final frame")
-expect(Components.new(ui.Layer, autoPhysicalHost).categoryID > 0, true,
-    "detached feedback does not relabel the shared auto physical host")
+expect(
+    legacyFrames.active.categoryID,
+    autoPhysicalHost.categoryID,
+    "legacy owner overrides an auto physical overlay for the final frame"
+)
+expect(
+    Components.new(ui.Layer, autoPhysicalHost).categoryID > 0,
+    true,
+    "detached feedback does not relabel the shared auto physical host"
+)
 legacyFrames:Destroy()
 autoOwner:Destroy()
 legacyOwner:Destroy()

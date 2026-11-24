@@ -32,8 +32,7 @@ local function inputIsClipped(controller, root)
     local height = root.height or 0
     while controller do
         top = top - controller.scrollY
-        if (controller.isVisible and not controller.isVisible()) or
-            top < 0 or top + height > controller.height then
+        if (controller.isVisible and not controller.isVisible()) or top < 0 or top + height > controller.height then
             return true
         end
         local parent = controller.parentScroll
@@ -99,18 +98,8 @@ local function buildScroll(parent, options)
 
     self.root = Components.newContent(parent, options)
     self.interfaceID = self.root.interfaceID
-    self.root:SetPos(
-        options.x or 0,
-        options.y or 0,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
-    self.root:SetSize(
-        options.width or 300,
-        options.height or 240,
-        options.widthAnchor or 0,
-        options.heightAnchor or 0
-    )
+    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
+    self.root:SetSize(options.width or 300, options.height or 240, options.widthAnchor or 0, options.heightAnchor or 0)
     self.root.clickthrough = self.clickthrough
 
     self.viewport = Components.newContent(self.root)
@@ -180,11 +169,15 @@ local function buildScroll(parent, options)
     self.thumbDrag.enabled = not self.clickthrough
     self.thumbDrag:MoveToFront()
     if self.ownerWindow then
-        self.ownerWindow:_RegisterOverlay(self.thumbDrag, function()
-            return self:_ShouldShow()
-        end, function()
-            self:_LayoutThumbDrag()
-        end)
+        self.ownerWindow:_RegisterOverlay(
+            self.thumbDrag,
+            function()
+                return self:_ShouldShow()
+            end,
+            function()
+                self:_LayoutThumbDrag()
+            end
+        )
     end
 
     self.thumbDrag:Subscribe(ui.Hook.ONCLICK, function(component, x, y)
@@ -195,9 +188,12 @@ local function buildScroll(parent, options)
         self.thumbCaptureExpanded = false
         return false
     end)
-    self.thumbDrag:Subscribe(ui.Hook.ONHOLD, function(component, x, y)
-        return self:_UpdateDrag(component, x, y)
-    end)
+    self.thumbDrag:Subscribe(
+        ui.Hook.ONHOLD,
+        function(component, x, y)
+            return self:_UpdateDrag(component, x, y)
+        end
+    )
     self.thumbDrag:Subscribe(ui.Hook.ONRELEASE, function() return self:_StopDrag() end)
     self.thumbDrag:Subscribe(ui.Hook.ONDRAGCOMPLETE, function() return self:_StopDrag() end)
 
@@ -229,7 +225,11 @@ local function buildScroll(parent, options)
 
     self:Refresh()
     WorldMap.watch(self, function(suspended)
-        if suspended then self:_StopDrag() else self:Refresh() end
+        if suspended then
+            self:_StopDrag()
+        else
+            self:Refresh()
+        end
     end)
     return self
 end
@@ -255,7 +255,9 @@ end
 -- viewport, scrollbar, and shared public state.
 function Scroll.attach(owner, parent, options)
     local attachedOptions = {}
-    for key, value in pairs(options or {}) do attachedOptions[key] = value end
+    for key, value in pairs(options or {}) do
+        attachedOptions[key] = value
+    end
     local afterLayout = attachedOptions.onLayout
     attachedOptions.onLayout = function(controller)
         syncOwner(owner, controller)
@@ -317,12 +319,13 @@ function Scroll:_RefreshClipTargets()
             target:_SetContentClipped(inputIsClipped(self, root))
         end
     end
-    for child in pairs(self.childScrolls) do child:_RefreshClipTargets() end
+    for child in pairs(self.childScrolls) do
+        child:_RefreshClipTargets()
+    end
 end
 
 function Scroll:_ShouldShow()
-    return self.scrollbarVisible and
-        (self.isVisible == nil or self.isVisible() == true)
+    return self.scrollbarVisible and (self.isVisible == nil or self.isVisible() == true)
 end
 
 function Scroll:_AbsolutePosition()
@@ -331,9 +334,16 @@ function Scroll:_AbsolutePosition()
 end
 
 function Scroll:_LayoutThumbDrag()
-    if self.thumbDrag == nil or self.root == nil or self.track == nil or self.thumb == nil or
-        ui.Interfaces:GetInterface(self.interfaceID) == nil or
-        ui.Interfaces:GetInterface(self.overlayInterfaceID) == nil then return end
+    if
+        self.thumbDrag == nil
+        or self.root == nil
+        or self.track == nil
+        or self.thumb == nil
+        or ui.Interfaces:GetInterface(self.interfaceID) == nil
+        or ui.Interfaces:GetInterface(self.overlayInterfaceID) == nil
+    then
+        return
+    end
     -- The first ONHOLD expands this layer across the overlay parent so later
     -- events continue outside the scrollbar. Window overlay synchronization can
     -- run during SetScrollPosition; do not collapse the active capture back onto
@@ -356,10 +366,7 @@ function Scroll:_Layout()
     self.contentHeight = self.requestedContentHeight
     self.scrollHeight = math.max(self.contentHeight, self.height)
     self.scrollbarVisible = self.scrollable and self.requestedContentHeight > self.height
-    self.contentWidth = math.max(
-        1,
-        self.width - (self.scrollbarVisible and BAR_WIDTH + BAR_GAP or 0)
-    )
+    self.contentWidth = math.max(1, self.width - (self.scrollbarVisible and BAR_WIDTH + BAR_GAP or 0))
     self.trackHeight = math.max(1, self.height - ARROW_SIZE * 2)
     self.thumbHeight = clamp(
         math.floor(self.trackHeight * self.height / self.scrollHeight),
@@ -379,8 +386,12 @@ function Scroll:_Layout()
     Components.setHidden(self.upArrow, not self.scrollbarVisible)
     Components.setHidden(self.downArrow, not self.scrollbarVisible)
     if previousContentWidth ~= nil and previousContentWidth ~= self.contentWidth then
-        for target in pairs(self.widthTargets) do target:_OnContentWidthChanged() end
-        for child in pairs(self.childScrolls) do child:Refresh() end
+        for target in pairs(self.widthTargets) do
+            target:_OnContentWidthChanged()
+        end
+        for child in pairs(self.childScrolls) do
+            child:Refresh()
+        end
     end
     self:SetScrollPosition(self.scrollY)
 end
@@ -432,10 +443,11 @@ function Scroll:_UpdateDrag(component, x, y)
         local thumbTravel = self.trackHeight - self.thumbHeight
         local maxScroll = self.scrollHeight - self.height
         if thumbTravel > 0 then
-            local nextPosition = clamp(math.floor(
-                self.dragStart.scrollY +
-                (mouse.y - self.dragStart.mouseY) * maxScroll / thumbTravel
-            ), 0, maxScroll)
+            local nextPosition = clamp(
+                math.floor(self.dragStart.scrollY + (mouse.y - self.dragStart.mouseY) * maxScroll / thumbTravel),
+                0,
+                maxScroll
+            )
             if nextPosition ~= self.scrollY then
                 self:SetScrollPosition(nextPosition)
                 self.thumbDrag:MoveToFront()
@@ -506,7 +518,9 @@ function Scroll:Destroy()
         self.parentScroll.childScrolls[self] = nil
         self.parentScroll = nil
     end
-    for child in pairs(self.childScrolls) do child.parentScroll = nil end
+    for child in pairs(self.childScrolls) do
+        child.parentScroll = nil
+    end
     self.childScrolls = {}
     if self.thumbDrag then
         WorldMap.untrack(self.thumbDrag)

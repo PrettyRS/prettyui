@@ -27,7 +27,9 @@ local nextInstanceID = 0
 local function copyOptions(value)
     local copy = {}
     if type(value) == "table" then
-        for key, option in pairs(value) do copy[key] = option end
+        for key, option in pairs(value) do
+            copy[key] = option
+        end
     end
     return copy
 end
@@ -58,9 +60,11 @@ local function measure(text, options, customContent, paddingX, paddingY)
         height = (options.contentHeight or DEFAULT_CONTENT_HEIGHT) + paddingY * 2
     end
     if height == nil then
-        local succeeded, textHeight = pcall(function()
-            return font:GetStringHeightAndLineCount(text, contentWidth, font.baseline, false, false, false)
-        end)
+        local succeeded, textHeight = pcall(
+            function()
+                return font:GetStringHeightAndLineCount(text, contentWidth, font.baseline, false, false, false)
+            end
+        )
         if succeeded then
             height = textHeight + paddingY * 2
         else
@@ -142,11 +146,35 @@ local function resize(self, width, height)
     self.bottomRight:SetPos(width - CORNER_SIZE, height - CORNER_SIZE)
 end
 
+local function mountContent(self, options)
+    self.content = Components.newContent(self.root)
+    self.content:SetPos(self.paddingX, self.paddingY)
+    self.content:SetSize(-self.paddingX * 2, -self.paddingY * 2, 1.0, 1.0)
+    self.content.clickthrough = options.clickthrough ~= false
+    self.content.enabled = options.clickthrough == false
+    self.contentWidth = self.width - self.paddingX * 2
+    self.contentHeight = self.height - self.paddingY * 2
+
+    if self.buildContent then
+        self.contentResult = self.buildContent(self, self.content)
+    elseif self.hasText then
+        self.label = Components.new(ui.Text, self.content)
+        self.label:SetSize(0, 0, 1.0, 1.0)
+        self.label.content = self.text
+        self.label.font = options.font or id.Font.MUSEO_SANS_13PT_BOLD
+        self.label.rgba = options.colour or TEXT_COLOUR
+        self.label.maxLines = 0
+        self.label.alignHorizontal = options.alignHorizontal or ui.AlignMode.CENTRE
+        self.label.alignVertical = options.alignVertical or ui.AlignMode.CENTRE
+        self.label.isShadowed = options.shadowed ~= false
+        self.label.clickthrough = true
+    end
+end
+
 local function buildAnchoredTooltip(parent, options)
     if parent == nil then error("AnchoredTooltip requires a parent component collection") end
     options = options or {}
-    if options.npc == nil and options.loc == nil and options.position == nil and
-        options.anchor == nil then
+    if options.npc == nil and options.loc == nil and options.position == nil and options.anchor == nil then
         error("AnchoredTooltip requires npc, loc, position, or anchor")
     end
 
@@ -172,13 +200,7 @@ local function buildAnchoredTooltip(parent, options)
     self.hasText = options.text ~= nil
     self.text = tostring(options.text or "")
     local customContent = self.buildContent ~= nil or not self.hasText
-    self.width, self.height = measure(
-        self.text,
-        options,
-        customContent,
-        self.paddingX,
-        self.paddingY
-    )
+    self.width, self.height = measure(self.text, options, customContent, self.paddingX, self.paddingY)
 
     self.interfaceID = parent.interfaceID
     self.root = Components.newContent(parent, options)
@@ -188,10 +210,7 @@ local function buildAnchoredTooltip(parent, options)
 
     self.background = Components.new(ui.Rectangle, self.root)
     self.background:SetPos(EDGE_SIZE, EDGE_SIZE)
-    self.background:SetSize(
-        self.width - EDGE_SIZE * 2,
-        self.height - EDGE_SIZE * 2
-    )
+    self.background:SetSize(self.width - EDGE_SIZE * 2, self.height - EDGE_SIZE * 2)
     self.background.fill = true
     self.background.rgba = options.backgroundColour or BACKGROUND_COLOUR
     self.background.alpha = options.backgroundAlpha or DEFAULT_BACKGROUND_ALPHA
@@ -199,28 +218,7 @@ local function buildAnchoredTooltip(parent, options)
 
     createBorder(self)
 
-    self.content = Components.newContent(self.root)
-    self.content:SetPos(self.paddingX, self.paddingY)
-    self.content:SetSize(-self.paddingX * 2, -self.paddingY * 2, 1.0, 1.0)
-    self.content.clickthrough = options.clickthrough ~= false
-    self.content.enabled = options.clickthrough == false
-    self.contentWidth = self.width - self.paddingX * 2
-    self.contentHeight = self.height - self.paddingY * 2
-
-    if self.buildContent then
-        self.contentResult = self.buildContent(self, self.content)
-    elseif self.hasText then
-        self.label = Components.new(ui.Text, self.content)
-        self.label:SetSize(0, 0, 1.0, 1.0)
-        self.label.content = self.text
-        self.label.font = options.font or id.Font.MUSEO_SANS_13PT_BOLD
-        self.label.rgba = options.colour or TEXT_COLOUR
-        self.label.maxLines = 0
-        self.label.alignHorizontal = options.alignHorizontal or ui.AlignMode.CENTRE
-        self.label.alignVertical = options.alignVertical or ui.AlignMode.CENTRE
-        self.label.isShadowed = options.shadowed ~= false
-        self.label.clickthrough = true
-    end
+    mountContent(self, options)
 
     self:Update()
     Event.Logic.Subscribe(self.eventID, function()
@@ -275,13 +273,17 @@ function AnchoredTooltip:_ResolveScreenPosition()
     if self.position then return ScreenConvert.Vector3ToScreen(self.position) end
     if self.loc then
         local height = self.heightAboveGround or DEFAULT_LOC_HEIGHT
-        local succeeded, screenPosition = pcall(function()
-            return ScreenConvert.CoordGridToScreen(self.loc, height)
-        end)
+        local succeeded, screenPosition = pcall(
+            function()
+                return ScreenConvert.CoordGridToScreen(self.loc, height)
+            end
+        )
         if succeeded and screenPosition ~= nil then return screenPosition end
-        succeeded, screenPosition = pcall(function()
-            return ScreenConvert.CoordFineToScreen(self.loc, height)
-        end)
+        succeeded, screenPosition = pcall(
+            function()
+                return ScreenConvert.CoordFineToScreen(self.loc, height)
+            end
+        )
         if succeeded then return screenPosition end
     end
     return nil
@@ -301,8 +303,12 @@ function AnchoredTooltip:Update()
 
     local parentWidth = self.parent.width or 0
     local parentHeight = self.parent.height or 0
-    if screenPosition.x < 0 or screenPosition.y < 0 or
-        screenPosition.x > parentWidth or screenPosition.y > parentHeight then
+    if
+        screenPosition.x < 0
+        or screenPosition.y < 0
+        or screenPosition.x > parentWidth
+        or screenPosition.y > parentHeight
+    then
         Components.setHidden(self.root, true)
         return false
     end
@@ -323,13 +329,7 @@ function AnchoredTooltip:SetText(text)
     self.text = tostring(text or "")
     self.options.text = self.text
     self.label.content = self.text
-    local width, height = measure(
-        self.text,
-        self.options,
-        false,
-        self.paddingX,
-        self.paddingY
-    )
+    local width, height = measure(self.text, self.options, false, self.paddingX, self.paddingY)
     resize(self, width, height)
     self:Update()
     return true

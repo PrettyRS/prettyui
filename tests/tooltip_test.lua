@@ -47,17 +47,23 @@ parent.height = 400
 ui = {
     Hook = { ONMOUSEOVER = 1, ONMOUSELEAVE = 2, ONMOUSEREPEAT = 3 },
     AlignMode = { TOPLEFT = 1, CENTRE = 2 },
-    Layer = { new = function(owner, categoryID, dynamicID)
-        return component(owner, categoryID, dynamicID)
-    end },
-    Sprite = { new = function(owner, categoryID, dynamicID)
-        return component(owner, categoryID, dynamicID)
-    end },
-    Text = { new = function(owner, categoryID, dynamicID)
-        local label = component(owner, categoryID, dynamicID)
-        label.enabled = false
-        return label
-    end },
+    Layer = {
+        new = function(owner, categoryID, dynamicID)
+            return component(owner, categoryID, dynamicID)
+        end,
+    },
+    Sprite = {
+        new = function(owner, categoryID, dynamicID)
+            return component(owner, categoryID, dynamicID)
+        end,
+    },
+    Text = {
+        new = function(owner, categoryID, dynamicID)
+            local label = component(owner, categoryID, dynamicID)
+            label.enabled = false
+            return label
+        end,
+    },
 }
 
 id = {
@@ -183,11 +189,11 @@ expect(Tooltip.unbind(owner), true, "bindings can be destroyed")
 expect(Tooltip.set(owner, "Ignored"), false, "destroyed bindings reject updates")
 
 -- Dispatch hover only to input-enabled text, rather than calling Show directly.
-local function dispatchMouse(target, hook, x, y)
-    if target.enabled == false or target.hidden then return end
+local function dispatchMouse(hoverTarget, hook, x, y)
+    if hoverTarget.enabled == false or hoverTarget.hidden then return end
     local prefix = tostring(hook) .. ":"
-    for key, callback in pairs(target.subscriptions) do
-        if key:sub(1, #prefix) == prefix then callback(target, x, y) end
+    for key, callback in pairs(hoverTarget.subscriptions) do
+        if key:sub(1, #prefix) == prefix then callback(hoverTarget, x, y) end
     end
 end
 
@@ -199,9 +205,13 @@ textContent.width = 400
 local textOwner = setmetatable({ content = textContent, contentWidth = 400 }, { __index = Host })
 require("src/core/layout").configure(textOwner)
 local textOriginY, scrollY = 100, 20
-Tooltip.registerContext(textContent, parent, function(label)
-    return label.x + 180, label.y + textOriginY - scrollY
-end)
+Tooltip.registerContext(
+    textContent,
+    parent,
+    function(label)
+        return label.x + 180, label.y + textOriginY - scrollY
+    end
+)
 local childCount = #parent.children
 local label = textOwner:AddText({ text = "Hover me", width = 400, tooltip = "Text details" })
 expect(#parent.children, childCount, "text tooltip builds nothing until hovered")
@@ -210,26 +220,42 @@ local textOverlay = parent.children[#parent.children]
 expect(textOverlay.hidden, false, "hovering flow text shows its tooltip")
 local cursorX = label.x + 180 + 12
 local cursorY = label.y + textOriginY - scrollY + 4
-expect(textOverlay.x > cursorX and textOverlay.x < cursorX + 24, true,
-    "wide text anchors its tooltip near the cursor, not the row edge")
+expect(
+    textOverlay.x > cursorX and textOverlay.x < cursorX + 24,
+    true,
+    "wide text anchors its tooltip near the cursor, not the row edge"
+)
 expect(textOverlay.y, cursorY, "cursor placement uses the scrolled overlay coordinate space")
 dispatchMouse(label, ui.Hook.ONMOUSEREPEAT, 50, 8)
-expect(textOverlay.x > cursorX + 38 and textOverlay.x < cursorX + 62, true,
-    "tooltip follows cursor movement within the text")
+expect(
+    textOverlay.x > cursorX + 38 and textOverlay.x < cursorX + 62,
+    true,
+    "tooltip follows cursor movement within the text"
+)
 scrollY = 40
 dispatchMouse(label, ui.Hook.ONMOUSEREPEAT, 50, 8)
-expect(textOverlay.y, label.y + textOriginY - scrollY + 8,
-    "cursor placement follows changes in the scroll context")
+expect(textOverlay.y, label.y + textOriginY - scrollY + 8, "cursor placement follows changes in the scroll context")
 dispatchMouse(label, ui.Hook.ONMOUSEREPEAT, 390, 8)
-expect(textOverlay.x + textOverlay.width < label.x + 180 + 390, true,
-    "tooltip flips left when the cursor is near the right edge")
+expect(
+    textOverlay.x + textOverlay.width < label.x + 180 + 390,
+    true,
+    "tooltip flips left when the cursor is near the right edge"
+)
 textOriginY = 400
 dispatchMouse(label, ui.Hook.ONMOUSEREPEAT, 12, 8)
-expect(textOverlay.y + textOverlay.height < label.y + textOriginY - scrollY + 8, true,
-    "tooltip flips above when the cursor is near the bottom edge")
-expect(textOverlay.x >= 0 and textOverlay.x + textOverlay.width <= parent.width
-    and textOverlay.y >= 0 and textOverlay.y + textOverlay.height <= parent.height, true,
-    "cursor-aligned tooltip stays inside the overlay parent")
+expect(
+    textOverlay.y + textOverlay.height < label.y + textOriginY - scrollY + 8,
+    true,
+    "tooltip flips above when the cursor is near the bottom edge"
+)
+expect(
+    textOverlay.x >= 0
+        and textOverlay.x + textOverlay.width <= parent.width
+        and textOverlay.y >= 0
+        and textOverlay.y + textOverlay.height <= parent.height,
+    true,
+    "cursor-aligned tooltip stays inside the overlay parent"
+)
 Tooltip.hideContextTooltips(textContent)
 expect(textOverlay.destroyed, true, "hiding the context releases its tooltip")
 childCount = #parent.children
@@ -260,10 +286,7 @@ Tooltip.unregisterContext(textContent)
 expect(textOverlay.destroyed, true, "destroying the text context removes its visible tooltip")
 
 local contextCollection = component()
-local context = Tooltip.registerContext(
-    contextCollection,
-    parent,
-    function(item) return item.x, item.y end)
+local context = Tooltip.registerContext(contextCollection, parent, function(item) return item.x, item.y end)
 local contextTarget = component()
 contextTarget.width = 20
 contextTarget.height = 20
@@ -271,11 +294,7 @@ local contextTooltip = Tooltip.attach(contextTarget, contextCollection, "Context
 contextTooltip:Show()
 
 local childCollection = component()
-Tooltip.registerContext(
-    childCollection,
-    parent,
-    function(item) return item.x, item.y end,
-    context)
+Tooltip.registerContext(childCollection, parent, function(item) return item.x, item.y end, context)
 local childTarget = component()
 childTarget.width = 20
 childTarget.height = 20
@@ -298,8 +317,11 @@ local legacyOwner = Components.new(ui.Layer, parent)
 local legacyTarget = Components.new(ui.Layer, legacyOwner)
 local autoOverlay = Components.new(ui.Layer, parent, { categoryID = "auto" })
 local legacyTooltip = Tooltip.attach(legacyTarget, autoOverlay, "Legacy on auto overlay")
-expect(legacyTooltip.label.categoryID, 0,
-    "legacy tooltip decorations do not inherit the unrelated auto overlay's policy")
+expect(
+    legacyTooltip.label.categoryID,
+    0,
+    "legacy tooltip decorations do not inherit the unrelated auto overlay's policy"
+)
 legacyTooltip:Destroy()
 local invalidOverlay = Components.new(ui.Layer, autoOverlay)
 local beforeInvalid = #invalidOverlay.children
@@ -310,22 +332,21 @@ expect(#invalidOverlay.children, beforeInvalid, "rejected tooltip creates no nat
 local initialLayer = ui.Layer.new
 local initialSprite = ui.Sprite.new
 local partialTooltipRoot
-ui.Layer.new = function(owner, categoryID, dynamicID)
-    local layer = initialLayer(owner, categoryID, dynamicID)
-    if owner == parent then partialTooltipRoot = layer end
+ui.Layer.new = function(parentComponent, categoryID, dynamicID)
+    local layer = initialLayer(parentComponent, categoryID, dynamicID)
+    if parentComponent == parent then partialTooltipRoot = layer end
     return layer
 end
-ui.Sprite.new = function(owner, categoryID, dynamicID)
-    if owner == partialTooltipRoot then error("late tooltip decoration failure") end
-    return initialSprite(owner, categoryID, dynamicID)
+ui.Sprite.new = function(parentComponent, categoryID, dynamicID)
+    if parentComponent == partialTooltipRoot then error("late tooltip decoration failure") end
+    return initialSprite(parentComponent, categoryID, dynamicID)
 end
 local failingTooltip = Tooltip.attach(autoTarget, parent, "Fail")
 local tooltipBuilt = pcall(failingTooltip.Show, failingTooltip)
 ui.Layer.new = initialLayer
 ui.Sprite.new = initialSprite
 expect(tooltipBuilt, false, "late tooltip decoration failure propagates")
-expect(partialTooltipRoot.destroyed, true,
-    "failed lazy construction batch destroys its initial category-zero host")
+expect(partialTooltipRoot.destroyed, true, "failed lazy construction batch destroys its initial category-zero host")
 
 failingTooltip:Destroy()
 local deadOwner = {}

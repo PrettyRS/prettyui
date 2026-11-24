@@ -87,8 +87,7 @@ function InterfaceMouse.BeginScreenCapture(component, x, y)
     eventOrigins[component] = {
         x = originX,
         y = originY,
-        screenScale = raw and screenScale(raw, originX + x, originY + y)
-            or currentScreenScale(),
+        screenScale = raw and screenScale(raw, originX + x, originY + y) or currentScreenScale(),
     }
 end
 

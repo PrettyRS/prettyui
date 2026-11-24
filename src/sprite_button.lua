@@ -39,12 +39,7 @@ function SpriteButton.new(parent, spriteName, action, options)
 
     self.interfaceID = parent.interfaceID
     self.root = Components.new(ui.Sprite, parent, options)
-    self.root:SetPos(
-        options.x or 0,
-        options.y or 0,
-        options.xAnchor or 0,
-        options.yAnchor or 0
-    )
+    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
     self.root:SetSize(options.width or options.size or DEFAULT_SIZE, options.height or options.size or DEFAULT_SIZE)
     self.root.clickthrough = self.disabled and not self.toggleable
     Wheel.bind(self.root, options)

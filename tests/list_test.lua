@@ -10,7 +10,10 @@ local function moveInRenderOrder(value, front)
     local siblings = value.parent and value.parent.renderOrder
     if not siblings then return end
     for index, sibling in ipairs(siblings) do
-        if sibling == value then table.remove(siblings, index); break end
+        if sibling == value then
+            table.remove(siblings, index)
+            break
+        end
     end
     table.insert(siblings, front and #siblings + 1 or 1, value)
 end
@@ -33,10 +36,14 @@ local function component(parent, kind, categoryID, dynamicID)
         local ids = static.registry[category] or {}
         static.registry[category] = ids
         if dynamicID == nil then
-            while ids[dynamic] do dynamic = dynamic + 1 end
+            while ids[dynamic] do
+                dynamic = dynamic + 1
+            end
         end
-        assert(category >= 0 and category <= 234 and dynamic >= 0 and
-            dynamic <= (category == 0 and 4095 or 234), "native ID capacity exceeded")
+        assert(
+            category >= 0 and category <= 234 and dynamic >= 0 and dynamic <= (category == 0 and 4095 or 234),
+            "native ID capacity exceeded"
+        )
         assert(ids[dynamic] == nil, "native ID collision")
         result.parentStatic = static
         result.categoryID, result.dynamicID = category, dynamic
@@ -47,8 +54,9 @@ local function component(parent, kind, categoryID, dynamicID)
         result.registry = {}
         function result:GetChild(category, dynamic)
             for _, child in ipairs(self.children) do
-                if not child.destroyed and child.categoryID == category and
-                    child.dynamicID == dynamic then return child end
+                if not child.destroyed and child.categoryID == category and child.dynamicID == dynamic then
+                    return child
+                end
             end
         end
     end
@@ -77,7 +85,9 @@ local function component(parent, kind, categoryID, dynamicID)
     function result:MoveToBack() moveInRenderOrder(self, false) end
     function result:Destroy()
         if self.destroyed then return end
-        for _, child in ipairs(self.children) do child:Destroy() end
+        for _, child in ipairs(self.children) do
+            child:Destroy()
+        end
         self.destroyed = true
         if parent then
             self.parentStatic.registry[self.categoryID][self.dynamicID] = nil
@@ -94,8 +104,7 @@ local function component(parent, kind, categoryID, dynamicID)
         local rank = result.categoryID == 0 and 0 or 235 - result.categoryID
         for index, sibling in ipairs(siblings) do
             local siblingRank = sibling.categoryID == 0 and 0 or 235 - sibling.categoryID
-            if siblingRank > rank or
-                (siblingRank == rank and sibling.dynamicID > result.dynamicID) then
+            if siblingRank > rank or (siblingRank == rank and sibling.dynamicID > result.dynamicID) then
                 position = index
                 break
             end
@@ -106,9 +115,11 @@ local function component(parent, kind, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent, category, dynamic)
-        return component(parent, kind, category, dynamic)
-    end }
+    return {
+        new = function(parent, category, dynamic)
+            return component(parent, kind, category, dynamic)
+        end,
+    }
 end
 
 ui = {
@@ -167,8 +178,7 @@ local function labelAt(root, x, y)
     local function paint(node, parentX, parentY)
         if node.hidden or node.destroyed then return end
         local left, top = parentX + node.x, parentY + node.y
-        if x >= left and x < left + node.width and
-            y >= top and y < top + node.height then
+        if x >= left and x < left + node.width and y >= top and y < top + node.height then
             if node.kind == "rectangle" and node.rgba ~= 0 then
                 painted = nil
             elseif node.kind == "text" then
@@ -188,9 +198,13 @@ local parent = component(nil, "parent")
 parent.width = 400
 parent.height = 300
 
+local selectionChanges = {}
 local list = List.new(parent, {
     width = 240,
     height = 96,
+    onChange = function(_, entryID, selected)
+        selectionChanges[#selectionChanges + 1] = entryID .. ":" .. tostring(selected)
+    end,
     entries = {
         { label = "Selected", id = 1, selected = true },
         {
@@ -207,10 +221,8 @@ local list = List.new(parent, {
         { label = "Sixth", id = 6 },
     },
 })
-expect(labelAt(list.root, 12, 13), "Selected",
-    "legacy list paints its selected label over list and row backgrounds")
-expect(labelAt(list.root, 12, 37), "Enabled",
-    "legacy list paints its custom-colour label over its row background")
+expect(labelAt(list.root, 12, 13), "Selected", "legacy list paints its selected label over list and row backgrounds")
+expect(labelAt(list.root, 12, 37), "Enabled", "legacy list paints its custom-colour label over its row background")
 
 expect(list.rows[2].background.rgba, 10, "entry background colour renders")
 expect(list.rows[2].label.rgba, 13, "entry text colour renders")
@@ -220,6 +232,11 @@ list.rows[2].root.subscriptions[ui.Hook.ONMOUSELEAVE]()
 expect(list.rows[2].background.rgba, 10, "entry background restores after hover")
 list.rows[2].root.subscriptions[ui.Hook.ONCLICK]()
 expect(list.rows[2].background.rgba, 12, "entry selected colour renders")
+expect(
+    table.concat(selectionChanges, ", "),
+    "1:false, 2:true",
+    "single selection notifies deselection before selection"
+)
 
 local wheel = ui.Hook.ONSCROLLWHEEL
 list.rows[1].background.subscriptions[wheel](list.rows[1].background, 1)
@@ -232,8 +249,7 @@ list.viewport.subscriptions[wheel](list.viewport, 1)
 expect(list.scrollY, 50, "the exposed viewport forwards wheel scrolling to the limit")
 list:SetScrollPosition(0)
 list:SetEntryIcon(1, 42)
-expect(labelAt(list.root, 35, 13), "Selected",
-    "legacy list keeps rebuilt labels above backgrounds")
+expect(labelAt(list.root, 35, 13), "Selected", "legacy list keeps rebuilt labels above backgrounds")
 
 local neighbor = ui.Layer.new(parent)
 local large = List.new(parent, { categoryID = "auto", width = 240, height = 96 })
@@ -242,8 +258,7 @@ local foreign = ui.Text.new(large.viewport, 1, 230)
 require("src/core/components").refresh(large.viewport)
 local entries = {}
 for index = 1, 1400 do
-    entries[index] = { id = index, label = "Entry " .. index,
-        backgroundColour = 0x24211EFF }
+    entries[index] = { id = index, label = "Entry " .. index, backgroundColour = 0x24211EFF }
     if index % 10 == 0 then entries[index].icon = 42 end
 end
 large:SetEntries(entries)
@@ -252,10 +267,12 @@ expect(foreign.destroyed, nil, "nested foreign category ID remains occupied")
 expect(large.root.categoryID, 0, "auto list root remains raw-compatible")
 expect(large.viewport.categoryID, 0, "auto list viewport remains raw-compatible")
 expect(large.rows[1].root.categoryID, 0, "list rows remain raw-compatible")
-expect(large.rows[1].label.categoryID > 0, true,
-    "row decorations use IDs outside the raw content category")
-expect(labelAt(large.root, 12, 13), "Entry 1",
-    "auto list paints its label over category-zero viewport and list background")
+expect(large.rows[1].label.categoryID > 0, true, "row decorations use IDs outside the raw content category")
+expect(
+    labelAt(large.root, 12, 13),
+    "Entry 1",
+    "auto list paints its label over category-zero viewport and list background"
+)
 local categoryBoundaryRow
 for _, row in ipairs(large.rows) do
     if row.background.categoryID ~= row.label.categoryID then
@@ -265,8 +282,11 @@ for _, row in ipairs(large.rows) do
 end
 expect(categoryBoundaryRow ~= nil, true, "large list crosses a managed category boundary")
 large:SetScrollPosition(categoryBoundaryRow.baseY)
-expect(labelAt(large.root, 35, 13), categoryBoundaryRow.entry.text,
-    "auto list paints labels over coloured row backgrounds across categories")
+expect(
+    labelAt(large.root, 35, 13),
+    categoryBoundaryRow.entry.text,
+    "auto list paints labels over coloured row backgrounds across categories"
+)
 large:SetScrollPosition(0)
 local rawExtension = ui.Layer.new(large.rows[1].root)
 expect(rawExtension.categoryID, 0, "raw row extensions inherit category zero")
@@ -276,15 +296,12 @@ expect(large.entriesByID[1400].selected, true, "last row can be selected")
 local oldRow = large.rows[2].root
 large:SetEntryIcon(2, 43)
 expect(oldRow.destroyed, true, "rebuild destroys the replaced row")
-expect(large.rows[2].label.x > large.rows[1].label.x, true,
-    "new icon leaves room before the row label")
-expect(labelAt(large.root, 35, 37), "Entry 2",
-    "auto list keeps rebuilt icon-row labels above backgrounds")
+expect(large.rows[2].label.x > large.rows[1].label.x, true, "new icon leaves room before the row label")
+expect(labelAt(large.root, 35, 37), "Entry 2", "auto list keeps rebuilt icon-row labels above backgrounds")
 large:SetEntryVisible(3, false)
 expect(#large.rows, 1399, "visibility rebuild excludes the hidden row")
 expect(large.rows[3].entry.id, 4, "remaining rows retain their entry order")
-expect(labelAt(large.root, 12, 61), "Entry 4",
-    "auto list keeps labels visible after a visibility rebuild")
+expect(labelAt(large.root, 12, 61), "Entry 4", "auto list keeps labels visible after a visibility rebuild")
 large:Clear()
 expect(#large.rows, 0, "clearing releases every row")
 expect(foreign.destroyed, nil, "clearing leaves foreign viewport components intact")
@@ -321,8 +338,7 @@ end
 expect(next(retained), nil, "failed rebuild retains all preexisting components")
 large:SetEntries(entries)
 expect(#large.rows, 1400, "list remounts after a failed rebuild")
-expect(labelAt(large.root, 12, 13), "Entry 1",
-    "auto list paints labels above backgrounds after a failed rebuild")
+expect(labelAt(large.root, 12, 13), "Entry 1", "auto list paints labels above backgrounds after a failed rebuild")
 large:Destroy()
 expect(neighbor.destroyed, nil, "destroying the list preserves neighboring widgets")
 

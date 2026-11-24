@@ -63,19 +63,31 @@ local function canvas(parent, categoryID, dynamicID)
     end
     function result:AddRectangle(x, y, width, height, colour)
         table.insert(self.rectangles, {
-            x = x, y = y, width = width, height = height, colour = colour,
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            colour = colour,
         })
     end
     function result:AddGradientH(x, y, width, height, startColour, endColour)
         self.horizontalGradient = {
-            x = x, y = y, width = width, height = height,
-            startColour = startColour, endColour = endColour,
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            startColour = startColour,
+            endColour = endColour,
         }
     end
     function result:AddGradientV(x, y, width, height, startColour, endColour)
         table.insert(self.verticalGradients, {
-            x = x, y = y, width = width, height = height,
-            startColour = startColour, endColour = endColour,
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            startColour = startColour,
+            endColour = endColour,
         })
     end
     return result
@@ -98,29 +110,40 @@ local function simpleButton(parent, options, action)
 end
 
 ui = {
-    Rectangle = { new = function(parent, categoryID, dynamicID)
-        return component(parent, "rectangle", categoryID, dynamicID)
-    end },
+    Rectangle = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, "rectangle", categoryID, dynamicID)
+        end,
+    },
     Canvas = { new = canvas },
-    Layer = { new = function(parent, categoryID, dynamicID)
-        return component(parent, "layer", categoryID, dynamicID)
-    end },
-    InputField = { new = function(parent, categoryID, dynamicID)
-        local field = component(parent, "input", categoryID, dynamicID)
-        field.text = {}
-        field.containerSprite = {}
-        function field:Setup(_, _, maxLength) self.maxLength = maxLength end
-        return field
-    end },
-    Margin = { new = function(left, top, right, bottom)
-        return { left = left, top = top, right = right, bottom = bottom }
-    end },
+    Layer = {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, "layer", categoryID, dynamicID)
+        end,
+    },
+    InputField = {
+        new = function(parent, categoryID, dynamicID)
+            local field = component(parent, "input", categoryID, dynamicID)
+            field.text = {}
+            field.containerSprite = {}
+            function field:Setup(_, _, maxLength) self.maxLength = maxLength end
+            return field
+        end,
+    },
+    Margin = {
+        new = function(left, top, right, bottom)
+            return { left = left, top = top, right = right, bottom = bottom }
+        end,
+    },
     AlignMode = { CENTRE = 1, TOPLEFT = 2 },
     TextContentVisibilityMode = { VISIBLE = 1 },
     InputFieldFilterMode = { NONE = 1 },
     InputFieldKeyHandlingMode = { DEFAULT = 1 },
     InputFieldActionResult = {
-        CONTENT_CHANGE = 1, SUBMIT = 2, SUBMIT_ON_ESCAPE = 3, SUBMIT_ON_FOCUS_LOSS = 4,
+        CONTENT_CHANGE = 1,
+        SUBMIT = 2,
+        SUBMIT_ON_ESCAPE = 3,
+        SUBMIT_ON_FOCUS_LOSS = 4,
     },
     Hook = {
         ONCLICK = 1,
@@ -138,15 +161,19 @@ id = {
     StyleSheet = { INPUT_DEFAULT = 1 },
     Font = { MUSEO_SANS_15PT_REGULAR = 1 },
 }
-config = { Font = { MUSEO_SANS_15PT_REGULAR = {
-    GetStringWidth = function(_, text)
-        local width = 0
-        for character in text:gmatch(".") do
-            width = width + (character == "1" and 5 or 8)
-        end
-        return width
-    end,
-} } }
+config = {
+    Font = {
+        MUSEO_SANS_15PT_REGULAR = {
+            GetStringWidth = function(_, text)
+                local width = 0
+                for character in text:gmatch(".") do
+                    width = width + (character == "1" and 5 or 8)
+                end
+                return width
+            end,
+        },
+    },
+}
 package.loaded["src/core/wheel"] = { bind = function() end }
 
 package.loaded["src/fancy_button"] = {
@@ -154,18 +181,18 @@ package.loaded["src/fancy_button"] = {
 }
 local mouseCaptureOrigins = {}
 package.loaded["src/core/mouse"] = {
-    GetPosition = function(component, x, y)
-        if component and x ~= nil and y ~= nil then
-            local origin = mouseCaptureOrigins[component] or component
+    GetPosition = function(target, x, y)
+        if target and x ~= nil and y ~= nil then
+            local origin = mouseCaptureOrigins[target] or target
             return { x = origin.x + x, y = origin.y + y }
         end
         return mousePosition
     end,
-    BeginCapture = function(component)
-        mouseCaptureOrigins[component] = { x = component.x, y = component.y }
+    BeginCapture = function(target)
+        mouseCaptureOrigins[target] = { x = target.x, y = target.y }
     end,
-    EndCapture = function(component)
-        mouseCaptureOrigins[component] = nil
+    EndCapture = function(target)
+        mouseCaptureOrigins[target] = nil
     end,
 }
 package.loaded["src/simple_button"] = {
@@ -221,16 +248,8 @@ expect(standard.alphaCanvas, nil, "the alpha slider is opt-in")
 
 mousePosition = { x = 1000, y = 1000 }
 standard.fieldHit.subscriptions[ui.Hook.ONCLICK](standard.fieldHit, 63, 63)
-expect(
-    standard.fieldMarkerVertical.x,
-    79,
-    "the field marker uses the hook's component-local x coordinate"
-)
-expect(
-    standard.fieldMarkerHorizontal.y,
-    75,
-    "the field marker uses the hook's component-local y coordinate"
-)
+expect(standard.fieldMarkerVertical.x, 79, "the field marker uses the hook's component-local x coordinate")
+expect(standard.fieldMarkerHorizontal.y, 75, "the field marker uses the hook's component-local y coordinate")
 standard.fieldHit.subscriptions[ui.Hook.ONRELEASE](standard.fieldHit, 63, 63)
 
 local accepted
@@ -245,16 +264,8 @@ expect(picker.alphaCanvas.y, 152, "the alpha bar sits below the palette")
 expect(picker.alphaCanvas.width, 128, "the alpha bar matches the palette width")
 expect(picker.alphaCanvas.height, 24, "the alpha bar matches the hue bar thickness")
 expect(#picker.alphaCheckerCanvas.rectangles, 48, "the alpha bar draws a checkerboard")
-expect(
-    picker.alphaCanvas.horizontalGradient.startColour,
-    0x33669900,
-    "the alpha gradient starts transparent"
-)
-expect(
-    picker.alphaCanvas.horizontalGradient.endColour,
-    0x336699FF,
-    "the alpha gradient ends opaque"
-)
+expect(picker.alphaCanvas.horizontalGradient.startColour, 0x33669900, "the alpha gradient starts transparent")
+expect(picker.alphaCanvas.horizontalGradient.endColour, 0x336699FF, "the alpha gradient ends opaque")
 expect(picker.alphaMarker.x, 79, "the alpha marker reflects the initial alpha")
 
 local contentX = picker.pickerWindow.root.x + picker.pickerWindow.content.x
@@ -293,8 +304,7 @@ contexts[nestedContent] = {
 }
 local scrollY = 0
 contexts[nestedContent].position = function(target)
-    return target.xyGlobal.x - contentLayer.xyGlobal.x,
-        target.xyGlobal.y - contentLayer.xyGlobal.y - scrollY
+    return target.xyGlobal.x - contentLayer.xyGlobal.x, target.xyGlobal.y - contentLayer.xyGlobal.y - scrollY
 end
 local nested = ColourPicker.new(nestedContent, { alphaSlider = true })
 nested:Open()
@@ -373,25 +383,35 @@ expect(oversized.pickerWindow.root.y, 0, "oversized popup keeps its title bar re
 
 local optionOwner = component(screen, "picker-option-owner")
 local optedIn = ColourPicker.new(optionOwner, {
-    categoryID = "auto", windowParent = screen,
+    categoryID = "auto",
+    windowParent = screen,
 })
 expect(optedIn:Open(), true, "an opted-in picker still opens its detached window")
 expect(optedIn.pickerWindow.root.parent, screen, "picker popup still uses its physical overlay host")
 expect(optedIn.pickerWindow.root.categoryID, 0, "popup root inherits its static native host")
 local Components = require("src/core/components")
-expect(Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0, true,
-    "detached popup descendants follow the picker's managed policy")
+expect(
+    Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0,
+    true,
+    "detached popup descendants follow the picker's managed policy"
+)
 optedIn:Close()
 expect(optedIn:Open(), true, "an opted-in picker reopens after closing")
-expect(Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0, true,
-    "a reopened popup retains its owner's auto mode")
+expect(
+    Components.new(ui.Layer, optedIn.pickerWindow.content).categoryID > 0,
+    true,
+    "a reopened popup retains its owner's auto mode"
+)
 optedIn:Close()
 
 local autoScreenHost = Components.new(ui.Layer, screen, { categoryID = "auto" })
 local legacyPicker = ColourPicker.new(optionOwner, { windowParent = autoScreenHost })
 expect(legacyPicker:Open(), true, "a legacy picker opens on the shared physical host")
-expect(Components.new(ui.Layer, legacyPicker.pickerWindow.content).categoryID, 0,
-    "legacy popup descendants do not inherit an unrelated auto picker policy")
+expect(
+    Components.new(ui.Layer, legacyPicker.pickerWindow.content).categoryID,
+    0,
+    "legacy popup descendants do not inherit an unrelated auto picker policy"
+)
 legacyPicker:Close()
 
 local valueNotifications = 0
@@ -399,31 +419,37 @@ local raw = ColourPicker.new(screen, {
     value = 0x33669980,
     onChange = function() valueNotifications = valueNotifications + 1 end,
 })
-local function beginValue(picker)
-    local root = picker.valueField.root
+local function beginValue(control)
+    local root = control.valueField.root
     root.subscriptions[ui.Hook.ONCLICK](root)
 end
-local function editValue(picker, text, reason)
-    local root = picker.valueField.root
+local function editValue(control, text, reason)
+    local root = control.valueField.root
     root.content = text
-    root.subscriptions[ui.Hook.ONCONTENTCHANGED](
-        root, reason or ui.InputFieldActionResult.CONTENT_CHANGE, text)
+    root.subscriptions[ui.Hook.ONCONTENTCHANGED](root, reason or ui.InputFieldActionResult.CONTENT_CHANGE, text)
 end
 
-local function expectCaptionAligned(picker)
-    local field = picker.valueField.root
-    local preview = picker.previewButton.root
-    local textWidth = config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(
-        picker.valueField:GetText(), false)
+local function expectCaptionAligned(control)
+    local field = control.valueField.root
+    local preview = control.previewButton.root
+    local textWidth = config.Font.MUSEO_SANS_15PT_REGULAR:GetStringWidth(control.valueField:GetText(), false)
     local centre = preview.x + preview.width / 2
-    expect(math.abs(field.x + field.contentMargin.left + textWidth / 2 - centre) <= 0.5,
-        true, "raw value text shares the preview centre with proportional glyph widths")
-    expect(math.abs(picker.valueUnderline.x + picker.valueUnderline.width / 2 - centre) <= 0.5,
-        true, "the hover underline shares the preview centre")
-    expect(picker.valueUnderline.width, textWidth, "the hover underline fits the text")
-    expect(field.y - preview.y - preview.height,
-        picker.acceptButton.root.y - field.y - field.height,
-        "the value field has balanced gaps above and below")
+    expect(
+        math.abs(field.x + field.contentMargin.left + textWidth / 2 - centre) <= 0.5,
+        true,
+        "raw value text shares the preview centre with proportional glyph widths"
+    )
+    expect(
+        math.abs(control.valueUnderline.x + control.valueUnderline.width / 2 - centre) <= 0.5,
+        true,
+        "the hover underline shares the preview centre"
+    )
+    expect(control.valueUnderline.width, textWidth, "the hover underline fits the text")
+    expect(
+        field.y - preview.y - preview.height,
+        control.acceptButton.root.y - field.y - field.height,
+        "the value field has balanced gaps above and below"
+    )
 end
 
 raw:Open()
@@ -478,7 +504,13 @@ expect(raw.pickerWindow, nil, "Accept closes the picker")
 raw:Open()
 beginValue(raw)
 for _, invalid in ipairs({
-    "", "#", "#12345", "1122334", "GG112233", "0x112233", "#100000000",
+    "",
+    "#",
+    "#12345",
+    "1122334",
+    "GG112233",
+    "0x112233",
+    "#100000000",
 }) do
     editValue(raw, invalid)
     expect(raw.acceptButton.disabled, true, "incomplete or invalid hex disables Accept")
@@ -505,15 +537,17 @@ expect(raw.valueField:GetText(), "#10203040", "external changes resync the capti
 expect(raw.preview.rgba, 0x10203040, "external changes resync the preview")
 expect(raw.valueEditing, false, "external changes end the previous edit")
 raw.valueField.root.subscriptions[ui.Hook.ONCONTENTCHANGED](
-    raw.valueField.root, ui.InputFieldActionResult.CONTENT_CHANGE, "#FFFFFFFF")
+    raw.valueField.root,
+    ui.InputFieldActionResult.CONTENT_CHANGE,
+    "#FFFFFFFF"
+)
 expect(raw.pendingColour, 0x10203040, "late native notifications cannot restore stale text")
 expect(raw.valueEditing, false, "late native notifications cannot reopen editing")
 beginValue(raw)
 editValue(raw, "")
 raw.hueHit.subscriptions[ui.Hook.ONCLICK](raw.hueHit, 12, 0)
 expect(raw.valueEditing, false, "dragging the picker returns to caption mode")
-expect(raw.valueField:GetText(), string.format("#%08X", raw.pendingColour),
-    "dragging keeps the caption synchronized")
+expect(raw.valueField:GetText(), string.format("#%08X", raw.pendingColour), "dragging keeps the caption synchronized")
 expect(raw.acceptButton.disabled, false, "dragging replaces incomplete value input")
 raw.hueHit.subscriptions[ui.Hook.ONRELEASE](raw.hueHit, 12, 0)
 raw:Close()

@@ -6,13 +6,16 @@ run("header drag fits native gaps only on commit", function(f)
     local scene = nativeScene(f)
     local left = scene.node(1477, 100, scene.area, 0, 300, 400, 400)
     local right = scene.node(1477, 101, scene.area, 520, 300, 480, 400)
-    function scene.area:IterateStaticComponents(callback)
-        callback(left); callback(right)
+    function scene.area.IterateStaticComponents(_, callback)
+        callback(left)
+        callback(right)
     end
     local panel = f:panel()
-    f:begin(panel); f:release(panel)
+    f:begin(panel)
+    f:release(panel)
     rect(panel.root, 100, 100, 300, 200)
-    f:begin(panel); f:move(panel, 460, 450)
+    f:begin(panel)
+    f:move(panel, 460, 450)
     rect(panel.dragFeedback.active, 400, 300, 120, 400)
     rect(panel.root, 310, 444, 300, 200)
     f:release(panel)
@@ -24,7 +27,7 @@ run("resize respects live obstacles and refuses unverified geometry", function(f
     local scene = nativeScene(f)
     local obstacle = scene.node(1477, 100, scene.area, 450, 0, 100, 700)
     local fail = false
-    function scene.area:IterateStaticComponents(callback)
+    function scene.area.IterateStaticComponents(_, callback)
         if fail then error("native enumeration unavailable") end
         callback(obstacle, obstacle.visibleGlobal)
     end
@@ -75,10 +78,12 @@ for _, case in ipairs({
     run("omitted geometry opens beside the " .. case.edge .. " ribbon", function(f)
         local settings = ribbonScene(f)
         settings.set("ribbonBarPosition", case.edge)
-        local panel = unpositioned(f, { buildContent = function(owner)
-            rect(owner.root, case.x, case.y, 300, 400)
-            owner:AddText("Default geometry")
-        end })
+        local panel = unpositioned(f, {
+            buildContent = function(owner)
+                rect(owner.root, case.x, case.y, 300, 400)
+                owner:AddText("Default geometry")
+            end,
+        })
         rect(panel.root, case.x, case.y, 300, 400)
         assert(panel.content ~= nil and not panel.root.hidden)
     end)
@@ -89,14 +94,18 @@ run("first ribbon enable uses the current edge even after an unopened panel rest
     settings.set("ribbonBarPosition", "left")
     local panel = unpositioned(f, { id = "deferred", active = false, tabIcon = 830011 })
     assert(panel.content == nil)
-    panel:Destroy(); ribbon.Shutdown(); f:restart()
+    panel:Destroy()
+    ribbon.Shutdown()
+    f:restart()
     ribbon = require("src/ribbon_bar")
     ribbon.Start()
     panel = unpositioned(f, { id = "deferred", tabIcon = 830011 })
     assert(not panel:IsActive(), "restart must preserve the unopened state")
     settings.set("ribbonBarPosition", "right")
     settings.set("ribbonBarAutoHide", true)
-    for _ = 1, 8 do f:emit("Logic") end
+    for _ = 1, 8 do
+        f:emit("Logic")
+    end
     local function findButton(node)
         if node.spriteID == panel.tabIcon then return node.parent end
         for _, child in ipairs(node.children) do
@@ -112,7 +121,9 @@ run("first ribbon enable uses the current edge even after an unopened panel rest
     settings.set("ribbonBarPosition", "top")
     panel:Show()
     rect(panel.root, 650, 150, 340, 180)
-    panel:Destroy(); ribbon.Shutdown(); f:restart()
+    panel:Destroy()
+    ribbon.Shutdown()
+    f:restart()
     ribbon = require("src/ribbon_bar")
     ribbon.Start()
     panel = unpositioned(f, { id = "deferred", x = 5, y = 10, width = 100, height = 80 })

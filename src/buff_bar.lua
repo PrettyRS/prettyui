@@ -82,7 +82,9 @@ local function setComponentOwned(bar, component, owned)
 end
 
 local function forEachVisual(entry, callback)
-    for _, key in ipairs(ENTRY_VISUAL_KEYS) do callback(entry[key]) end
+    for _, key in ipairs(ENTRY_VISUAL_KEYS) do
+        callback(entry[key])
+    end
 end
 
 local function cancelPendingTooltip(entry)
@@ -250,32 +252,21 @@ local function positionEntries(bar, rows, iconSize, usableWidth)
 
     local rowIndex = 1
     local currentRow = getRow(rowIndex)
-    local nextX = currentRow.occupiedRight > 0
-        and (currentRow.occupiedRight + NATIVE_SPACING)
-        or EMPTY_ROW_X
+    local nextX = currentRow.occupiedRight > 0 and (currentRow.occupiedRight + NATIVE_SPACING) or EMPTY_ROW_X
     local rowHasPrettyUIEntry = false
 
     for _, entry in ipairs(bar.entries) do
         if entry.visible then
-            while (currentRow.occupiedRight > 0 or rowHasPrettyUIEntry)
-                and nextX + iconSize > usableWidth
-            do
+            while (currentRow.occupiedRight > 0 or rowHasPrettyUIEntry) and nextX + iconSize > usableWidth do
                 rowIndex = rowIndex + 1
                 currentRow = getRow(rowIndex)
-                nextX = currentRow.occupiedRight > 0
-                    and (currentRow.occupiedRight + NATIVE_SPACING)
-                    or EMPTY_ROW_X
+                nextX = currentRow.occupiedRight > 0 and (currentRow.occupiedRight + NATIVE_SPACING) or EMPTY_ROW_X
                 rowHasPrettyUIEntry = false
             end
             local currentY = currentRow.y + 1
-            local backgroundInset = iconSize >= (BORDER_THICKNESS * 2 + 1)
-                and BORDER_THICKNESS
-                or 0
+            local backgroundInset = iconSize >= (BORDER_THICKNESS * 2 + 1) and BORDER_THICKNESS or 0
 
-            entry.background:SetSize(
-                iconSize - backgroundInset * 2,
-                iconSize - backgroundInset * 2
-            )
+            entry.background:SetSize(iconSize - backgroundInset * 2, iconSize - backgroundInset * 2)
             entry.background:SetPos(nextX + backgroundInset, currentY + backgroundInset)
             entry.sprite:SetSize(iconSize, iconSize)
             entry.sprite:SetPos(nextX, currentY)
@@ -302,7 +293,8 @@ local function layout(bar, force)
     local usableWidth = math.max(0, (layer.width or 512) - RIGHT_MARGIN)
     -- Native state is inspected every logic tick for responsive movement.
     -- Avoid component writes unless row occupancy or geometry actually changed.
-    if not force
+    if
+        not force
         and iconSize == bar.lastIconSize
         and rowsSignature == bar.lastRowsSignature
         and usableWidth == bar.lastUsableWidth
@@ -366,38 +358,42 @@ local function formatDuration(remainingTicks)
     return tostring(math.ceil(remainingTicks / TICKS_PER_SECOND)) .. "s"
 end
 
+local function updateTimerEntry(bar, entry, elapsedTicks)
+    if entry.remainingTicks == nil then return false end
+    entry.remainingTicks = entry.remainingTicks - elapsedTicks
+    if entry.remainingTicks <= 0 then
+        destroyEntry(bar, entry)
+        return true
+    end
+    local label = formatDuration(entry.remainingTicks)
+    if entry.label.content ~= label then entry.label.content = label end
+    return false
+end
+
 local function updateTimers(elapsedTicks)
     for _, bar in pairs(bars) do
         local removed = false
         for index = #bar.entries, 1, -1 do
-            local entry = bar.entries[index]
-            if entry.remainingTicks ~= nil then
-                entry.remainingTicks = entry.remainingTicks - elapsedTicks
-                if entry.remainingTicks <= 0 then
-                    destroyEntry(bar, entry)
-                    removed = true
-                else
-                    local label = formatDuration(entry.remainingTicks)
-                    if entry.label.content ~= label then entry.label.content = label end
-                end
-            end
+            if updateTimerEntry(bar, bar.entries[index], elapsedTicks) then removed = true end
         end
         if removed and #bar.entries > 0 then layout(bar, true) end
     end
     stopIfEmpty()
 end
 
+local function showPendingTooltip(entry, elapsedTicks)
+    local tooltip = entry.pendingTooltip
+    if tooltip == nil then return end
+    entry.pendingTooltipTicks = entry.pendingTooltipTicks - elapsedTicks
+    if entry.pendingTooltipTicks > 0 then return end
+    cancelPendingTooltip(entry)
+    if entry.visible and entry.tooltip == tooltip then tooltip:Show() end
+end
+
 local function showPendingTooltips(elapsedTicks)
     for _, bar in pairs(bars) do
         for _, entry in ipairs(bar.entries) do
-            local tooltip = entry.pendingTooltip
-            if tooltip ~= nil then
-                entry.pendingTooltipTicks = entry.pendingTooltipTicks - elapsedTicks
-                if entry.pendingTooltipTicks <= 0 then
-                    cancelPendingTooltip(entry)
-                    if entry.visible and entry.tooltip == tooltip then tooltip:Show() end
-                end
-            end
+            showPendingTooltip(entry, elapsedTicks)
         end
     end
 end
@@ -442,9 +438,13 @@ local function setTooltip(bar, entry, value, deferLayout)
     end
 
     if entry.tooltipTarget == nil then
-        entry.tooltipTarget = setComponentOwned(bar, Components.new(ui.Layer, entry.layer, {
-            _categoryPolicy = entry.categoryPolicy,
-        }), true)
+        entry.tooltipTarget = setComponentOwned(
+            bar,
+            Components.new(ui.Layer, entry.layer, {
+                _categoryPolicy = entry.categoryPolicy,
+            }),
+            true
+        )
     end
     entry.tooltip = Tooltip.attach(entry.tooltipTarget, entry.layer, value, {
         onMouseOver = function(tooltip)
@@ -522,7 +522,8 @@ end
 
 local function add(bar, options)
     options = options or {}
-    if options.duration ~= nil
+    if
+        options.duration ~= nil
         and (
             type(options.duration) ~= "number"
             or options.duration <= 0
@@ -561,20 +562,15 @@ local function add(bar, options)
     local border = setComponentOwned(bar, Components.new(ui.Rectangle, layer, policyOptions), true)
     border.fill = false
     border.outlineThickness = BORDER_THICKNESS
-    border.rgba = bar.allowBorderOverride and (options.borderRgba or bar.borderRGBA)
-        or bar.borderRGBA
+    border.rgba = bar.allowBorderOverride and (options.borderRgba or bar.borderRGBA) or bar.borderRGBA
     border.clickthrough = true
 
-    local remainingTicks = options.duration ~= nil
-        and math.ceil(options.duration * TICKS_PER_SECOND)
-        or nil
+    local remainingTicks = options.duration ~= nil and math.ceil(options.duration * TICKS_PER_SECOND) or nil
     local label = setComponentOwned(bar, Components.new(ui.Text, layer, policyOptions), true)
     label.font = options.font or id.Font.NOTOSANS_BOLD_12
     label.isShadowed = true
     label.alignHorizontal = ui.AlignMode.CENTRE
-    label.content = remainingTicks ~= nil
-        and formatDuration(remainingTicks)
-        or tostring(options.label or "")
+    label.content = remainingTicks ~= nil and formatDuration(remainingTicks) or tostring(options.label or "")
     label.rgba = options.labelRgba or DEFAULT_LABEL_RGBA
     label.clickthrough = true
 

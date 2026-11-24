@@ -11,18 +11,25 @@ local sizes = { "width", "height", "widthParentPc", "heightParentPc" }
 
 local function ids(component)
     if not component then return nil end
-    local ok, a, b, c, d = pcall(function()
-        return component.interfaceID, component.staticID, component.categoryID, component.dynamicID
-    end)
-    if not ok or type(a) ~= "number" or type(b) ~= "number"
-        or type(c) ~= "number" or type(d) ~= "number" then return nil end
+    local ok, a, b, c, d = pcall(
+        function()
+            return component.interfaceID, component.staticID, component.categoryID, component.dynamicID
+        end
+    )
+    if not ok or type(a) ~= "number" or type(b) ~= "number" or type(c) ~= "number" or type(d) ~= "number" then
+        return nil
+    end
     return a, b, c, d
 end
 
 local function matchesID(record, component)
     local a, b, c, d = ids(component)
-    return a and record and a == record.interfaceID and b == record.staticID
-        and c == record.categoryID and d == record.dynamicID
+    return a
+        and record
+        and a == record.interfaceID
+        and b == record.staticID
+        and c == record.categoryID
+        and d == record.dynamicID
 end
 
 local function sameIDs(first, second)
@@ -35,8 +42,11 @@ local function loaded(component)
     local a, b, c, d = ids(component)
     if not a or not ui.Interfaces:GetInterface(a) then return nil end
     local fresh
-    if c == -1 then fresh = ui.Interfaces:GetComponent(a, b)
-    else fresh = ui.Interfaces:GetComponent(a, b, c, d) end
+    if c == -1 then
+        fresh = ui.Interfaces:GetComponent(a, b)
+    else
+        fresh = ui.Interfaces:GetComponent(a, b, c, d)
+    end
     local fa, fb, fc, fd = ids(fresh)
     if fa == a and fb == b and fc == c and fd == d then return fresh end
     return nil
@@ -76,13 +86,11 @@ local function scrollPos(component)
 end
 
 local function matchesExtent(component, values)
-    return values and component.scrollWidth == values[1]
-        and component.scrollHeight == values[2]
+    return values and component.scrollWidth == values[1] and component.scrollHeight == values[2]
 end
 
 local function matchesScroll(component, values)
-    return values and component.scrollX == values[1]
-        and component.scrollY == values[2]
+    return values and component.scrollX == values[1] and component.scrollY == values[2]
 end
 
 local function observe(record, component)
@@ -134,7 +142,10 @@ end
 
 local function setNative(view, width, total, offset, overflow)
     local component = native(view.host, "tabs")
-    if not component then view.tabState = nil; return end
+    if not component then
+        view.tabState = nil
+        return
+    end
     local record = recordFor(view, component)
     local pos, size = observe(record, component)
     if not record.position or not record.size then return end
@@ -144,13 +155,11 @@ local function setNative(view, width, total, offset, overflow)
     -- Retain native parent/self anchors so the viewport follows a frame resize
     -- immediately, before the next PrettyUI layout pass.
     if component.x ~= desiredX then
-        component:SetPos(pos.x + desiredX - component.x, pos.y,
-            pos.xParentPc, pos.yParentPc, pos.xSelfPc, pos.ySelfPc)
+        component:SetPos(pos.x + desiredX - component.x, pos.y, pos.xParentPc, pos.yParentPc, pos.xSelfPc, pos.ySelfPc)
         record.writtenPosition = capture(component.position, positions)
     end
     if component.width ~= width then
-        component:SetSize(size.width + width - component.width, size.height,
-            size.widthParentPc, size.heightParentPc)
+        component:SetSize(size.width + width - component.width, size.height, size.widthParentPc, size.heightParentPc)
         record.writtenSize = capture(component.size, sizes)
     end
     -- Extents precede the position: resizing can clamp the current scroll.
@@ -176,8 +185,7 @@ local function controlFor(view, component)
     local record = view.controlsState
     if not matchesID(record, component) then
         local a, b, c, d = ids(component)
-        record = { interfaceID = a, staticID = b, categoryID = c, dynamicID = d,
-            hidden = component.hidden }
+        record = { interfaceID = a, staticID = b, categoryID = c, dynamicID = d, hidden = component.hidden }
         view.controlsState = record
     elseif record.written ~= nil and component.hidden ~= record.written then
         record.hidden, record.written = component.hidden, nil
@@ -192,8 +200,7 @@ local function restoreControls(view)
     local record = view.controlsState
     if not record then return end
     local component = native(view.host, "tabControls")
-    if component and matchesID(record, component)
-        and record.written ~= nil and component.hidden == record.written then
+    if component and matchesID(record, component) and record.written ~= nil and component.hidden == record.written then
         component.hidden = record.hidden
     end
     view.controlsState = nil
@@ -217,8 +224,12 @@ local function arrow(view, right)
     hit.clickthrough, hit.enabled = false, false
     visible(hit, false)
     hit:Subscribe(ui.Hook.ONCLICK, function()
-        if view.shown and view.clickEnabled and view.onScroll
-            and (right and view.scrollX < view.maxScroll or not right and view.scrollX > 0) then
+        if
+            view.shown
+            and view.clickEnabled
+            and view.onScroll
+            and (right and view.scrollX < view.maxScroll or not right and view.scrollX > 0)
+        then
             view.onScroll(right and STEP or -STEP)
         end
         return false
@@ -239,9 +250,14 @@ end
 
 function Overflow.new(host, area, onScroll)
     local band = host.grouped and host.tabs or host.content
-    local self = setmetatable({ host = host, area = area, onScroll = onScroll,
+    local self = setmetatable({
+        host = host,
+        area = area,
+        onScroll = onScroll,
         scrollX = host.grouped and (host.tabs.scrollX or 0) or 0,
-        maxScroll = 0, shown = false }, Overflow)
+        maxScroll = 0,
+        shown = false,
+    }, Overflow)
     self.viewport = Components.new(ui.Layer, host.chrome, { _categoryPolicy = "auto" })
     self.viewport:SetPos(0, 0)
     self.viewport:SetSize(host.chrome.width, host.chrome.height)
@@ -249,6 +265,67 @@ function Overflow.new(host, area, onScroll)
     self.x, self.y, self.width = band.x, band.y, band.width
     self.bandWidth = host.content.width
     return self
+end
+
+local function layoutViewport(view, host, x, y, width, total, overflow)
+    local viewport = view.viewport
+    local vx, vy = overflow and x or 0, overflow and y or 0
+    local vw, vh = overflow and width or host.chrome.width, overflow and HEIGHT or host.chrome.height
+    if viewport.x ~= vx or viewport.y ~= vy then viewport:SetPos(vx, vy) end
+    if viewport.width ~= vw or viewport.height ~= vh then viewport:SetSize(vw, vh) end
+    local extent = overflow and math.max(total, vw + 1) or vw
+    if viewport.scrollWidth ~= extent or viewport.scrollHeight ~= vh then
+        viewport:SetScrollSize(extent, vh)
+    end
+    if viewport.scrollX ~= 0 or viewport.scrollY ~= 0 then viewport:SetScrollPos(0, 0) end
+end
+
+local function layoutNative(view, host, width, total, offset, overflow)
+    if host.manageNative ~= false then
+        if host.grouped then setNative(view, width, total, offset, overflow) end
+        local controls = native(host, "tabControls")
+        if controls then
+            controlFor(view, controls)
+        else
+            view.controlsState = nil
+        end
+    else
+        -- A preview over an occupied row shares the group's native strip and
+        -- its already-owned navigation. Its viewport is independent artwork.
+        view.tabState, view.controlsState = nil, nil
+    end
+end
+
+local function positionArrows(view, content, y, bandWidth)
+    local leftX, rightX = content.x + 1, content.x + bandWidth - GUTTER - 1
+    if view.leftArrow.x ~= leftX or view.leftArrow.y ~= y + 5 then
+        view.leftArrow:SetPos(leftX, y + 5)
+    end
+    if view.rightArrow.x ~= rightX or view.rightArrow.y ~= y + 5 then
+        view.rightArrow:SetPos(rightX, y + 5)
+    end
+    local frame = view.host.frame
+    local hx, hy = frame.x + content.x, frame.y + y
+    local rightHitX = hx + bandWidth - GUTTER
+    if view.leftHit.x ~= hx or view.leftHit.y ~= hy then view.leftHit:SetPos(hx, hy) end
+    if view.rightHit.x ~= rightHitX or view.rightHit.y ~= hy then
+        view.rightHit:SetPos(rightHitX, hy)
+    end
+end
+
+local function styleArrows(view, display, offset, maxScroll)
+    local leftEnabled = display and view.clickEnabled and offset > 0
+    local rightEnabled = display and view.clickEnabled and offset < maxScroll
+    local leftSprite = id.Sprite[leftEnabled and "RS3_BTN_CHILD_TAB_SCROLL_SML_0" or "RS3_BTN_CHILD_TAB_SCROLL_SML_4"]
+    local rightSprite = id.Sprite[rightEnabled and "RS3_BTN_CHILD_TAB_SCROLL_SML_0" or "RS3_BTN_CHILD_TAB_SCROLL_SML_4"]
+    if view.leftArrow.spriteID ~= leftSprite then view.leftArrow.spriteID = leftSprite end
+    if view.rightArrow.spriteID ~= rightSprite then view.rightArrow.spriteID = rightSprite end
+    visible(view.leftArrow, display)
+    visible(view.rightArrow, display)
+    visible(view.leftHit, display)
+    visible(view.rightHit, display)
+    if view.leftHit.enabled ~= leftEnabled then view.leftHit.enabled = leftEnabled end
+    if view.rightHit.enabled ~= rightEnabled then view.rightHit.enabled = rightEnabled end
 end
 
 function Overflow:Layout(total, scrollX, show, enabled)
@@ -262,61 +339,16 @@ function Overflow:Layout(total, scrollX, show, enabled)
     local offset = math.min(maxScroll, math.max(0, math.floor(scrollX or 0)))
     self.x, self.y, self.width, self.bandWidth = x, y, width, bandWidth
     self.scrollX, self.maxScroll = offset, maxScroll
-    local viewport = self.viewport
-    local vx, vy = overflow and x or 0, overflow and y or 0
-    local vw, vh = overflow and width or host.chrome.width,
-        overflow and HEIGHT or host.chrome.height
-    if viewport.x ~= vx or viewport.y ~= vy then viewport:SetPos(vx, vy) end
-    if viewport.width ~= vw or viewport.height ~= vh then viewport:SetSize(vw, vh) end
-    local extent = overflow and math.max(total, vw + 1) or vw
-    if viewport.scrollWidth ~= extent or viewport.scrollHeight ~= vh then
-        viewport:SetScrollSize(extent, vh)
-    end
-    if viewport.scrollX ~= 0 or viewport.scrollY ~= 0 then viewport:SetScrollPos(0, 0) end
-
-    if host.manageNative ~= false then
-        if host.grouped then setNative(self, width, total, offset, overflow) end
-        local controls = native(host, "tabControls")
-        if controls then controlFor(self, controls) else self.controlsState = nil end
-    else
-        -- A preview over an occupied row shares the group's native strip and
-        -- its already-owned navigation. Its viewport is independent artwork.
-        self.tabState, self.controlsState = nil, nil
-    end
+    layoutViewport(self, host, x, y, width, total, overflow)
+    layoutNative(self, host, width, total, offset, overflow)
 
     local display = overflow and show == true and host.manageNative ~= false
     local newlyShown = display and not self.shown
     self.shown, self.clickEnabled = display, enabled ~= false
     if display then ensureArrows(self) end
     if self.leftArrow then
-        local leftX, rightX = content.x + 1, content.x + bandWidth - GUTTER - 1
-        if self.leftArrow.x ~= leftX or self.leftArrow.y ~= y + 5 then
-            self.leftArrow:SetPos(leftX, y + 5)
-        end
-        if self.rightArrow.x ~= rightX or self.rightArrow.y ~= y + 5 then
-            self.rightArrow:SetPos(rightX, y + 5)
-        end
-        local frame = host.frame
-        local hx, hy = frame.x + content.x, frame.y + y
-        local rightHitX = hx + bandWidth - GUTTER
-        if self.leftHit.x ~= hx or self.leftHit.y ~= hy then self.leftHit:SetPos(hx, hy) end
-        if self.rightHit.x ~= rightHitX or self.rightHit.y ~= hy then
-            self.rightHit:SetPos(rightHitX, hy)
-        end
-        local leftEnabled = display and self.clickEnabled and offset > 0
-        local rightEnabled = display and self.clickEnabled and offset < maxScroll
-        local leftSprite = id.Sprite[leftEnabled and "RS3_BTN_CHILD_TAB_SCROLL_SML_0"
-            or "RS3_BTN_CHILD_TAB_SCROLL_SML_4"]
-        local rightSprite = id.Sprite[rightEnabled and "RS3_BTN_CHILD_TAB_SCROLL_SML_0"
-            or "RS3_BTN_CHILD_TAB_SCROLL_SML_4"]
-        if self.leftArrow.spriteID ~= leftSprite then self.leftArrow.spriteID = leftSprite end
-        if self.rightArrow.spriteID ~= rightSprite then self.rightArrow.spriteID = rightSprite end
-        visible(self.leftArrow, display)
-        visible(self.rightArrow, display)
-        visible(self.leftHit, display)
-        visible(self.rightHit, display)
-        if self.leftHit.enabled ~= leftEnabled then self.leftHit.enabled = leftEnabled end
-        if self.rightHit.enabled ~= rightEnabled then self.rightHit.enabled = rightEnabled end
+        positionArrows(self, content, y, bandWidth)
+        styleArrows(self, display, offset, maxScroll)
         if newlyShown then self:Raise() end
     end
     return offset

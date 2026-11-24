@@ -23,6 +23,16 @@ function TextField.getSize(options)
     return options.width or DEFAULT_WIDTH, options.height or DEFAULT_HEIGHT
 end
 
+local function applyInputAppearance(root, options)
+    root.contentMargin = options.contentMargin or ui.Margin.new(8, CONTENT_TOP_INSET, 8, 0)
+    root.text.font = options.font or id.Font.MUSEO_SANS_15PT_REGULAR
+    root.text.rgba = options.colour or options.color or DEFAULT_TEXT_COLOUR
+    root.text.isShadowed = options.shadowed ~= false
+    root.emptyTextRGBA = options.placeholderColour or options.placeholderColor or DEFAULT_PLACEHOLDER_COLOUR
+    root.caretRGBA = options.caretColour or options.caretColor or Palette.CARET
+    root.selectionHighlightRGBA = options.selectionColour or options.selectionColor or Palette.SELECTED
+end
+
 function TextField.new(parent, options)
     options = options or {}
     local self = setmetatable({}, TextField)
@@ -49,16 +59,7 @@ function TextField.new(parent, options)
     self.root.inputMode = options.inputMode or ui.InputFieldKeyHandlingMode.DEFAULT
     self.root.emptyText = options.placeholder or options.emptyText or ""
     self.root.content = tostring(options.text or options.content or "")
-    self.root.contentMargin = options.contentMargin
-        or ui.Margin.new(8, CONTENT_TOP_INSET, 8, 0)
-    self.root.text.font = options.font or id.Font.MUSEO_SANS_15PT_REGULAR
-    self.root.text.rgba = options.colour or options.color or DEFAULT_TEXT_COLOUR
-    self.root.text.isShadowed = options.shadowed ~= false
-    self.root.emptyTextRGBA = options.placeholderColour or options.placeholderColor or DEFAULT_PLACEHOLDER_COLOUR
-    self.root.caretRGBA = options.caretColour or options.caretColor or Palette.CARET
-    self.root.selectionHighlightRGBA = options.selectionColour
-        or options.selectionColor
-        or Palette.SELECTED
+    applyInputAppearance(self.root, options)
     self.root.enabled = not self.disabled
     self.root.clickthrough = self.disabled
     Wheel.bind(self.root, options)

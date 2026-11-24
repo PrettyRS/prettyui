@@ -2,8 +2,7 @@
 local Interfaces = {}
 local loaded, components, namespaces, registered = {}, {}, {}, {}
 local nextStaticID = {}
-local wrapped, tracked = setmetatable({}, { __mode = "k" }),
-    setmetatable({}, { __mode = "k" })
+local wrapped, tracked = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
 
 local function isLive(component)
     while component do
@@ -66,6 +65,42 @@ local function addChild(parent, component)
     end
     children[#children + 1] = component
 end
+local function ensureHost(interfaceID, static)
+    if static.staticID == nil then
+        nextStaticID[interfaceID] = (nextStaticID[interfaceID] or 0) + 1
+        static.staticID = nextStaticID[interfaceID]
+    elseif type(static.staticID) == "number" then
+        nextStaticID[interfaceID] = math.max(nextStaticID[interfaceID] or 0, static.staticID)
+    end
+    local host = namespaces[interfaceID][static.staticID]
+    if not host then
+        host = { static = static }
+        namespaces[interfaceID][static.staticID] = host
+    end
+    return host
+end
+
+local function attachChild(component, parent, static, host, categoryID, dynamicID)
+    component.parent = parent
+    component.parentStatic = static
+    addChild(parent, component)
+    local category = categoryID or component.categoryID
+    if category == nil then
+        category = parent.categoryID == -1 and 0 or parent.categoryID
+    end
+    if category == nil then category = 0 end
+    local id = dynamicID or component.dynamicID
+    if id == nil then
+        id = parent.categoryID == -1 and 0 or ((parent.dynamicID or -1) + 1)
+        while host[category] and host[category][id] and isLive(host[category][id]) do
+            id = id + 1
+        end
+    end
+    component.categoryID, component.dynamicID = category, id
+    host[category] = host[category] or {}
+    host[category][id] = component
+end
+
 function Interfaces.component(component, parent, categoryID, dynamicID)
     parent = parent or component.parent
     if parent and parent ~= component and not parent.parentStatic then
@@ -79,37 +114,10 @@ function Interfaces.component(component, parent, categoryID, dynamicID)
     namespaces[interfaceID] = namespaces[interfaceID] or {}
 
     local static = parent and (parent.parentStatic or parent) or component
-    if static.staticID == nil then
-        nextStaticID[interfaceID] = (nextStaticID[interfaceID] or 0) + 1
-        static.staticID = nextStaticID[interfaceID]
-    elseif type(static.staticID) == "number" then
-        nextStaticID[interfaceID] = math.max(nextStaticID[interfaceID] or 0, static.staticID)
-    end
+    local host = ensureHost(interfaceID, static)
     component.staticID = static.staticID
-    local host = namespaces[interfaceID][static.staticID]
-    if not host then
-        host = { static = static }
-        namespaces[interfaceID][static.staticID] = host
-    end
     if parent and parent ~= component then
-        component.parent = parent
-        component.parentStatic = static
-        addChild(parent, component)
-        local category = categoryID or component.categoryID
-        if category == nil then
-            category = parent.categoryID == -1 and 0 or parent.categoryID
-        end
-        if category == nil then category = 0 end
-        local id = dynamicID or component.dynamicID
-        if id == nil then
-            id = parent.categoryID == -1 and 0 or ((parent.dynamicID or -1) + 1)
-            while host[category] and host[category][id] and isLive(host[category][id]) do
-                id = id + 1
-            end
-        end
-        component.categoryID, component.dynamicID = category, id
-        host[category] = host[category] or {}
-        host[category][id] = component
+        attachChild(component, parent, static, host, categoryID, dynamicID)
     else
         -- A native rebuild can replace the object without changing its full ID.
         host.static = component
@@ -125,11 +133,26 @@ function Interfaces.component(component, parent, categoryID, dynamicID)
             end
         end
     end
-    if tracked[component] == interfaceID then install(); return component end
+    if tracked[component] == interfaceID then
+        install()
+        return component
+    end
     components[interfaceID][#components[interfaceID] + 1] = component
     tracked[component] = interfaceID
     install()
     return component
+end
+
+local function invalidateHandles(handles)
+    for _, component in ipairs(handles) do
+        for key in pairs(component) do
+            component[key] = nil
+        end
+        setmetatable(component, {
+            __index = function(_, key) error("read after interface unload: " .. tostring(key)) end,
+            __newindex = function(_, key) error("write after interface unload: " .. tostring(key)) end,
+        })
+    end
 end
 
 -- Reject every property access after unload, including attempts to read IDs.
@@ -139,13 +162,7 @@ function Interfaces.unload(interfaceID)
             loaded[id] = nil
             namespaces[id] = nil
             components[id] = nil
-            for _, component in ipairs(handles) do
-                for key in pairs(component) do component[key] = nil end
-                setmetatable(component, {
-                    __index = function(_, key) error("read after interface unload: " .. tostring(key)) end,
-                    __newindex = function(_, key) error("write after interface unload: " .. tostring(key)) end,
-                })
-            end
+            invalidateHandles(handles)
         end
     end
 end

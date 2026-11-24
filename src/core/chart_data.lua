@@ -25,8 +25,10 @@ function Data.arrayLength(values, name)
 end
 
 function Data.colour(value)
-    assert(value == nil or (Data.finite(value) and value >= 0 and value <= 0xFFFFFFFF
-        and value == math.floor(value)), "chart rgba must be an unsigned 32-bit integer")
+    assert(
+        value == nil or (Data.finite(value) and value >= 0 and value <= 0xFFFFFFFF and value == math.floor(value)),
+        "chart rgba must be an unsigned 32-bit integer"
+    )
     return value
 end
 
@@ -35,7 +37,9 @@ local function categoryColour(id)
     -- Mix the string hash so similar IDs (such as adjacent skill IDs) do not
     -- cluster into the same hue. Restrict saturation/value for the dark theme.
     local hash = 2166136261
-    for index = 1, #id do hash = ((hash ~ id:byte(index)) * 16777619) & 0xFFFFFFFF end
+    for index = 1, #id do
+        hash = ((hash ~ id:byte(index)) * 16777619) & 0xFFFFFFFF
+    end
     hash = ((hash ~ (hash >> 16)) * 0x45D9F3B) & 0xFFFFFFFF
     hash = ((hash ~ (hash >> 16)) * 0x45D9F3B) & 0xFFFFFFFF
     hash = hash ~ (hash >> 16)
@@ -43,8 +47,10 @@ local function categoryColour(id)
     local saturation = 0.55 + ((hash >> 12) & 255) / 255 * 0.20
     local value = 0.80 + ((hash >> 20) & 255) / 255 * 0.12
     local red, green, blue = hsvToRgb(hue, saturation, value)
-    return (math.floor(red * 255 + 0.5) << 24) | (math.floor(green * 255 + 0.5) << 16)
-        | (math.floor(blue * 255 + 0.5) << 8) | 255
+    return (math.floor(red * 255 + 0.5) << 24)
+        | (math.floor(green * 255 + 0.5) << 16)
+        | (math.floor(blue * 255 + 0.5) << 8)
+        | 255
 end
 
 function Data.rows(rows, defaultRGBA)
@@ -52,10 +58,16 @@ function Data.rows(rows, defaultRGBA)
     local copy = {}
     for index = 1, count do
         local row = rows[index]
-        assert(type(row) == "table" and type(row.id) == "string" and type(row.label) == "string"
-            and Data.finite(row.value), "bar rows require string id, string label and finite value")
-        copy[index] = { id = row.id, label = row.label, value = row.value,
-            rgba = Data.colour(row.rgba) or defaultRGBA or categoryColour(row.id) }
+        assert(
+            type(row) == "table" and type(row.id) == "string" and type(row.label) == "string" and Data.finite(row.value),
+            "bar rows require string id, string label and finite value"
+        )
+        copy[index] = {
+            id = row.id,
+            label = row.label,
+            value = row.value,
+            rgba = Data.colour(row.rgba) or defaultRGBA or categoryColour(row.id),
+        }
     end
     return copy
 end
@@ -66,11 +78,18 @@ function Data.bins(bins)
     local copy, sampleCount, previousUpper = {}, 0, nil
     for index = 1, count do
         local bin = bins[index]
-        assert(type(bin) == "table" and Data.finite(bin.lower) and Data.finite(bin.upper)
-            and bin.lower < bin.upper, "histogram bins require finite increasing lower and upper bounds")
+        assert(
+            type(bin) == "table" and Data.finite(bin.lower) and Data.finite(bin.upper) and bin.lower < bin.upper,
+            "histogram bins require finite increasing lower and upper bounds"
+        )
         assert(previousUpper == nil or previousUpper == bin.lower, "histogram bins must be ordered and contiguous")
-        assert(Data.finite(bin.count) and bin.count >= 0 and bin.count <= MAX_SAFE_INTEGER
-            and bin.count == math.floor(bin.count), "histogram counts must be nonnegative safe integers")
+        assert(
+            Data.finite(bin.count)
+                and bin.count >= 0
+                and bin.count <= MAX_SAFE_INTEGER
+                and bin.count == math.floor(bin.count),
+            "histogram counts must be nonnegative safe integers"
+        )
         assert(bin.count <= MAX_SAFE_INTEGER - sampleCount, "histogram sample count exceeds the safe integer range")
         sampleCount = sampleCount + bin.count
         copy[index] = { lower = bin.lower, upper = bin.upper, count = bin.count }
@@ -101,8 +120,10 @@ function Data.samples(samples, binWidth, origin)
     local lower = origin + first * binWidth
     for slot = first, last do
         local upper = origin + (slot + 1) * binWidth
-        assert(Data.finite(lower) and Data.finite(upper) and lower < upper,
-            "histogram bin boundaries are not representable")
+        assert(
+            Data.finite(lower) and Data.finite(upper) and lower < upper,
+            "histogram bin boundaries are not representable"
+        )
         bins[#bins + 1] = { lower = lower, upper = upper, count = counts[slot] or 0 }
         lower = upper
     end

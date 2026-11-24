@@ -67,6 +67,45 @@ local function findOwnerWindow(context)
     end
 end
 
+local function buildHeader(self, parent, options)
+    self.root = Components.new(ui.Layer, parent, options)
+    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
+    self.root:SetSize(
+        options.width or DEFAULT_WIDTH,
+        options.height or DEFAULT_HEIGHT,
+        options.widthAnchor or 0,
+        options.heightAnchor or 0
+    )
+    Wheel.bind(self.root, options)
+
+    -- Keep the native frame and dropdown-button artwork as the visual shell.
+    self.shell = Components.new(ui.ComboField, self.root)
+    self.shell.stylesheetID = options.stylesheetID or id.StyleSheet.COMBO_DEFAULT
+    self.shell:SetSize(0, 0, 1.0, 1.0)
+    self.shell.clickthrough = true
+
+    self.input = Components.new(ui.InputField, self.root)
+    self.input.stylesheetID = options.inputStylesheetID or id.StyleSheet.INPUT_DEFAULT
+    self.input:SetSize(-BUTTON_WIDTH, 0, 1.0, 1.0)
+    self.input:Setup(ui.TextContentVisibilityMode.VISIBLE, ui.InputFieldFilterMode.NONE, options.maxLength or 0)
+    self.input.inputMode = options.inputMode or ui.InputFieldKeyHandlingMode.DEFAULT
+    self.input.contentMargin = options.contentMargin or ui.Margin.new(8, CONTENT_TOP_INSET, 4, 0)
+    self.input.text.font = options.font or id.Font.MUSEO_SANS_15PT_REGULAR
+    self.input.text.rgba = options.colour or options.color or DEFAULT_TEXT_COLOUR
+    self.input.text.isShadowed = options.shadowed ~= false
+    self.input.emptyTextRGBA = options.placeholderColour or options.placeholderColor or Palette.DISABLED_TEXT
+    self.input.caretRGBA = options.caretColour or options.caretColor or Palette.CARET
+    self.input.selectionHighlightRGBA = options.selectionColour or options.selectionColor or Palette.SELECTED
+    self.input.containerSprite.alpha = 0
+
+    self.button = Components.new(ui.Layer, self.root)
+    self.button:SetPos(-BUTTON_WIDTH, 0, 1.0, 0)
+    self.button:SetSize(BUTTON_WIDTH, 0, 0, 1.0)
+    self.button.clickthrough = false
+    self.input:MoveToFront()
+    self.button:MoveToFront()
+end
+
 local function buildOrderedComboBox(parent, options, overlayParent, policy)
     options = options or {}
     local self = setmetatable({}, OrderedComboBox)
@@ -87,51 +126,7 @@ local function buildOrderedComboBox(parent, options, overlayParent, policy)
     self._pendingInputContents = {}
 
     self.interfaceID = parent.interfaceID
-    self.root = Components.new(ui.Layer, parent, options)
-    self.root:SetPos(options.x or 0, options.y or 0, options.xAnchor or 0, options.yAnchor or 0)
-    self.root:SetSize(
-        options.width or DEFAULT_WIDTH,
-        options.height or DEFAULT_HEIGHT,
-        options.widthAnchor or 0,
-        options.heightAnchor or 0
-    )
-    Wheel.bind(self.root, options)
-
-    -- Keep the native frame and dropdown-button artwork as the visual shell.
-    self.shell = Components.new(ui.ComboField, self.root)
-    self.shell.stylesheetID = options.stylesheetID or id.StyleSheet.COMBO_DEFAULT
-    self.shell:SetSize(0, 0, 1.0, 1.0)
-    self.shell.clickthrough = true
-
-    self.input = Components.new(ui.InputField, self.root)
-    self.input.stylesheetID = options.inputStylesheetID or id.StyleSheet.INPUT_DEFAULT
-    self.input:SetSize(-BUTTON_WIDTH, 0, 1.0, 1.0)
-    self.input:Setup(
-        ui.TextContentVisibilityMode.VISIBLE,
-        ui.InputFieldFilterMode.NONE,
-        options.maxLength or 0
-    )
-    self.input.inputMode = options.inputMode or ui.InputFieldKeyHandlingMode.DEFAULT
-    self.input.contentMargin = options.contentMargin
-        or ui.Margin.new(8, CONTENT_TOP_INSET, 4, 0)
-    self.input.text.font = options.font or id.Font.MUSEO_SANS_15PT_REGULAR
-    self.input.text.rgba = options.colour or options.color or DEFAULT_TEXT_COLOUR
-    self.input.text.isShadowed = options.shadowed ~= false
-    self.input.emptyTextRGBA = options.placeholderColour
-        or options.placeholderColor
-        or Palette.DISABLED_TEXT
-    self.input.caretRGBA = options.caretColour or options.caretColor or Palette.CARET
-    self.input.selectionHighlightRGBA = options.selectionColour
-        or options.selectionColor
-        or Palette.SELECTED
-    self.input.containerSprite.alpha = 0
-
-    self.button = Components.new(ui.Layer, self.root)
-    self.button:SetPos(-BUTTON_WIDTH, 0, 1.0, 0)
-    self.button:SetSize(BUTTON_WIDTH, 0, 0, 1.0)
-    self.button.clickthrough = false
-    self.input:MoveToFront()
-    self.button:MoveToFront()
+    buildHeader(self, parent, options)
 
     self.dropdown = List.new(self.overlayParent, {
         _categoryPolicy = policy,
@@ -159,7 +154,11 @@ local function buildOrderedComboBox(parent, options, overlayParent, policy)
     end)
     self.button:Subscribe(ui.Hook.ONCLICK, function()
         if self.disabled then return false end
-        if self.open then self:_Close() else self:_Open() end
+        if self.open then
+            self:_Close()
+        else
+            self:_Open()
+        end
         return false
     end)
     self.input:Subscribe(ui.Hook.ONCONTENTCHANGED, function(_, reason, content)
@@ -167,7 +166,9 @@ local function buildOrderedComboBox(parent, options, overlayParent, policy)
             if pending == content then
                 -- Content events are asynchronous and some client builds omit
                 -- intermediate values when assignments occur in quick succession.
-                for _ = 1, index do table.remove(self._pendingInputContents, 1) end
+                for _ = 1, index do
+                    table.remove(self._pendingInputContents, 1)
+                end
                 return false
             end
         end
@@ -200,7 +201,9 @@ local function buildOrderedComboBox(parent, options, overlayParent, policy)
         self.ownerWindow:_RegisterOverlay(
             self.dropdown.root,
             function() return self.open and not self._clipped and anchorVisible(self.root) end,
-            function() if self.open then self:_LayoutDropdown() end end
+            function()
+                if self.open then self:_LayoutDropdown() end
+            end
         )
     end
     if self._scrollController then self._scrollController:RegisterClipTarget(self) end
@@ -216,9 +219,12 @@ function OrderedComboBox.new(parent, options)
         Components.checkContentParent(overlayParent, { _categoryPolicy = policy })
     end
     return Components.withBatch(parent, function()
-        return Components.withBatch(overlayParent, function()
-            return buildOrderedComboBox(parent, options, overlayParent, policy)
-        end)
+        return Components.withBatch(
+            overlayParent,
+            function()
+                return buildOrderedComboBox(parent, options, overlayParent, policy)
+            end
+        )
     end)
 end
 
@@ -231,7 +237,9 @@ end
 
 function OrderedComboBox:_LayoutDropdown()
     local x, y = self.root.x or 0, self.root.y or 0
-    if self.context and self.context.active then x, y = self.context.position(self.root) end
+    if self.context and self.context.active then
+        x, y = self.context.position(self.root)
+    end
     local width = math.max(1, self.root.width or DEFAULT_WIDTH)
     local visible = 0
     for _, entry in ipairs(self.entries) do
@@ -258,12 +266,10 @@ end
 function OrderedComboBox:_Filter(value)
     local query = string.lower(tostring(value or ""))
     for _, entry in ipairs(self.entries) do
-        entry.visible = query == ""
-            or string.find(string.lower(entry.label), query, 1, true) ~= nil
+        entry.visible = query == "" or string.find(string.lower(entry.label), query, 1, true) ~= nil
         self.dropdown:SetEntryVisible(entry.id, entry.visible)
     end
-    if self.selectedID and self.entriesByID[self.selectedID]
-        and self.entriesByID[self.selectedID].visible then
+    if self.selectedID and self.entriesByID[self.selectedID] and self.entriesByID[self.selectedID].visible then
         self.dropdown:SetSelected(self.selectedID, true, false)
     end
     self.dropdown:SetScrollPosition(0)
@@ -327,9 +333,12 @@ function OrderedComboBox:SetEntries(entries, selectedID)
         listEntries[#listEntries + 1] = { label = entry.label, id = entry.id }
     end
     self.dropdown:SetEntries(listEntries)
-    local selectionID = self.entriesByID[selectedID] and selectedID
-        or (self.entries[1] and self.entries[1].id)
-    if selectionID then self:Select(selectionID, false) else self:_Close() end
+    local selectionID = self.entriesByID[selectedID] and selectedID or (self.entries[1] and self.entries[1].id)
+    if selectionID then
+        self:Select(selectionID, false)
+    else
+        self:_Close()
+    end
 end
 
 function OrderedComboBox:Select(entryID, triggerEvents, eventType)
@@ -340,12 +349,7 @@ function OrderedComboBox:Select(entryID, triggerEvents, eventType)
     self.dropdown:SetSelected(entry.id, true, false)
     self:_SetInput(entry.label)
     if triggerEvents == true and self.onChange then
-        self.onChange(
-            self,
-            entry.id,
-            entry.label,
-            eventType or ui.SelectionChangeEvent.SELECTED
-        )
+        self.onChange(self, entry.id, entry.label, eventType or ui.SelectionChangeEvent.SELECTED)
     end
     return true
 end
@@ -387,7 +391,10 @@ function OrderedComboBox:Destroy()
     if self.ownerWindow and self.dropdown and self.dropdown.root then
         self.ownerWindow:_UnregisterOverlay(self.dropdown.root)
     end
-    if self.dropdown then self.dropdown:Destroy() self.dropdown = nil end
+    if self.dropdown then
+        self.dropdown:Destroy()
+        self.dropdown = nil
+    end
     if self.root then
         WorldMap.untrack(self.root)
         if ui.Interfaces:GetInterface(self.interfaceID) ~= nil then self.root:Destroy() end

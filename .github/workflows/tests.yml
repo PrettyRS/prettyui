@@ -35,3 +35,55 @@ jobs:
 
       - name: Run Python tooling tests
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
+  lua-quality:
+    name: Lua quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install StyLua and Luacheck
+        shell: bash
+        run: |
+          tools="$(mktemp -d "$RUNNER_TEMP/lua-quality.XXXXXX")"
+          cd "$tools"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/JohnnyMorganz/StyLua/releases/download/v2.6.0/stylua-linux-x86_64.zip \
+            --output stylua.zip
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck \
+            --output luacheck
+          sha256sum --check <<'CHECKSUMS'
+          a485f72bbfa22e4642e77a84b5edc2611a5cab7477b34e2e709dd8f78e919895  stylua.zip
+          d68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc  luacheck
+          CHECKSUMS
+          unzip -q stylua.zip stylua
+          chmod +x luacheck stylua
+          printf '%s\n' "$tools" >> "$GITHUB_PATH"
+
+      - name: Install Lua parser
+        run: python3 -m pip install -r .github/scripts/lua-quality-requirements.txt
+
+      - name: Check changed Lua files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          python3 .github/scripts/check_lua_quality.py --base "$BASE_SHA" 2>&1 | tee "$RUNNER_TEMP/lua-quality.log"
+
+      - name: Upload Lua quality failure report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lua-quality-failure-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lua-quality.log
+          if-no-files-found: ignore
+          retention-days: 3

@@ -41,9 +41,11 @@ local function measure(text, options)
     local contentWidth = math.max(1, width - PADDING_X * 2)
     local height = options.height
     if height == nil then
-        local succeeded, textHeight = pcall(function()
-            return font:GetStringHeightAndLineCount(text, contentWidth, font.baseline, false, false, false)
-        end)
+        local succeeded, textHeight = pcall(
+            function()
+                return font:GetStringHeightAndLineCount(text, contentWidth, font.baseline, false, false, false)
+            end
+        )
         if succeeded then
             height = textHeight + PADDING_Y * 2
         else
@@ -84,8 +86,7 @@ local function placedPosition(placement, targetX, targetY, targetWidth, targetHe
 end
 
 local function fitsParent(x, y, width, height, parentWidth, parentHeight, margin)
-    return x >= margin and y >= margin and
-        x + width <= parentWidth - margin and y + height <= parentHeight - margin
+    return x >= margin and y >= margin and x + width <= parentWidth - margin and y + height <= parentHeight - margin
 end
 
 function Tooltip.getContext(collection)
@@ -118,7 +119,9 @@ local function destroyContext(context)
         context.tooltips[index]:Destroy()
     end
     if context.ownedWidgets then
-        for widget in pairs(context.ownedWidgets) do widget:Destroy() end
+        for widget in pairs(context.ownedWidgets) do
+            widget:Destroy()
+        end
         context.ownedWidgets = nil
     end
     context.children = {}
@@ -144,8 +147,7 @@ local function moveContextTooltipsToFront(context)
     if context == nil or not context.active then return end
     for _, tooltip in ipairs(context.tooltips) do
         local parts = tooltip._parts
-        if parts ~= nil and ui.Interfaces:GetInterface(tooltip.interfaceID) ~= nil
-            and parts.root.hidden ~= true then
+        if parts ~= nil and ui.Interfaces:GetInterface(tooltip.interfaceID) ~= nil and parts.root.hidden ~= true then
             parts.root:MoveToFront()
         end
     end
@@ -160,8 +162,12 @@ end
 
 local function hideContextTooltips(context)
     if context == nil or not context.active then return end
-    for _, tooltip in ipairs(context.tooltips) do tooltip:Hide() end
-    for _, child in ipairs(context.children) do hideContextTooltips(child) end
+    for _, tooltip in ipairs(context.tooltips) do
+        tooltip:Hide()
+    end
+    for _, child in ipairs(context.children) do
+        hideContextTooltips(child)
+    end
 end
 
 function Tooltip.hideContextTooltips(collection)
@@ -188,8 +194,12 @@ function Tooltip.set(owner, value, field)
     local bindings = owner and owner._tooltipBindings
     local binding = bindings and bindings[field]
     if binding == nil or not binding.active then return false end
-    if ui.Interfaces:GetInterface(binding.targetInterfaceID) == nil
-        or ui.Interfaces:GetInterface(binding.parentInterfaceID) == nil then return false end
+    if
+        ui.Interfaces:GetInterface(binding.targetInterfaceID) == nil
+        or ui.Interfaces:GetInterface(binding.parentInterfaceID) == nil
+    then
+        return false
+    end
 
     local attachment = owner[field]
     if attachment ~= nil and value ~= nil and type(value) ~= "table" then
@@ -289,8 +299,17 @@ local function release(self)
 end
 
 local PARTS = {
-    root = true, label = true, centre = true, top = true, bottom = true, left = true, right = true,
-    topLeft = true, topRight = true, bottomLeft = true, bottomRight = true,
+    root = true,
+    label = true,
+    centre = true,
+    top = true,
+    bottom = true,
+    left = true,
+    right = true,
+    topLeft = true,
+    topRight = true,
+    bottomLeft = true,
+    bottomRight = true,
 }
 
 function Tooltip:__index(key)
@@ -329,7 +348,9 @@ local function buildTooltip(target, parent, value, hoverHandlers)
     target.clickthrough = false
 
     target:Subscribe(ui.Hook.ONMOUSEOVER, HOOK_ID, function(_, x, y)
-        if self.followCursor then self.cursorX, self.cursorY = x, y end
+        if self.followCursor then
+            self.cursorX, self.cursorY = x, y
+        end
         if hoverHandlers and hoverHandlers.onMouseOver then
             hoverHandlers.onMouseOver(self)
         else
@@ -348,8 +369,11 @@ local function buildTooltip(target, parent, value, hoverHandlers)
 
     if self.followCursor then
         target:Subscribe(ui.Hook.ONMOUSEREPEAT, HOOK_ID, function(_, x, y)
-            if self._parts ~= nil and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
-                and self._parts.root.hidden ~= true then
+            if
+                self._parts ~= nil
+                and ui.Interfaces:GetInterface(self.interfaceID) ~= nil
+                and self._parts.root.hidden ~= true
+            then
                 self.cursorX, self.cursorY = x, y
                 self:Show()
             end
@@ -367,16 +391,15 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
     local options = normalize(value)
     local context = options.parent == nil and contexts[parent] or nil
     local attachmentParent = options.parent or (context and context.parent) or parent
-    return Components.withBatch(attachmentParent, function()
-        return buildTooltip(target, parent, value, hoverHandlers)
-    end)
+    return Components.withBatch(
+        attachmentParent,
+        function()
+            return buildTooltip(target, parent, value, hoverHandlers)
+        end
+    )
 end
 
-function Tooltip:Show()
-    if self.target == nil
-        or ui.Interfaces:GetInterface(self.interfaceID) == nil
-        or ui.Interfaces:GetInterface(self.targetInterfaceID) == nil then return end
-    if self._parts == nil then build(self) end
+local function placementAnchor(self)
     local targetX = self.target.x or 0
     local targetY = self.target.y or 0
     if self.context and self.context.active then
@@ -384,24 +407,37 @@ function Tooltip:Show()
     end
     local targetWidth = self.target.width or 0
     local targetHeight = self.target.height or 0
-    local offset = OFFSET
+
     if self.followCursor and self.cursorX ~= nil and self.cursorY ~= nil then
         -- Hover coordinates are local interface units; reuse the overlay context origin.
-        targetX, targetY = targetX + self.cursorX, targetY + self.cursorY
-        targetWidth, targetHeight = 0, 0
-        offset = CURSOR_OFFSET
+        return targetX + self.cursorX, targetY + self.cursorY, 0, 0, CURSOR_OFFSET
     end
+    return targetX, targetY, targetWidth, targetHeight, OFFSET
+end
+
+function Tooltip:Show()
+    if
+        self.target == nil
+        or ui.Interfaces:GetInterface(self.interfaceID) == nil
+        or ui.Interfaces:GetInterface(self.targetInterfaceID) == nil
+    then
+        return
+    end
+    if self._parts == nil then build(self) end
+    local targetX, targetY, targetWidth, targetHeight, offset = placementAnchor(self)
     local parentWidth = self.parent and (self.parent.width or 0) or 0
     local parentHeight = self.parent and (self.parent.height or 0) or 0
     local margin = self.options.boundsMargin or OFFSET
     local x, y
     for _, placement in ipairs(placementOrder(self.options.placement, self.options.placementFallback)) do
-        local candidateX, candidateY = placedPosition(
-            placement, targetX, targetY, targetWidth, targetHeight, self.width, self.height, offset
-        )
+        local candidateX, candidateY =
+            placedPosition(placement, targetX, targetY, targetWidth, targetHeight, self.width, self.height, offset)
         x, y = candidateX, candidateY
-        if parentWidth <= 0 or parentHeight <= 0 or
-            fitsParent(x, y, self.width, self.height, parentWidth, parentHeight, margin) then
+        if
+            parentWidth <= 0
+            or parentHeight <= 0
+            or fitsParent(x, y, self.width, self.height, parentWidth, parentHeight, margin)
+        then
             break
         end
     end
@@ -419,8 +455,9 @@ function Tooltip:Show()
 end
 
 function Tooltip:SetText(text)
-    if self.target == nil
-        or ui.Interfaces:GetInterface(self.interfaceID) == nil then return false end
+    if self.target == nil or ui.Interfaces:GetInterface(self.interfaceID) == nil then
+        return false
+    end
 
     text = tostring(text or "")
     self.options.text = text

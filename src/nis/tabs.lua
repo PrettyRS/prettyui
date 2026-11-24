@@ -22,7 +22,6 @@ local function sprite(view, parent, spriteID, opaque)
     return part
 end
 
-
 local function loaded(view)
     return view.root ~= nil and ui.Interfaces:GetInterface(view.interfaceID) ~= nil
 end
@@ -44,16 +43,17 @@ function Tab:Release()
     self.retained, self.dragOwner = nil, nil
 end
 
+local function discardTab(tab)
+    if not tab.retained then return tab:Release() end
+    if tab.tooltipAttachment then tab.tooltipAttachment:Hide() end
+    Tooltip.unbind(tab, "tooltipAttachment")
+end
+
 local function clearTabs(view, preserveInputs)
     local isLoaded = loaded(view)
     if not preserveInputs then
         for _, tab in ipairs(view.tabs) do
-            if tab.retained then
-                if tab.tooltipAttachment then tab.tooltipAttachment:Hide() end
-                Tooltip.unbind(tab, "tooltipAttachment")
-            else
-                tab:Release()
-            end
+            discardTab(tab)
         end
     end
     view.tabs = {}
@@ -90,8 +90,7 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
     tab.x = tab.x or x
     tab.visual = visual
     visual:SetPos(tab.x, 0)
-    tab.background = sprite(view, visual,
-        selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected)
+    tab.background = sprite(view, visual, selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected)
     tab.background:SetSize(NisTabs.WIDTH, NisTabs.HEIGHT)
     -- Native getters expose the resolved sprite, not the plugin resource wrapper.
     tab.icon = panel.tabIcon
@@ -135,9 +134,12 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
             return false
         end
         tab.hit:Subscribe(ui.Hook.ONRELEASE, release)
-        tab.hit:Subscribe(ui.Hook.ONDRAGCOMPLETE, function(component, _, px, py)
-            return release(component, px, py)
-        end)
+        tab.hit:Subscribe(
+            ui.Hook.ONDRAGCOMPLETE,
+            function(component, _, px, py)
+                return release(component, px, py)
+            end
+        )
         Tooltip.bind(tab, tab.hit, view.panel.parent, {
             text = tabText(panel),
             placement = "above",
@@ -230,8 +232,10 @@ function NisTabs:Contains(parentX, parentY)
     local root = self.panel.root
     local left = root.x + CORNER
     local top = root.y + (self.panel.locked and 0 or 12) + CORNER
-    return parentX >= left and parentX < left + root.width - CORNER * 2
-        and parentY >= top and parentY < top + NisTabs.HEIGHT
+    return parentX >= left
+        and parentX < left + root.width - CORNER * 2
+        and parentY >= top
+        and parentY < top + NisTabs.HEIGHT
 end
 
 -- Drag retention ends at the last tab or navigation control; docking uses the full strip.
@@ -283,6 +287,164 @@ function NisTabs:FinishDrag()
     self:Sync(self.panel.root.hidden == true)
 end
 
+local function sameStrip(view, members, active, previewPanel, bandWidth, bandY)
+    if
+        view.pageDirty
+        or not view.parts
+        or view.bandWidth ~= bandWidth
+        or view.bandY ~= bandY
+        or view.previewPanel ~= previewPanel
+        or not view.members
+        or #view.members ~= #members
+    then
+        return false
+    end
+    for index, member in ipairs(members) do
+        if view.members[index] ~= member then return false end
+    end
+    for _, tab in ipairs(view.tabs) do
+        if not tab.preview and (tab.hit == nil or tab.icon ~= tab.member.tabIcon) then
+            return false
+        end
+    end
+    return view.active == active
+end
+
+-- Selection artwork can change without rebuilding native press targets.
+local function updateSelectionArtwork(view, members, active, previewPanel, bandWidth, bandY)
+    if
+        previewPanel ~= nil
+        or not view.parts
+        or view.pageDirty
+        or view.bandWidth ~= bandWidth
+        or view.bandY ~= bandY
+        or view.previewPanel ~= nil
+        or not view.members
+        or #view.members ~= #members
+        or #members > math.floor(bandWidth / NisTabs.WIDTH)
+        or #view.tabs ~= #members
+    then
+        return false
+    end
+    for index, member in ipairs(members) do
+        local tab = view.tabs[index]
+        if view.members[index] ~= member or tab.member ~= member or tab.hit == nil or tab.icon ~= member.tabIcon then
+            return false
+        end
+    end
+    for _, tab in ipairs(view.tabs) do
+        local selected = tab.member == active
+        local spriteID = selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected
+        if tab.background.spriteID ~= spriteID then tab.background.spriteID = spriteID end
+        Components.setHidden(tab.seam, selected)
+    end
+    view.active = active
+    return true
+end
+
+local function narrowPage(view, previewPanel, active, activeIndex, total)
+    if view.previewPanel ~= previewPanel then return total end
+    if view.active ~= active then return activeIndex end
+    return math.max(1, math.min(total, view.pageIndex or total))
+end
+
+local function drawStrip(view, bandWidth)
+    view.parts = Components.new(ui.Layer, view.root)
+    view.parts:SetSize(0, 0, 1.0, 1.0)
+    view.parts.clickthrough = true
+    local art = Sprites.NIS_PANEL
+    local buffer = sprite(view, view.parts, art.tabBufferTile)
+    buffer:SetSize(bandWidth, NisTabs.HEIGHT - CORNER)
+    buffer.isTiling = true
+    local bar = sprite(view, view.parts, art.tabBarTile)
+    bar:SetPos(0, NisTabs.HEIGHT - CORNER)
+    bar:SetSize(bandWidth, CORNER)
+    bar.isTiling = true
+end
+
+local function narrowTabs(view, members, active, previewPanel, previousTabs, page, total)
+    if page <= #members then
+        makeTab(view, members[page], 0, members[page] == active, false, previousTabs)
+    else
+        makeTab(view, previewPanel, 0, false, true, previousTabs)
+    end
+    local function showPage(nextPage)
+        view.pageIndex = nextPage
+        view.pageDirty = true
+        view:Refresh(view.members, view.active, view.previewPanel)
+    end
+    navigation(view, NisTabs.WIDTH, "<", page > 1 and function() showPage(page - 1) end or nil)
+    navigation(view, NisTabs.WIDTH + NAV_WIDTH, ">", page < total and function() showPage(page + 1) end or nil)
+end
+
+local function wideTabs(view, members, active, previewPanel, previousTabs, slots, activeIndex, overflow)
+    local memberSlots = previewPanel ~= nil and slots - 1 or slots
+    local first = math.max(1, math.min(activeIndex - memberSlots + 1, #members - memberSlots + 1))
+    for index = first, math.min(#members, first + memberSlots - 1) do
+        makeTab(view, members[index], (index - first) * NisTabs.WIDTH, members[index] == active, false, previousTabs)
+    end
+    if previewPanel ~= nil then
+        makeTab(view, previewPanel, #view.tabs * NisTabs.WIDTH, false, true, previousTabs)
+    end
+    if not overflow then return end
+    local navX = slots * NisTabs.WIDTH
+    if members[activeIndex - 1] then
+        navigation(
+            view,
+            navX,
+            "<",
+            function()
+                view.panel:_SelectNisTab(members[activeIndex - 1])
+            end
+        )
+    end
+    if members[activeIndex + 1] then
+        navigation(
+            view,
+            navX + NAV_WIDTH,
+            ">",
+            function()
+                view.panel:_SelectNisTab(members[activeIndex + 1])
+            end
+        )
+    end
+end
+
+-- Block unused strip space without laying an input mask over the tabs.
+local function blockGap(view, left, right)
+    if right <= left then return end
+    local gap = Components.new(ui.Layer, view.parts)
+    gap:SetPos(left, 0)
+    gap:SetSize(right - left, NisTabs.HEIGHT)
+    gap.clickthrough = false
+end
+
+local function blockUnusedStrip(view, bandWidth)
+    local used = #view.tabs * NisTabs.WIDTH
+    for _, item in ipairs(view.navigationHits) do
+        blockGap(view, used, item.x)
+        used = item.x + NAV_WIDTH
+    end
+    blockGap(view, used, bandWidth)
+end
+
+local function releasePreviousTabs(previousTabs)
+    for _, tab in ipairs(previousTabs) do
+        if not tab.reused and not tab.retained then tab:Release() end
+        tab.reused = nil
+    end
+end
+
+local function raiseDraggedTab(view)
+    if not view.dragMember then return end
+    for _, tab in ipairs(view.tabs) do
+        if tab.member == view.dragMember then
+            tab.visual:MoveToFront()
+            break
+        end
+    end
+end
+
 function NisTabs:Refresh(members, active, previewPanel)
     if not loaded(self) then
         clearTabs(self)
@@ -293,56 +455,16 @@ function NisTabs:Refresh(members, active, previewPanel)
     members = members or self.single
     if #members == 0 then members = self.single end
     active = active or members[1]
-    local priorActive, priorPreview, priorPage = self.active, self.previewPanel, self.pageIndex
     local root = self.panel.root
     local bandWidth = math.max(0, root.width - CORNER * 2)
     local bandY = (self.panel.locked and 0 or 12) + CORNER
-    if visible and not self.pageDirty and self.parts
-        and self.bandWidth == bandWidth and self.bandY == bandY
-        and self.previewPanel == previewPanel
-        and self.members and #self.members == #members then
-        local unchanged = true
-        for index, member in ipairs(members) do
-            if self.members[index] ~= member then unchanged = false; break end
-        end
-        for _, tab in ipairs(self.tabs) do
-            if not tab.preview and (tab.hit == nil or tab.icon ~= tab.member.tabIcon) then
-                unchanged = false
-                break
-            end
-        end
-        if unchanged and self.active == active then
-            self:Sync(root.hidden == true)
-            return
-        end
+    if visible and sameStrip(self, members, active, previewPanel, bandWidth, bandY) then
+        self:Sync(root.hidden == true)
+        return
     end
-    -- When the visible members still fit, selection only changes the artwork.
-    -- Rebuilding the strip here churns native component IDs and press targets.
-    if visible and previewPanel == nil and self.parts and not self.pageDirty
-        and self.bandWidth == bandWidth and self.bandY == bandY
-        and self.previewPanel == nil and self.members and #self.members == #members
-        and #members <= math.floor(bandWidth / NisTabs.WIDTH)
-        and #self.tabs == #members then
-        local sameMembers = true
-        for index, member in ipairs(members) do
-            if self.members[index] ~= member or self.tabs[index].member ~= member
-                or self.tabs[index].hit == nil
-                or self.tabs[index].icon ~= member.tabIcon then
-                sameMembers = false
-                break
-            end
-        end
-        if sameMembers then
-            for _, tab in ipairs(self.tabs) do
-                local selected = tab.member == active
-                local spriteID = selected and Sprites.NIS_PANEL.tabSelected or Sprites.NIS_PANEL.tabUnselected
-                if tab.background.spriteID ~= spriteID then tab.background.spriteID = spriteID end
-                Components.setHidden(tab.seam, selected)
-            end
-            self.active = active
-            self:Sync(root.hidden == true)
-            return
-        end
+    if visible and updateSelectionArtwork(self, members, active, previewPanel, bandWidth, bandY) then
+        self:Sync(root.hidden == true)
+        return
     end
     if not visible or bandWidth < NisTabs.WIDTH then
         clearTabs(self)
@@ -353,7 +475,10 @@ function NisTabs:Refresh(members, active, previewPanel)
 
     local activeIndex = 1
     for index, member in ipairs(members) do
-        if member == active then activeIndex = index; break end
+        if member == active then
+            activeIndex = index
+            break
+        end
     end
     local total = #members + (previewPanel and 1 or 0)
     local capacity = math.floor(bandWidth / NisTabs.WIDTH)
@@ -361,109 +486,37 @@ function NisTabs:Refresh(members, active, previewPanel)
     local slots = capacity
     if overflow then slots = math.max(1, math.floor((bandWidth - NAV_WIDTH * 2) / NisTabs.WIDTH)) end
     local narrowPreview = previewPanel ~= nil and slots == 1
-    local page
-    if narrowPreview then
-        if priorPreview ~= previewPanel then
-            page = total
-        elseif priorActive ~= active then
-            page = activeIndex
-        else
-            page = math.max(1, math.min(total, priorPage or total))
-        end
-    end
+    local page = narrowPreview and narrowPage(self, previewPanel, active, activeIndex, total) or nil
     -- Rebuild artwork, not the native targets of an in-flight press or drag.
     local previousTabs = self.tabs
     clearTabs(self, true)
     self.visible = true
-    self.parts = Components.new(ui.Layer, self.root)
-    self.parts:SetSize(0, 0, 1.0, 1.0)
-    self.parts.clickthrough = true
-
-    local art = Sprites.NIS_PANEL
-    local buffer = sprite(self, self.parts, art.tabBufferTile)
-    buffer:SetSize(bandWidth, NisTabs.HEIGHT - CORNER)
-    buffer.isTiling = true
-
-    local bar = sprite(self, self.parts, art.tabBarTile)
-    bar:SetPos(0, NisTabs.HEIGHT - CORNER)
-    bar:SetSize(bandWidth, CORNER)
-    bar.isTiling = true
+    drawStrip(self, bandWidth)
 
     if narrowPreview then
-        if page <= #members then
-            makeTab(self, members[page], 0, members[page] == active, false, previousTabs)
-        else
-            makeTab(self, previewPanel, 0, false, true, previousTabs)
-        end
-        local function showPage(nextPage)
-            self.pageIndex = nextPage
-            self.pageDirty = true
-            self:Refresh(self.members, self.active, self.previewPanel)
-        end
-        navigation(self, NisTabs.WIDTH, "<",
-            page > 1 and function() showPage(page - 1) end or nil)
-        navigation(self, NisTabs.WIDTH + NAV_WIDTH, ">",
-            page < total and function() showPage(page + 1) end or nil)
+        narrowTabs(self, members, active, previewPanel, previousTabs, page, total)
     else
-        local previewVisible = previewPanel ~= nil
-        local memberSlots = previewVisible and slots - 1 or slots
-        local first = math.max(1, math.min(activeIndex - memberSlots + 1, #members - memberSlots + 1))
-        for index = first, math.min(#members, first + memberSlots - 1) do
-            makeTab(self, members[index], (index - first) * NisTabs.WIDTH,
-                members[index] == active, false, previousTabs)
-        end
-        if previewVisible then
-            makeTab(self, previewPanel, #self.tabs * NisTabs.WIDTH, false, true, previousTabs)
-        end
-        if overflow then
-            local navX = slots * NisTabs.WIDTH
-            if members[activeIndex - 1] then
-                navigation(self, navX, "<", function()
-                    self.panel:_SelectNisTab(members[activeIndex - 1])
-                end)
-            end
-            if members[activeIndex + 1] then
-                navigation(self, navX + NAV_WIDTH, ">", function()
-                    self.panel:_SelectNisTab(members[activeIndex + 1])
-                end)
-            end
-        end
+        wideTabs(self, members, active, previewPanel, previousTabs, slots, activeIndex, overflow)
     end
-    -- Block unused strip space without laying an input mask over the tabs.
-    local function blockGap(left, right)
-        if right <= left then return end
-        local gap = Components.new(ui.Layer, self.parts)
-        gap:SetPos(left, 0)
-        gap:SetSize(right - left, NisTabs.HEIGHT)
-        gap.clickthrough = false
-    end
-    local used = #self.tabs * NisTabs.WIDTH
-    for _, item in ipairs(self.navigationHits) do
-        blockGap(used, item.x)
-        used = item.x + NAV_WIDTH
-    end
-    blockGap(used, bandWidth)
-    for _, tab in ipairs(previousTabs) do
-        if not tab.reused and not tab.retained then tab:Release() end
-        tab.reused = nil
-    end
+    blockUnusedStrip(self, bandWidth)
+    releasePreviousTabs(previousTabs)
     self.members = {}
-    for index, member in ipairs(members) do self.members[index] = member end
+    for index, member in ipairs(members) do
+        self.members[index] = member
+    end
     self.active, self.previewPanel = active, previewPanel
     self.pageIndex, self.pageDirty = page, false
     self.bandWidth, self.bandY = bandWidth, bandY
-    if self.dragMember then
-        for _, tab in ipairs(self.tabs) do
-            if tab.member == self.dragMember then tab.visual:MoveToFront(); break end
-        end
-    end
+    raiseDraggedTab(self)
     self:Sync(root.hidden == true)
 end
 
 function NisTabs:SetAlpha(alpha)
     self.alpha = math.max(0, math.min(1, alpha or 1))
     if not loaded(self) then return end
-    for _, part in ipairs(self.visuals) do part.alpha = self.alpha end
+    for _, part in ipairs(self.visuals) do
+        part.alpha = self.alpha
+    end
 end
 
 function NisTabs:Destroy()

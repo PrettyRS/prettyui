@@ -36,9 +36,11 @@ local function component(parent, kind, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent, categoryID, dynamicID)
-        return component(parent, kind, categoryID, dynamicID)
-    end }
+    return {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, kind, categoryID, dynamicID)
+        end,
+    }
 end
 
 ui = {
@@ -165,12 +167,18 @@ for _, method in ipairs({ "AddCheckboxButton", "AddRadioButton" }) do
         local previous = swatch
         for _, control in ipairs(controls) do
             expect(control.root.y, swatch.y, method .. " shares the colour swatch row")
-            expect(control.root.x, previous.x + previous.width + 8,
-                method .. " follows the previous control without overlap")
+            expect(
+                control.root.x,
+                previous.x + previous.width + 8,
+                method .. " follows the previous control without overlap"
+            )
             previous = control.root
         end
-        expect(previous.x + previous.width <= content.width - 14, true,
-            method .. " leaves room for all three inline controls")
+        expect(
+            previous.x + previous.width <= content.width - 14,
+            true,
+            method .. " leaves room for all three inline controls"
+        )
     end
     checkRow()
     prefix:Destroy()

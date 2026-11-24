@@ -52,8 +52,9 @@ end
 local function identity(value)
     if not value then return nil end
     local ok, a, b, c, d = pcall(identityValues, value)
-    if not ok or type(a) ~= "number" or type(b) ~= "number"
-        or type(c) ~= "number" or type(d) ~= "number" then return nil end
+    if not ok or type(a) ~= "number" or type(b) ~= "number" or type(c) ~= "number" or type(d) ~= "number" then
+        return nil
+    end
     return a .. ":" .. b .. ":" .. c .. ":" .. d, a, b
 end
 
@@ -80,7 +81,9 @@ local function layout(value, expected)
 end
 
 local function same(a, b, first, last)
-    for i = first, last do if a[i] ~= b[i] then return false end end
+    for i = first, last do
+        if a[i] ~= b[i] then return false end
+    end
     return true
 end
 
@@ -94,8 +97,7 @@ end
 
 local function origin(value)
     local ok, x, y, width, height = pcall(originValues, value)
-    if ok and type(x) == "number" and type(y) == "number"
-        and type(width) == "number" and type(height) == "number" then
+    if ok and type(x) == "number" and type(y) == "number" and type(width) == "number" and type(height) == "number" then
         return x, y, width, height
     end
 end
@@ -109,8 +111,14 @@ local function record(value, parentKey, baseline)
     if not key or not baseline then return nil end
     local ok, parent = pcall(parentOf, value)
     if not ok or identity(parent) ~= parentKey then return nil end
-    return { key = key, interfaceID = interfaceID, packed = (interfaceID << 16) | staticID,
-        parentKey = parentKey, original = baseline, written = { table.unpack(baseline) } }
+    return {
+        key = key,
+        interfaceID = interfaceID,
+        packed = (interfaceID << 16) | staticID,
+        parentKey = parentKey,
+        original = baseline,
+        written = { table.unpack(baseline) },
+    }
 end
 
 -- Always resolve through a loaded interface before touching a saved component.
@@ -135,10 +143,8 @@ local function restoreRecord(saved, interfaceObject)
     if not fresh then return true end
     local current = layout(fresh)
     if not current then return false end
-    local changedPos = same(current, saved.written, 1, 6)
-        and not same(current, saved.original, 1, 6)
-    local changedSize = same(current, saved.written, 7, 10)
-        and not same(current, saved.original, 7, 10)
+    local changedPos = same(current, saved.written, 1, 6) and not same(current, saved.original, 1, 6)
+    local changedSize = same(current, saved.written, 7, 10) and not same(current, saved.original, 7, 10)
     if changedPos then
         pcall(function() fresh:SetPos(table.unpack(saved.original, 1, 6)) end)
     end
@@ -148,8 +154,10 @@ local function restoreRecord(saved, interfaceObject)
     -- A setter may apply its change and then throw. Check what remains owned.
     current = layout(fresh)
     if not current then return false end
-    if same(current, saved.written, 1, 6) and not same(current, saved.original, 1, 6)
-        or same(current, saved.written, 7, 10) and not same(current, saved.original, 7, 10) then
+    if
+        same(current, saved.written, 1, 6) and not same(current, saved.original, 1, 6)
+        or same(current, saved.written, 7, 10) and not same(current, saved.original, 7, 10)
+    then
         return false
     end
     return true
@@ -167,8 +175,15 @@ local function restoreState()
     local areaCall, areaOK = pcall(restoreRecord, saved.area, saved.interfaceObject)
     local slayerCall, slayerOK = pcall(restoreRecord, saved.slayer, saved.interfaceObject)
     local privateCall, privateOK = pcall(restoreRecord, saved.privateChat, saved.interfaceObject)
-    local complete = actionsOK and viewCall and gameviewOK and areaCall and areaOK
-        and slayerCall and slayerOK and privateCall and privateOK
+    local complete = actionsOK
+        and viewCall
+        and gameviewOK
+        and areaCall
+        and areaOK
+        and slayerCall
+        and slayerOK
+        and privateCall
+        and privateOK
     if complete then state = nil end
     return complete
 end
@@ -186,9 +201,14 @@ local function set(saved, fresh, desired, which)
     if same(current, desired, first, last) then return true end
     -- Mark the intended descriptor before invoking the setter: setters can
     -- mutate their target before raising, and the rollback must still own it.
-    for i = first, last do saved.written[i] = desired[i] end
-    if which == "position" then fresh:SetPos(table.unpack(desired, 1, 6))
-    else fresh:SetSize(table.unpack(desired, 7, 10)) end
+    for i = first, last do
+        saved.written[i] = desired[i]
+    end
+    if which == "position" then
+        fresh:SetPos(table.unpack(desired, 1, 6))
+    else
+        fresh:SetSize(table.unpack(desired, 7, 10))
+    end
     return same(layout(fresh) or {}, desired, first, last)
 end
 
@@ -198,11 +218,32 @@ local function environment(loaded, viewport, top, area)
     local areaLayout = layout(area)
     local topKey, viewportKey, areaKey = identity(top), identity(viewport), identity(area)
     -- Include the area layout so a changed baseline can retry a suspended reservation.
-    local signature = table.concat({ tostring(loaded), tostring(topKey), tostring(viewportKey),
-        tostring(areaKey), tostring(x), tostring(y), tostring(w), tostring(h),
-        tostring(tx), tostring(ty), tostring(tw), tostring(th) }, "/")
+    local signature = table.concat({
+        tostring(loaded),
+        tostring(topKey),
+        tostring(viewportKey),
+        tostring(areaKey),
+        tostring(x),
+        tostring(y),
+        tostring(w),
+        tostring(h),
+        tostring(tx),
+        tostring(ty),
+        tostring(tw),
+        tostring(th),
+    }, "/")
     return signature .. "/" .. (areaLayout and table.concat(areaLayout, ":") or "?"),
-        signature, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey
+        signature,
+        x,
+        y,
+        w,
+        h,
+        tx,
+        ty,
+        tw,
+        th,
+        areaLayout,
+        viewportKey
 end
 
 local function suspend(signature)
@@ -216,55 +257,90 @@ local function optionalWarning(signature)
     optionalEnvironment = signature
 end
 
-local function compatible(top, viewport, area, areaLayout, x, y, w, h, tx, ty, tw, th,
-        viewportKey, reserved)
-    if not (top and viewport and area and not area.isRestricted and areaLayout and viewportKey
-        and x == 0 and y == 0 and w > 0 and h > 0
-        and tx == 0 and ty == 0 and tw == w and th == h
-        and fullSize(areaLayout)
-        and same(areaLayout, centeredPosition, 1, 6)) then return false end
-    local ok, topParent, viewportParent, areaParent = pcall(function()
-        return top.parent, viewport.parent, area.parent
-    end)
-    if not ok or topParent ~= nil or viewportParent ~= nil
-        or identity(areaParent) ~= viewportKey then return false end
+local function compatible(top, viewport, area, areaLayout, x, y, w, h, tx, ty, tw, th, viewportKey, reserved)
+    if
+        not (
+            top
+            and viewport
+            and area
+            and not area.isRestricted
+            and areaLayout
+            and viewportKey
+            and x == 0
+            and y == 0
+            and w > 0
+            and h > 0
+            and tx == 0
+            and ty == 0
+            and tw == w
+            and th == h
+            and fullSize(areaLayout)
+            and same(areaLayout, centeredPosition, 1, 6)
+        )
+    then
+        return false
+    end
+    local ok, topParent, viewportParent, areaParent = pcall(
+        function()
+            return top.parent, viewport.parent, area.parent
+        end
+    )
+    if not ok or topParent ~= nil or viewportParent ~= nil or identity(areaParent) ~= viewportKey then
+        return false
+    end
     local ax, ay, aw, ah = origin(area)
     return ax == 0 and ay == 0 and aw == w - (reserved or 0) and ah == h
 end
 
-local function updateGameview(current, width, environmentKey, viewportKey)
-    local saved = current.gameview
-    if current.gameviewBlocked then return end
-    if saved then
-        local fresh = resolve(saved, current.interfaceObject)
-        if not fresh or not layout(fresh, saved.written) then
-            if restoreRecord(saved, current.interfaceObject) then current.gameview = nil end
-            current.gameviewBlocked = true
-            optionalWarning(environmentKey)
-            return
-        end
+local function updateSavedGameview(current, saved, width, environmentKey)
+    local fresh = resolve(saved, current.interfaceObject)
+    if fresh and layout(fresh, saved.written) then
         if saved.written[7] == saved.original[7] - width then return end
         local desired = { table.unpack(saved.original) }
         desired[7] = desired[7] - width
         local ok, applied = pcall(set, saved, fresh, desired, "size")
         if ok and applied then return end
-        if restoreRecord(saved, current.interfaceObject) then current.gameview = nil end
-        current.gameviewBlocked = true
-        optionalWarning(environmentKey)
-        return
     end
+    if restoreRecord(saved, current.interfaceObject) then current.gameview = nil end
+    current.gameviewBlocked = true
+    optionalWarning(environmentKey)
+end
+
+local function updateGameview(current, width, environmentKey, viewportKey)
+    local saved = current.gameview
+    if current.gameviewBlocked then return end
+    if saved then return updateSavedGameview(current, saved, width, environmentKey) end
     local view = component("gameview")
     local key = identity(view)
     local baseline = layout(view)
     local vx, vy, vw, vh = origin(view)
-    local signature = environmentKey .. "/" .. tostring(key) .. "/"
-        .. (baseline and table.concat(baseline, ":") or "?") .. "/"
-        .. tostring(vx) .. ":" .. tostring(vy) .. ":" .. tostring(vw) .. ":" .. tostring(vh)
+    local signature = environmentKey
+        .. "/"
+        .. tostring(key)
+        .. "/"
+        .. (baseline and table.concat(baseline, ":") or "?")
+        .. "/"
+        .. tostring(vx)
+        .. ":"
+        .. tostring(vy)
+        .. ":"
+        .. tostring(vw)
+        .. ":"
+        .. tostring(vh)
     if current.optionalFailed == signature then return end
     local parentOK, parent = pcall(function() return view and view.parent end)
-    if not view or view.isRestricted or not baseline or not fullSize(baseline) or not parentOK
-        or identity(parent) ~= viewportKey or vx ~= 0 or vy ~= 0
-        or vw ~= current.width or vh ~= current.height then
+    if
+        not view
+        or view.isRestricted
+        or not baseline
+        or not fullSize(baseline)
+        or not parentOK
+        or identity(parent) ~= viewportKey
+        or vx ~= 0
+        or vy ~= 0
+        or vw ~= current.width
+        or vh ~= current.height
+    then
         current.optionalFailed = signature
         optionalWarning(environmentKey)
         return
@@ -295,21 +371,36 @@ local function updateSlayer(current, width)
     if not saved then
         local hud = component("hud")
         local target = child(hud, "slayer")
-        if not target or target.isRestricted or not hud
+        if
+            not target
+            or target.isRestricted
+            or not hud
             or identity(hud.parent) ~= current.viewportKey
-            or identity(target.parent) ~= identity(hud) then return end
+            or identity(target.parent) ~= identity(hud)
+        then
+            return
+        end
         local hx, hy, hw, hh = origin(hud)
         local hudLayout = layout(hud)
-        if not hudLayout or not fullSize(hudLayout) or hx ~= 0 or hy ~= 0
-            or hw ~= current.width or hh ~= current.height then return end
+        if
+            not hudLayout
+            or not fullSize(hudLayout)
+            or hx ~= 0
+            or hy ~= 0
+            or hw ~= current.width
+            or hh ~= current.height
+        then
+            return
+        end
         saved = record(target, identity(hud), layout(target))
         if not saved then return end
         current.slayer = saved
     end
     local fresh = resolve(saved, current.interfaceObject)
     -- Even an unchanged reservation must still yield to a foreign descriptor.
-    if fresh and saved.written[1] == saved.original[1] - width
-        and layout(fresh, saved.written) then return end
+    if fresh and saved.written[1] == saved.original[1] - width and layout(fresh, saved.written) then
+        return
+    end
     local desired = { table.unpack(saved.original) }
     desired[1] = desired[1] - width
     local ok, applied = pcall(set, saved, fresh, desired, "position")
@@ -320,10 +411,51 @@ local function updateSlayer(current, width)
 end
 
 local function overlaps(x, y, width, height, obstacle)
-    return obstacle and obstacle.visibleGlobal and x < obstacle.x + obstacle.width + HUD_GAP
+    return obstacle
+        and obstacle.visibleGlobal
+        and x < obstacle.x + obstacle.width + HUD_GAP
         and x + width + HUD_GAP > obstacle.x
         and y < obstacle.y + obstacle.height + HUD_GAP
         and y + height + HUD_GAP > obstacle.y
+end
+
+local function privateChatShift(current, area, chat, clusterWidth, clusterHeight, target, saved)
+    if clusterHeight <= 0 or not target or not target.visibleGlobal or target.width <= 0 or target.height <= 0 then
+        return 0
+    end
+    local parent = target.parent
+    local parentKey = identity(parent)
+    if parentKey ~= identity(area) then
+        -- Split PMs normally live under the full-viewport gameplay HUD.
+        local hud = component("hud")
+        local hx, hy, hw, hh = origin(hud)
+        local hudLayout = layout(hud)
+        if
+            not hud
+            or parentKey ~= identity(hud)
+            or identity(hud.parent) ~= current.viewportKey
+            or not hudLayout
+            or not fullSize(hudLayout)
+            or hx ~= 0
+            or hy ~= 0
+            or hw ~= current.width
+            or hh ~= current.height
+        then
+            return nil
+        end
+    end
+    local x, y = target.x, target.y
+    if saved then
+        local original = saved.original
+        x = original[1] + parent.width * original[3] - target.width * original[5]
+        y = original[2] + parent.height * original[4] - target.height * original[6]
+    end
+    local bottom = y + target.height
+    if x < chat.x + clusterWidth and x + target.width > chat.x and y < chat.y and bottom > chat.y - clusterHeight then
+        -- Retain the native PM-to-chat clearance above the inserted bars.
+        return math.floor(math.min(0, chat.y - bottom) - clusterHeight), parentKey
+    end
+    return 0, parentKey
 end
 
 local function updatePrivateChat(current, area, chat, clusterWidth, clusterHeight)
@@ -335,38 +467,13 @@ local function updatePrivateChat(current, area, chat, clusterWidth, clusterHeigh
     elseif clusterHeight > 0 then
         target = component("privateChat")
     end
-    local shift = 0
-    if clusterHeight > 0 and target and target.visibleGlobal
-        and target.width > 0 and target.height > 0 then
-        local parent = target.parent
-        local parentKey = identity(parent)
-        if parentKey ~= identity(area) then
-            -- Split PMs normally live under the full-viewport gameplay HUD.
-            local hud = component("hud")
-            local hx, hy, hw, hh = origin(hud)
-            local hudLayout = layout(hud)
-            if not hud or parentKey ~= identity(hud) or identity(hud.parent) ~= current.viewportKey
-                or not hudLayout or not fullSize(hudLayout) or hx ~= 0 or hy ~= 0
-                or hw ~= current.width or hh ~= current.height then return false end
-        end
-        local x, y = target.x, target.y
-        if saved then
-            local original = saved.original
-            x = original[1] + parent.width * original[3] - target.width * original[5]
-            y = original[2] + parent.height * original[4] - target.height * original[6]
-        end
-        local bottom = y + target.height
-        if x < chat.x + clusterWidth and x + target.width > chat.x
-            and y < chat.y and bottom > chat.y - clusterHeight then
-            -- Retain the native PM-to-chat clearance above the inserted bars.
-            shift = math.floor(math.min(0, chat.y - bottom) - clusterHeight)
-        end
-        if shift ~= 0 and not saved then
-            if target.isRestricted then return false end
-            saved = record(target, parentKey, layout(target))
-            if not saved then return false end
-            current.privateChat = saved
-        end
+    local shift, parentKey = privateChatShift(current, area, chat, clusterWidth, clusterHeight, target, saved)
+    if shift == nil then return false end
+    if shift ~= 0 and not saved then
+        if target.isRestricted then return false end
+        saved = record(target, parentKey, layout(target))
+        if not saved then return false end
+        current.privateChat = saved
     end
     if shift == 0 then
         if not restoreRecord(saved, current.interfaceObject) then return false end
@@ -378,20 +485,19 @@ local function updatePrivateChat(current, area, chat, clusterWidth, clusterHeigh
     return set(saved, target, desired, "position")
 end
 
-local function updateCombat(current, area)
-    local areaKey = identity(area)
-    local chat, buttons = component("chat"), component("buttons")
-    if chat and identity(chat.parent) ~= areaKey then chat = nil end
-    if buttons and identity(buttons.parent) ~= areaKey then buttons = nil end
+local function combatBounds(current, area, areaKey, chat, buttons)
     local targets = {}
     local left, top, right, bottom = math.huge, math.huge, -math.huge, -math.huge
     local collision = false
     for index, name in ipairs(actionNames) do
         local saved = current.actions and current.actions[index]
         local target
-        if saved then target = resolve(saved, current.interfaceObject)
-        else target = component(name) end
-        if saved and (not target or not layout(target, saved.written)) then return false end
+        if saved then
+            target = resolve(saved, current.interfaceObject)
+        else
+            target = component(name)
+        end
+        if saved and (not target or not layout(target, saved.written)) then return nil end
         if target and target.visibleGlobal and identity(target.parent) == areaKey then
             local x, y = target.x, target.y
             if saved then
@@ -404,11 +510,24 @@ local function updateCombat(current, area)
                 targets[index] = target
                 left, top = math.min(left, x), math.min(top, y)
                 right, bottom = math.max(right, x + width), math.max(bottom, y + height)
-                collision = collision or overlaps(x, y, width, height, chat)
-                    or overlaps(x, y, width, height, buttons)
+                collision = collision or overlaps(x, y, width, height, chat) or overlaps(x, y, width, height, buttons)
             end
         end
     end
+    return targets, left, top, right, bottom, collision
+end
+
+local function componentInArea(target, areaKey)
+    if target and identity(target.parent) ~= areaKey then return nil end
+    return target
+end
+
+local function updateCombat(current, area)
+    local areaKey = identity(area)
+    local chat, buttons = component("chat"), component("buttons")
+    chat, buttons = componentInArea(chat, areaKey), componentInArea(buttons, areaKey)
+    local targets, left, top, right, bottom, collision = combatBounds(current, area, areaKey, chat, buttons)
+    if not targets then return false end
     if not collision then
         if not updatePrivateChat(current, area, nil, 0, 0) then return false end
         for index, saved in pairs(current.actions or {}) do
@@ -419,9 +538,15 @@ local function updateCombat(current, area)
     end
     -- Keep every bar's relative offset, placing the entire cluster above chat.
     -- Evaluate the original anchors, not our last write, to avoid oscillation.
-    if not chat or not chat.visibleGlobal or chat.x < 0
+    if
+        not chat
+        or not chat.visibleGlobal
+        or chat.x < 0
         or chat.x + right - left > area.width
-        or chat.y - (bottom - top) < 0 then return false end
+        or chat.y - (bottom - top) < 0
+    then
+        return false
+    end
     local dx, dy = math.floor(chat.x - left), math.floor(chat.y - bottom)
     if not updatePrivateChat(current, area, chat, right - left, bottom - top) then return false end
     current.actions = current.actions or {}
@@ -446,13 +571,66 @@ local function updateCombat(current, area)
     return true
 end
 
+local function mandatoryFailure(previous, signature, ok, result)
+    restoreState()
+    previous.blocked, previous.blockedEnvironment = true, signature
+    state = previous
+    suspend(signature)
+    if not ok then error(result, 0) end
+    return false
+end
+
+local function reserveMandatory(previous, fresh, reservedWidth, signature)
+    -- Ownership and topology were checked above; unchanged widths need no
+    -- desired descriptor or repeated setter-side layout reads.
+    if previous.reservedWidth ~= reservedWidth then
+        local desired = { 0, 0, 0, 0, 0, 0, -reservedWidth, 0, 1, 1 }
+        local ok, applied = pcall(
+            function()
+                return set(previous.area, fresh, desired, "position") and set(previous.area, fresh, desired, "size")
+            end
+        )
+        if not ok or not applied then
+            return mandatoryFailure(previous, signature, ok, applied)
+        end
+    end
+    local combatOK, combatApplied = pcall(updateCombat, previous, fresh)
+    if not combatOK or not combatApplied then
+        return mandatoryFailure(previous, signature, combatOK, combatApplied)
+    end
+    return true
+end
+
+local function reservationChanged(previous, loaded, width, height, viewportKey)
+    return not loaded
+        or loaded ~= previous.interfaceObject
+        or previous.width ~= width
+        or previous.height ~= height
+        or previous.viewportKey ~= viewportKey
+end
+
+local function reserveOptional(previous, reservedWidth, generation, viewportKey)
+    local optionalOK = pcall(updateGameview, previous, reservedWidth, generation, viewportKey)
+    if not optionalOK then
+        previous.gameviewBlocked = true
+        optionalWarning(generation)
+    end
+    local slayerOK = pcall(updateSlayer, previous, reservedWidth)
+    if not slayerOK then
+        previous.slayerBlocked = true
+        warn(NO_SLAYER)
+    end
+end
+
 function ClassicLayout.update(reservedWidth)
     if not NativeInterfaceSettings.isClassicUI() then
         ClassicLayout.restore()
         return false
     end
-    assert(type(reservedWidth) == "number" and reservedWidth >= 0
-        and reservedWidth % 1 == 0, "classic reserved width must be a nonnegative integer")
+    assert(
+        type(reservedWidth) == "number" and reservedWidth >= 0 and reservedWidth % 1 == 0,
+        "classic reserved width must be a nonnegative integer"
+    )
 
     local top, viewport, area = component("top"), component("viewport"), component("area")
     local interfaceID = (id.Component[names.viewport] or 0) >> 16
@@ -460,8 +638,7 @@ function ClassicLayout.update(reservedWidth)
     local signature, generation, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey =
         environment(loaded, viewport, top, area)
     local previous = state
-    if previous and (not loaded or loaded ~= previous.interfaceObject
-        or previous.width ~= w or previous.height ~= h or previous.viewportKey ~= viewportKey) then
+    if previous and reservationChanged(previous, loaded, w, h, viewportKey) then
         if not restoreState() then return suspend(signature) end
         previous = nil
         signature, generation, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey =
@@ -475,9 +652,24 @@ function ClassicLayout.update(reservedWidth)
         state = previous
         return suspend(signature)
     end
-    if not compatible(top, viewport, area, previous and previous.area.original or areaLayout,
-        x, y, w, h, tx, ty, tw, th, viewportKey,
-        previous and previous.reservedWidth) then
+    if
+        not compatible(
+            top,
+            viewport,
+            area,
+            previous and previous.area.original or areaLayout,
+            x,
+            y,
+            w,
+            h,
+            tx,
+            ty,
+            tw,
+            th,
+            viewportKey,
+            previous and previous.reservedWidth
+        )
+    then
         if previous then
             if not restoreState() then
                 previous.blocked, previous.blockedEnvironment = true, signature
@@ -491,8 +683,7 @@ function ClassicLayout.update(reservedWidth)
     if not previous then
         local saved = record(area, viewportKey, areaLayout)
         if not loaded or not saved then return suspend(signature) end
-        previous = { interfaceObject = loaded, viewportKey = viewportKey,
-            width = w, height = h, area = saved }
+        previous = { interfaceObject = loaded, viewportKey = viewportKey, width = w, height = h, area = saved }
         state = previous
         fresh = resolve(saved, loaded)
     end
@@ -500,44 +691,10 @@ function ClassicLayout.update(reservedWidth)
         restoreState()
         return suspend(signature)
     end
-    -- Ownership and topology were checked above; unchanged widths need no
-    -- desired descriptor or repeated setter-side layout reads.
-    if previous.reservedWidth ~= reservedWidth then
-        local desired = { 0, 0, 0, 0, 0, 0, -reservedWidth, 0, 1, 1 }
-        local ok, applied = pcall(function()
-            return set(previous.area, fresh, desired, "position")
-                and set(previous.area, fresh, desired, "size")
-        end)
-        if not ok or not applied then
-            restoreState()
-            previous.blocked, previous.blockedEnvironment = true, signature
-            state = previous
-            suspend(signature)
-            if not ok then error(applied, 0) end
-            return false
-        end
-    end
-    local combatOK, combatApplied = pcall(updateCombat, previous, fresh)
-    if not combatOK or not combatApplied then
-        restoreState()
-        previous.blocked, previous.blockedEnvironment = true, signature
-        state = previous
-        suspend(signature)
-        if not combatOK then error(combatApplied, 0) end
-        return false
-    end
+    if not reserveMandatory(previous, fresh, reservedWidth, signature) then return false end
     previous.reservedWidth = reservedWidth
     suspendedEnvironment = nil
-    local optionalOK = pcall(updateGameview, previous, reservedWidth, generation, viewportKey)
-    if not optionalOK then
-        previous.gameviewBlocked = true
-        optionalWarning(generation)
-    end
-    local slayerOK = pcall(updateSlayer, previous, reservedWidth)
-    if not slayerOK then
-        previous.slayerBlocked = true
-        warn(NO_SLAYER)
-    end
+    reserveOptional(previous, reservedWidth, generation, viewportKey)
     return true
 end
 

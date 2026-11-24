@@ -34,11 +34,16 @@ local function eachRoot(callback)
 end
 
 local function notify(value)
-    for _, callback in pairs(watchers) do callback(value) end
+    for _, callback in pairs(watchers) do
+        callback(value)
+    end
 end
 
 local function stopWaiting()
-    if waiting then Event.Logic.Unsubscribe(EVENT_ID); waiting = false end
+    if waiting then
+        Event.Logic.Unsubscribe(EVENT_ID)
+        waiting = false
+    end
 end
 
 local function resume()
@@ -87,9 +92,14 @@ function WorldMap.track(root)
     WorldMap.start()
     local packed = (root.interfaceID << 16) | root.staticID
     local key = packed .. ":" .. root.categoryID .. ":" .. root.dynamicID
-    local saved = { interfaceID = root.interfaceID, staticID = root.staticID,
-        categoryID = root.categoryID, dynamicID = root.dynamicID,
-        key = key, hidden = root.hidden == true }
+    local saved = {
+        interfaceID = root.interfaceID,
+        staticID = root.staticID,
+        categoryID = root.categoryID,
+        dynamicID = root.dynamicID,
+        key = key,
+        hidden = root.hidden == true,
+    }
     roots[root], records[key] = saved, saved
     if suspended then root.hidden = true end
 end
@@ -130,8 +140,7 @@ function WorldMap.shutdown()
     stopWaiting()
     if listening then Event.VarTransmit.Unsubscribe(EVENT_ID) end
     eachRoot(function(root, saved) root.hidden = saved.hidden end)
-    roots, records, watchers = setmetatable({}, { __mode = "k" }), {},
-        setmetatable({}, { __mode = "k" })
+    roots, records, watchers = setmetatable({}, { __mode = "k" }), {}, setmetatable({}, { __mode = "k" })
     listening, focused, suspended = false, false, false
 end
 

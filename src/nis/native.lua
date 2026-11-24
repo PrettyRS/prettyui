@@ -92,11 +92,48 @@ local reconcileLock = Reconcile.reconcileLock
 local reconcileRoots = Reconcile.reconcileRoots
 local specByID = Host.specByID
 
+local function candidateFits(panel, host)
+    local height = host.content.height - (host.grouped and 0 or HEIGHT)
+    for _, member in ipairs(panel._nisGroup and panel._nisGroup.members or { panel }) do
+        if
+            host.content.width < member.minWidth
+            or height < member.minHeight
+            or host.content.width > (member.maxWidth or math.huge)
+            or height > (member.maxHeight or math.huge)
+        then
+            return false
+        end
+    end
+    return true
+end
+
+local function candidateAt(panel, host, px, py)
+    if not host.frame.visibleGlobal then return false end
+    local band = tabBand(host)
+    local top = band.xyGlobal
+    local targetY = host.grouped and top.y or host.frame.xyGlobal.y
+    if px < top.x or px >= top.x + band.width or py < targetY or py >= top.y + HEIGHT then
+        return false
+    end
+    local occupied = frameGroup(host)
+    if occupied and occupied.nativeSort or not candidateFits(panel, host) then return false end
+    if not occupied and (host.content.hidden or host.scroll and host.scroll.hidden) then return false end
+    return occupied or host.grouped or nativeRootsFor(host)
+end
+
 function Native.candidate(panel, x, y)
-    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
-        or panel and panel._nisClassic then return nil end
-    if not panel or panel._nisNative or not panel.root or panel.locked
-        or not ui.Interfaces:GetInterface(panel.interfaceID) then return nil end
+    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI() or panel and panel._nisClassic then
+        return nil
+    end
+    if
+        not panel
+        or panel._nisNative
+        or not panel.root
+        or panel.locked
+        or not ui.Interfaces:GetInterface(panel.interfaceID)
+    then
+        return nil
+    end
     local area = component(id.Component.TOPLEVEL_V2__GAME_AREA)
     if not area then return nil end
     if not same(panel.parent, area) then return nil end
@@ -123,27 +160,9 @@ function Native.candidate(panel, x, y)
     end
     local best
     for _, host in ipairs(found) do
-        if host.frame.visibleGlobal then
-            local band = tabBand(host)
-            local top = band.xyGlobal
-            local targetY = host.grouped and top.y or host.frame.xyGlobal.y
-            if px >= top.x and px < top.x + band.width
-                and py >= targetY and py < top.y + HEIGHT then
-                local occupied = frameGroup(host)
-                local capacity = not (occupied and occupied.nativeSort)
-                local height = host.content.height - (host.grouped and 0 or HEIGHT)
-                for _, member in ipairs(panel._nisGroup and panel._nisGroup.members or { panel }) do
-                    if host.content.width < member.minWidth or height < member.minHeight
-                        or host.content.width > (member.maxWidth or math.huge)
-                        or height > (member.maxHeight or math.huge) then capacity = false end
-                end
-                if capacity
-                    and (occupied or not host.content.hidden and (not host.scroll or not host.scroll.hidden))
-                    and (occupied or host.grouped or nativeRootsFor(host)) then
-                    if best then return nil end
-                    best = host
-                end
-            end
+        if candidateAt(panel, host, px, py) then
+            if best then return nil end
+            best = host
         end
     end
     return best
@@ -165,30 +184,48 @@ function Native.remember(panel, frames, index)
     local group = binding.group
     if not frames then
         frames = {}
-        for _, host in pairs(group.frames) do frames[#frames + 1] = host.spec.name end
+        for _, host in pairs(group.frames) do
+            frames[#frames + 1] = host.spec.name
+        end
         table.sort(frames)
     end
     if not index then
         for position, member in ipairs(group.members) do
-            if member == panel then index = position; break end
+            if member == panel then
+                index = position
+                break
+            end
         end
     end
     return {
-        frame = group.hosts[group.current].spec.name, frames = frames,
-        index = index, beforeNative = binding.beforeNative,
-        selected = group.active == panel, free = binding.free,
+        frame = group.hosts[group.current].spec.name,
+        frames = frames,
+        index = index,
+        beforeNative = binding.beforeNative,
+        selected = group.active == panel,
+        free = binding.free,
     }
 end
 
 saveGroup = function(group)
     if WorldMap.isSuspended() then return end
-    if restoring or group.attaching or group.tabDrag or group.nativeSort or group.dockPreview
-        or group.incomingPreview then return end
+    if
+        restoring
+        or group.attaching
+        or group.tabDrag
+        or group.nativeSort
+        or group.dockPreview
+        or group.incomingPreview
+    then
+        return
+    end
     for _, member in ipairs(group.members) do
         if member._nisNativeTransaction then return end
     end
     local frames = {}
-    for _, host in pairs(group.frames) do frames[#frames + 1] = host.spec.name end
+    for _, host in pairs(group.frames) do
+        frames[#frames + 1] = host.spec.name
+    end
     table.sort(frames)
     for index, panel in ipairs(group.members) do
         Persistence.native(panel, Native.remember(panel, frames, index))
@@ -201,7 +238,10 @@ local function removeGroup(group)
         if byFrame[key] == group then byFrame[key] = nil end
     end
     for index, member in ipairs(groups) do
-        if member == group then table.remove(groups, index); break end
+        if member == group then
+            table.remove(groups, index)
+            break
+        end
     end
     Runtime.stop()
 end
@@ -233,10 +273,21 @@ local function buildGroup(host, area)
         end
     end
     if not current then return nil end
-    local group = { area = area, owner = host.owner,
-        hosts = hosts, frames = {}, members = {}, bindings = {}, hooks = {}, hookKeys = {},
-        grouped = host.grouped, current = current }
-    for _, item in ipairs(hosts) do group.frames[item.key] = { key = item.key, spec = item.spec } end
+    local group = {
+        area = area,
+        owner = host.owner,
+        hosts = hosts,
+        frames = {},
+        members = {},
+        bindings = {},
+        hooks = {},
+        hookKeys = {},
+        grouped = host.grouped,
+        current = current,
+    }
+    for _, item in ipairs(hosts) do
+        group.frames[item.key] = { key = item.key, spec = item.spec }
+    end
     if not host.grouped then
         group.nativeRoots = nativeRootsFor(host)
         if not group.nativeRoots then return nil end
@@ -253,17 +304,26 @@ local function abandonMember(group, panel)
     if group.tabDrag then
         group.tabDrag = nil
         for _, member in ipairs(group.members) do
-            for _, tab in ipairs(group.bindings[member].tabs) do tab.slideX = nil end
+            for _, tab in ipairs(group.bindings[member].tabs) do
+                tab.slideX = nil
+            end
         end
     end
-    for _, tab in ipairs(binding.tabs) do destroyTab(tab) end
+    for _, tab in ipairs(binding.tabs) do
+        destroyTab(tab)
+    end
     group.bindings[panel] = nil
     for index, member in ipairs(group.members) do
-        if member == panel then table.remove(group.members, index); break end
+        if member == panel then
+            table.remove(group.members, index)
+            break
+        end
     end
     panel._nisNative = nil
     local nativeOK, nativeError = true, nil
-    if group.active == panel then nativeOK, nativeError = pcall(nativePage, group) end
+    if group.active == panel then
+        nativeOK, nativeError = pcall(nativePage, group)
+    end
     if panel.root and ui.Interfaces:GetInterface(panel.interfaceID) then
         local rect = binding.free
         panel.root:SetPos(rect.x, rect.y)
@@ -298,7 +358,11 @@ function Native.detach(panel)
     panel._nisNativeDetaching = true
     local ok, problem = pcall(abandonMember, group, panel)
     panel._nisNativeDetaching = nil
-    if not ok then warn(problem); group.failure = problem; return false end
+    if not ok then
+        warn(problem)
+        group.failure = problem
+        return false
+    end
     if #group.members == 0 then return finishGroup(group) end
     for _, host in ipairs(group.hosts) do
         if host.nativeTab then host.nativeTab.member = group.members[1] end
@@ -322,7 +386,10 @@ function Native.detach(panel)
     end
     if selectedFrame(group) then
         local valid, issue = pcall(align, group)
-        if not valid then warn(issue); group.failure = issue end
+        if not valid then
+            warn(issue)
+            group.failure = issue
+        end
         return valid
     end
     return true
@@ -344,65 +411,134 @@ local function attach(panel, group, free)
     return binding
 end
 
-local function dock(panel, target, savedFree, insertion)
-    if NativeInterfaceSettings.isClassicUI() or panel and panel._nisClassic then return false end
-    if not panel or panel._nisNative or panel.locked and not restoring or not panel.root
-        or not ui.Interfaces:GetInterface(panel.interfaceID) then return false end
+local function dockHost(panel, target)
+    if NativeInterfaceSettings.isClassicUI() or panel and panel._nisClassic then return nil end
+    if
+        not panel
+        or panel._nisNative
+        or panel.locked and not restoring
+        or not panel.root
+        or not ui.Interfaces:GetInterface(panel.interfaceID)
+    then
+        return nil
+    end
     local area = component(id.Component.TOPLEVEL_V2__GAME_AREA)
-    if not area then return false end
-    if not same(panel.parent, area) then return false end
+    if not area or not same(panel.parent, area) then return nil end
     indexSpecs()
     local key = resolve(target)
     local spec = specByID[key]
-    if not spec then return false end
+    if not spec then return nil end
     local okCapture, host = pcall(capture, spec, area, true)
-    if not okCapture or not host or not host.frame.visibleGlobal then return false end
+    if not okCapture or not host or not host.frame.visibleGlobal then return nil end
+    return host, area
+end
+
+local function dockGroup(host, area)
     local group = frameGroup(host)
-    if group and (group.failure or group.nativeSort or not live(group)
-        or group.grouped ~= host.grouped) then return false end
+    if group and (group.failure or group.nativeSort or not live(group) or group.grouped ~= host.grouped) then
+        return nil
+    end
     if group then
         local refreshed, settled = pcall(reconcile, group)
-        if not refreshed or settled == nil or group.failure or not byFrame[host.key] then return false end
+        if not refreshed or settled == nil or group.failure or not byFrame[host.key] then return nil end
     end
-    if not group and (host.content.hidden or host.scroll and host.scroll.hidden) then return false end
+    if not group and (host.content.hidden or host.scroll and host.scroll.hidden) then return nil end
     if not group then group = buildGroup(host, area) end
-    if not group then return false end
-    local members = panel._nisGroup and { table.unpack(panel._nisGroup.members) } or { panel }
+    return group
+end
+
+local function validDockMembers(panel, group, members)
     for _, member in ipairs(members) do
-        if member._nisClassic or member._nisNative or member.locked and not restoring
-            or member._nisHidden or not member.root or not same(member.parent, panel.parent)
-            or not ui.Interfaces:GetInterface(member.interfaceID) then return false end
+        if
+            member._nisClassic
+            or member._nisNative
+            or member.locked and not restoring
+            or member._nisHidden
+            or not member.root
+            or not same(member.parent, panel.parent)
+            or not ui.Interfaces:GetInterface(member.interfaceID)
+        then
+            return false
+        end
     end
     for _, item in ipairs(group.hosts) do
         local height = item.content.height - (group.grouped and 0 or HEIGHT)
         for _, member in ipairs(members) do
-            if item.content.width < member.minWidth or height < member.minHeight
+            if
+                item.content.width < member.minWidth
+                or height < member.minHeight
                 or item.content.width > (member.maxWidth or math.huge)
-                or height > (member.maxHeight or math.huge) then return false end
+                or height > (member.maxHeight or math.huge)
+            then
+                return false
+            end
         end
     end
+    return true
+end
+
+local function createDockHost(group)
+    nextHook = nextHook + 1
+    group.hookID = "prettyui_nis_native_" .. nextHook
+    groups[#groups + 1] = group
+    for _, item in ipairs(group.hosts) do
+        byFrame[item.key] = group
+        item.flags = {} -- cleanup is valid even before chrome construction
+    end
+    if group.nativeRoots then
+        for _, saved in ipairs(group.nativeRoots) do
+            saved.changed = true -- setters can partially apply before throwing
+            applyLayout(saved.component, saved.inset)
+        end
+    end
+    for _, item in ipairs(group.hosts) do
+        createHost(group, item)
+    end
+end
+
+local function insertMember(group, member, index, insertion)
+    local binding = group.bindings[member]
+    binding.beforeNative = insertion.beforeNative
+    for position, candidate in ipairs(group.members) do
+        if candidate == member then
+            table.remove(group.members, position)
+            break
+        end
+    end
+    table.insert(group.members, math.min(insertion.index + index - 1, #group.members + 1), member)
+end
+
+local function rollbackDock(group, members, created, oldGroup, problem)
+    if group.constructingTab then
+        local cleanupOK, cleanupError = pcall(destroyTab, group.constructingTab)
+        if not cleanupOK then warn(cleanupError) end
+        group.constructingTab = nil
+    end
+    warn(problem)
+    for _, member in ipairs(members) do
+        if member._nisNative and member._nisNative.group == group then Native.detach(member) end
+    end
+    if created and #group.members == 0 and not group.dead then finishGroup(group) end
+    if oldGroup then NisGroup.restore(oldGroup, false) end
+    return false
+end
+
+local function dock(panel, target, savedFree, insertion)
+    local host, area = dockHost(panel, target)
+    if not host then return false end
+    local group = dockGroup(host, area)
+    if not group then return false end
+    local members = panel._nisGroup and { table.unpack(panel._nisGroup.members) } or { panel }
+    if not validDockMembers(panel, group, members) then return false end
     local oldGroup = NisGroup.snapshot(panel)
     local frees = {}
-    for index, member in ipairs(members) do frees[index] = member == panel and savedFree or freeRect(member) end
+    for index, member in ipairs(members) do
+        frees[index] = member == panel and savedFree or freeRect(member)
+    end
     local created = #group.members == 0
     group.attaching = true
     local success, problem = pcall(function()
-        if created then
-            nextHook = nextHook + 1
-            group.hookID = "prettyui_nis_native_" .. nextHook
-            groups[#groups + 1] = group
-            for _, item in ipairs(group.hosts) do
-                byFrame[item.key] = group
-                item.flags = {} -- cleanup is valid even before chrome construction
-            end
-            if group.nativeRoots then
-                for _, saved in ipairs(group.nativeRoots) do
-                    saved.changed = true -- setters can partially apply before throwing
-                    applyLayout(saved.component, saved.inset)
-                end
-            end
-            for _, item in ipairs(group.hosts) do createHost(group, item) end
-        end
+        if created then createDockHost(group) end
         for index, member in ipairs(members) do
             if member._nisGroup then NisGroup.undock(member) end
             if not restoring then Persistence.detach(member) end
@@ -410,12 +546,7 @@ local function dock(panel, target, savedFree, insertion)
         end
         if insertion then
             for index, member in ipairs(members) do
-                local binding = group.bindings[member]
-                binding.beforeNative = insertion.beforeNative
-                for position, candidate in ipairs(group.members) do
-                    if candidate == member then table.remove(group.members, position); break end
-                end
-                table.insert(group.members, math.min(insertion.index + index - 1, #group.members + 1), member)
+                insertMember(group, member, index, insertion)
             end
         end
         Runtime.start()
@@ -425,35 +556,64 @@ local function dock(panel, target, savedFree, insertion)
         align(group)
     end)
     group.attaching = nil
-    if not success then
-        if group.constructingTab then
-            local cleanupOK, cleanupError = pcall(destroyTab, group.constructingTab)
-            if not cleanupOK then warn(cleanupError) end
-            group.constructingTab = nil
-        end
-        warn(problem)
-        for _, member in ipairs(members) do
-            if member._nisNative and member._nisNative.group == group then Native.detach(member) end
-        end
-        if created and #group.members == 0 and not group.dead then finishGroup(group) end
-        if oldGroup then NisGroup.restore(oldGroup, false) end
-        return false
-    end
+    if not success then return rollbackDock(group, members, created, oldGroup, problem) end
     saveGroup(group)
     return true
 end
 
 function Native.dock(panel, target, savedFree, insertion)
-    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
-        or panel and panel._nisClassic then return false end
+    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI() or panel and panel._nisClassic then
+        return false
+    end
     return dock(panel, target, savedFree, insertion)
 end
 
 -- Rebind by named host identity once the native layout is available. Startup
 -- restoration is allowed while locked; explicit docking still is not.
+local function positionRestoredMember(panel, snapshot, group)
+    if panel._nisNativeActivating then
+        for index, member in ipairs(group.members) do
+            if member == panel then
+                table.remove(group.members, index)
+                break
+            end
+        end
+        table.insert(group.members, math.min(snapshot.index, #group.members + 1), panel)
+    else
+        table.sort(group.members, function(a, b)
+            local first, second =
+                beforeNative(group, a, group.hosts[group.current]), beforeNative(group, b, group.hosts[group.current])
+            if first ~= second then return first < second end
+            return (group.bindings[a].restoreIndex or math.huge) < (group.bindings[b].restoreIndex or math.huge)
+        end)
+    end
+end
+
+local function restoreTarget(panel, snapshot, target)
+    if not target or not target.visibleGlobal then return false end
+    local previous = byFrame[identity(target)]
+    local active = previous and previous.active
+    if not dock(panel, target, snapshot.free) then return false end
+    local binding = panel._nisNative
+    local group = binding.group
+    binding.restoreIndex = snapshot.index
+    binding.beforeNative = snapshot.beforeNative
+    positionRestoredMember(panel, snapshot, group)
+    if panel._nisNativeActivating or snapshot.selected then
+        Native.select(panel)
+    elseif active then
+        Native.select(active)
+    else
+        nativePage(group)
+        align(group)
+    end
+    return true
+end
+
 restorePending = function(panel)
-    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
-        or panel._nisClassic then return end
+    if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI() or panel._nisClassic then
+        return
+    end
     local snapshot = panel._nisNativePending
     if not snapshot or panel._nisHidden or panel._nisGroup then return end
     restoring = true
@@ -464,39 +624,7 @@ restorePending = function(panel)
         end
         for _, name in ipairs(targets) do
             local target = component(id.Component[name])
-            if target and target.visibleGlobal then
-                local previous = byFrame[identity(target)]
-                local active = previous and previous.active
-                if dock(panel, target, snapshot.free) then
-                    local binding = panel._nisNative
-                    local group = binding.group
-                    binding.restoreIndex = snapshot.index
-                    binding.beforeNative = snapshot.beforeNative
-                    if panel._nisNativeActivating then
-                        for index, member in ipairs(group.members) do
-                            if member == panel then table.remove(group.members, index); break end
-                        end
-                        table.insert(group.members, math.min(snapshot.index, #group.members + 1), panel)
-                    else
-                        table.sort(group.members, function(a, b)
-                            local first, second = beforeNative(group, a, group.hosts[group.current]),
-                                beforeNative(group, b, group.hosts[group.current])
-                            if first ~= second then return first < second end
-                            return (group.bindings[a].restoreIndex or math.huge)
-                                < (group.bindings[b].restoreIndex or math.huge)
-                        end)
-                    end
-                    if panel._nisNativeActivating or snapshot.selected then
-                        Native.select(panel)
-                    elseif active then
-                        Native.select(active)
-                    else
-                        nativePage(group)
-                        align(group)
-                    end
-                    return true
-                end
-            end
+            if restoreTarget(panel, snapshot, target) then return true end
         end
         return false
     end)
@@ -509,8 +637,9 @@ restorePending = function(panel)
 end
 
 function Native.register(panel, activating, delayTicks)
-    if NativeInterfaceSettings.isClassicUI() or panel._nisClassic
-        or not panel._nisNativePending then return end
+    if NativeInterfaceSettings.isClassicUI() or panel._nisClassic or not panel._nisNativePending then
+        return
+    end
     panel._nisNativeActivating = activating == true
     local delay = delayTicks or 0
     pending[panel] = Runtime.logicSequence + delay
@@ -530,10 +659,14 @@ function Native.lockChanged(panel, locked)
             if not ok then group.failure = problem end
         end
         if group.nativeRoots then
-            for _, saved in ipairs(group.nativeRoots) do saved.baselineReset = true end
+            for _, saved in ipairs(group.nativeRoots) do
+                saved.baselineReset = true
+            end
         end
         for _, member in ipairs(group.members) do
-            for _, tab in ipairs(group.bindings[member].tabs) do tab.shown = false end
+            for _, tab in ipairs(group.bindings[member].tabs) do
+                tab.shown = false
+            end
         end
     end
 end
@@ -557,8 +690,10 @@ function Native.select(panel)
         reconcileRoots(group)
         if group.pending then
             nativePage(group)
-        elseif group.active and (group.needsConceal
-            or not changed and group.transient and current ~= group.current) then
+        elseif
+            group.active
+            and (group.needsConceal or not changed and group.transient and current ~= group.current)
+        then
             moveActive(group, current)
         elseif not changed and group.current ~= current and not group.lockTransition then
             nativePage(group)
@@ -579,7 +714,11 @@ function Native.select(panel)
         saveGroup(group)
         return true
     end)
-    if not ok then group.failure = selected; warn(selected); return false end
+    if not ok then
+        group.failure = selected
+        warn(selected)
+        return false
+    end
     return selected
 end
 
@@ -603,7 +742,11 @@ function Native.sync(panel)
         if lockReflow or repainted or rootReflow then raiseGroup(group) end
         saveGroup(group)
     end)
-    if not ok then group.failure = problem; warn(problem); return false end
+    if not ok then
+        group.failure = problem
+        warn(problem)
+        return false
+    end
     return true
 end
 -- Native relative order remains client-owned; PrettyUI insertion points are
@@ -657,7 +800,9 @@ function Native.finishTabDrag(panel, snapshot)
         end
     end
     for _, member in ipairs(group.members) do
-        for _, tab in ipairs(group.bindings[member].tabs) do tab.slideX = nil end
+        for _, tab in ipairs(group.bindings[member].tabs) do
+            tab.slideX = nil
+        end
     end
     for _, host in ipairs(group.hosts) do
         if host.nativeTab then host.nativeTab.slideX = nil end
@@ -693,8 +838,7 @@ function Native.contains(panel, x, y)
     local host = current and group.hosts[current]
     if not host then return false end
     local left, top, width, height = occupiedBounds(panel, group, host)
-    return x >= left and x < left + width
-        and y >= top and y < top + height
+    return x >= left and x < left + width and y >= top and y < top + height
 end
 
 function Native.snapshot(panel)
@@ -702,18 +846,32 @@ function Native.snapshot(panel)
     if not binding then return nil end
     local group, index = binding.group, nil
     for i, member in ipairs(group.members) do
-        if member == panel then index = i; break end
+        if member == panel then
+            index = i
+            break
+        end
     end
     local frames = {}
-    for _, host in pairs(group.frames) do frames[#frames + 1] = host.spec.frame end
+    for _, host in pairs(group.frames) do
+        frames[#frames + 1] = host.spec.frame
+    end
     local current = selectedFrame(group) or group.current
     local x, y, width, height = occupiedBounds(panel, group, group.hosts[current])
-    return { frame = group.hosts[current].spec.frame, frames = frames, index = index,
+    return {
+        frame = group.hosts[current].spec.frame,
+        frames = frames,
+        index = index,
         beforeNative = binding.beforeNative,
-        free = { x = binding.free.x, y = binding.free.y,
-            width = binding.free.width, height = binding.free.height },
-        selected = group.active == panel, active = group.active,
-        tabBounds = { x = x, y = y, width = width, height = height } }
+        free = {
+            x = binding.free.x,
+            y = binding.free.y,
+            width = binding.free.width,
+            height = binding.free.height,
+        },
+        selected = group.active == panel,
+        active = group.active,
+        tabBounds = { x = x, y = y, width = width, height = height },
+    }
 end
 
 function Native.restore(panel, snapshot)
@@ -777,7 +935,9 @@ WorldMap.watch(Native, function(suspended)
     for _, group in ipairs(groups) do
         group.mapPaused, group.lockTransition = true, true
         if group.nativeSort then group.nativeSort.mapCancelled = true end
-        for _, saved in ipairs(group.nativeRoots or {}) do saved.baselineReset = true end
+        for _, saved in ipairs(group.nativeRoots or {}) do
+            saved.baselineReset = true
+        end
     end
 end)
 

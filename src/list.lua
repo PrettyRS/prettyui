@@ -79,14 +79,7 @@ function List.getSize(options)
     return options.width or DEFAULT_WIDTH, options.height or DEFAULT_HEIGHT
 end
 
-local function buildList(parent, options)
-    options = options or {}
-    local self = setmetatable({}, List)
-    self.onChange = options.onChange
-    self.disabled = options.disabled == true
-    self.maxSelected = math.max(1, math.floor(options.maxSelected or 1))
-    self.entryHeight = math.max(16, math.floor(options.entryHeight or DEFAULT_ENTRY_HEIGHT))
-    self.entryIconScale = options.entryIconScale or 100
+local function applyAppearance(self, options)
     self.font = options.font or id.Font.MUSEO_SANS_15PT_REGULAR
     self.textColour = options.colour or options.color or DEFAULT_TEXT_COLOUR
     self.disabledTextColour = options.disabledColour or options.disabledColor or DISABLED_TEXT_COLOUR
@@ -95,6 +88,17 @@ local function buildList(parent, options)
     self.hoverColour = options.hoverColour or options.hoverColor or HOVER_COLOUR
     self.selectedColour = options.selectedColour or options.selectedColor or SELECTED_COLOUR
     self.shadowed = options.shadowed ~= false
+end
+
+local function buildList(parent, options)
+    options = options or {}
+    local self = setmetatable({}, List)
+    self.onChange = options.onChange
+    self.disabled = options.disabled == true
+    self.maxSelected = math.max(1, math.floor(options.maxSelected or 1))
+    self.entryHeight = math.max(16, math.floor(options.entryHeight or DEFAULT_ENTRY_HEIGHT))
+    self.entryIconScale = options.entryIconScale or 100
+    applyAppearance(self, options)
     self._onScrollWheel = options._onScrollWheel
     self._onEntryClick = options._onEntryClick
     self.entries = {}
@@ -131,7 +135,9 @@ local function buildList(parent, options)
         frameEdge(self.root, 0, 0, 1, self.root.height),
         frameEdge(self.root, -1, 0, 1, self.root.height, 1.0, 0),
     }
-    for _, edge in ipairs(self.frame) do edge.rgba = self.borderColour end
+    for _, edge in ipairs(self.frame) do
+        edge.rgba = self.borderColour
+    end
 
     -- Keep scrollbar visuals as narrow direct children of the list root. They
     -- never become parents or siblings of the working row viewport.
@@ -213,9 +219,12 @@ local function buildList(parent, options)
     self.thumb:Subscribe(ui.Hook.ONSCROLLWHEEL, onListWheel)
     self.viewport:Subscribe(ui.Hook.ONSCROLLWHEEL, onListWheel)
 
-    self.root:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-        return self:_OnScrollWheel(component, delta)
-    end)
+    self.root:Subscribe(
+        ui.Hook.ONSCROLLWHEEL,
+        function(component, delta)
+            return self:_OnScrollWheel(component, delta)
+        end
+    )
 
     self:SetEntries(options.entries or options.choices or {})
     Tooltip.bind(self, self.root, parent, options.tooltip)
@@ -253,12 +262,7 @@ function List:SetSize(width, height, widthAnchor, heightAnchor)
     self.heightValue = height or self.heightValue
     self.widthAnchor = widthAnchor or 0
     self.heightAnchor = heightAnchor or 0
-    self.root:SetSize(
-        self.widthValue,
-        self.heightValue,
-        self.widthAnchor,
-        self.heightAnchor
-    )
+    self.root:SetSize(self.widthValue, self.heightValue, self.widthAnchor, self.heightAnchor)
 
     local resolvedHeight = self:_ResolvedHeight()
     self.frame[2]:SetPos(0, resolvedHeight - 1)
@@ -289,7 +293,9 @@ function List:SetScrollPosition(value)
     self.scrollY = clamp(math.floor(value or 0), 0, maxScroll)
     self.viewport:SetScrollPos(0, self.scrollY)
     local rowWidth = math.max(1, self:_ResolvedWidth() - 2 - (maxScroll > 0 and BAR_WIDTH or 0))
-    for _, row in ipairs(self.rows) do row.root:SetSize(rowWidth, self.entryHeight) end
+    for _, row in ipairs(self.rows) do
+        row.root:SetSize(rowWidth, self.entryHeight)
+    end
 
     if maxScroll <= 0 then
         self:_SetScrollbarHidden(true)
@@ -326,18 +332,22 @@ function List:_SelectedCount()
     return count
 end
 
+local function deselectOtherEntries(self, entry, notify)
+    for _, other in ipairs(self.entries) do
+        if other ~= entry and other.selected then
+            other.selected = false
+            if notify then self:_Notify(other, ui.SelectionChangeEvent.DESELECTED) end
+        end
+    end
+end
+
 function List:_Select(entry, selected, notify)
     if not entry or not entry.enabled or not entry.visible then return false end
     selected = selected == true
     if entry.selected == selected then return true end
 
     if selected and self.maxSelected == 1 then
-        for _, other in ipairs(self.entries) do
-            if other ~= entry and other.selected then
-                other.selected = false
-                if notify then self:_Notify(other, ui.SelectionChangeEvent.DESELECTED) end
-            end
-        end
+        deselectOtherEntries(self, entry, notify)
     elseif selected and self:_SelectedCount() >= self.maxSelected then
         if notify then self:_Notify(entry, ui.SelectionChangeEvent.ERROR_MAX_SELECTED) end
         return false
@@ -372,9 +382,12 @@ local function buildRows(self)
             visibleIndex = visibleIndex + 1
 
             local rowBackground = rectangle(row, rowBackgroundColour(self, entry, false))
-            rowBackground:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-                return self:_OnScrollWheel(component, delta)
-            end)
+            rowBackground:Subscribe(
+                ui.Hook.ONSCROLLWHEEL,
+                function(component, delta)
+                    return self:_OnScrollWheel(component, delta)
+                end
+            )
             local left = 8
             if entry.icon ~= nil then
                 local iconSize = math.max(1, math.floor(16 * self.entryIconScale / 100))
@@ -383,9 +396,12 @@ local function buildRows(self)
                 icon:SetSize(iconSize, iconSize)
                 icon.spriteID = entry.icon
                 icon.clickthrough = true
-                icon:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-                    return self:_OnScrollWheel(component, delta)
-                end)
+                icon:Subscribe(
+                    ui.Hook.ONSCROLLWHEEL,
+                    function(component, delta)
+                        return self:_OnScrollWheel(component, delta)
+                    end
+                )
                 left = 7 + iconSize + 6
             end
 
@@ -399,16 +415,22 @@ local function buildRows(self)
             label.maxLines = 1
             label.alignVertical = ui.AlignMode.CENTRE
             label.clickthrough = true
-            label:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-                return self:_OnScrollWheel(component, delta)
-            end)
+            label:Subscribe(
+                ui.Hook.ONSCROLLWHEEL,
+                function(component, delta)
+                    return self:_OnScrollWheel(component, delta)
+                end
+            )
             -- Native category ordering can paint a managed background above
             -- later labels at category boundaries. Keep row artwork behind
             -- its text and icon regardless of allocated category IDs.
             rowBackground:MoveToBack()
-            row:Subscribe(ui.Hook.ONSCROLLWHEEL, function(component, delta)
-                return self:_OnScrollWheel(component, delta)
-            end)
+            row:Subscribe(
+                ui.Hook.ONSCROLLWHEEL,
+                function(component, delta)
+                    return self:_OnScrollWheel(component, delta)
+                end
+            )
 
             if not self.disabled and entry.enabled then
                 row:Subscribe(ui.Hook.ONMOUSEOVER, function()
@@ -437,7 +459,9 @@ local function buildRows(self)
 end
 
 function List:_RebuildRows()
-    for _, row in ipairs(self.rows) do row.root:Destroy() end
+    for _, row in ipairs(self.rows) do
+        row.root:Destroy()
+    end
     self.rows = {}
 
     local ok, result = pcall(Components.withBatch, self.viewport, function()
@@ -454,7 +478,9 @@ function List:_RebuildRows()
         math.max(self:_ViewportHeight(), self.contentHeight)
     )
     self:SetScrollPosition(self.scrollY)
-    for _, edge in ipairs(self.frame) do edge:MoveToFront() end
+    for _, edge in ipairs(self.frame) do
+        edge:MoveToFront()
+    end
     self.upArrow:MoveToFront()
     self.downArrow:MoveToFront()
     self.track:MoveToFront()
@@ -481,35 +507,32 @@ function List:Clear()
     self:_RebuildRows()
 end
 
+local function newEntry(value, label, entryID)
+    if type(value) ~= "table" then
+        return { id = entryID, text = label, enabled = true, visible = true, selected = false }
+    end
+    return {
+        id = entryID,
+        text = label,
+        enabled = value.enabled ~= false and value.disabled ~= true,
+        visible = value.visible ~= false,
+        selected = value.selected == true,
+        icon = value.icon or nil,
+        backgroundColour = value.backgroundColour or value.backgroundColor or nil,
+        hoverColour = value.hoverColour or value.hoverColor or nil,
+        selectedColour = value.selectedColour or value.selectedColor or nil,
+        textColour = value.textColour or value.textColor or value.colour or value.color or nil,
+        disabledTextColour = value.disabledTextColour or value.disabledTextColor or nil,
+    }
+end
+
 function List:SetEntries(entries)
     self.entries = {}
     self.entriesByID = {}
     for index, value in ipairs(entries or {}) do
         local label, entryID = entryParts(value, index)
         if self.entriesByID[entryID] == nil then
-            local entry = {
-                id = entryID,
-                text = label,
-                enabled = type(value) ~= "table" or (value.enabled ~= false and value.disabled ~= true),
-                visible = type(value) ~= "table" or value.visible ~= false,
-                selected = type(value) == "table" and value.selected == true,
-                icon = type(value) == "table" and value.icon or nil,
-                backgroundColour = type(value) == "table"
-                    and (value.backgroundColour or value.backgroundColor)
-                    or nil,
-                hoverColour = type(value) == "table"
-                    and (value.hoverColour or value.hoverColor)
-                    or nil,
-                selectedColour = type(value) == "table"
-                    and (value.selectedColour or value.selectedColor)
-                    or nil,
-                textColour = type(value) == "table"
-                    and (value.textColour or value.textColor or value.colour or value.color)
-                    or nil,
-                disabledTextColour = type(value) == "table"
-                    and (value.disabledTextColour or value.disabledTextColor)
-                    or nil,
-            }
+            local entry = newEntry(value, label, entryID)
             table.insert(self.entries, entry)
             self.entriesByID[entryID] = entry
         end
@@ -530,7 +553,9 @@ function List:SetSelected(entryID, selected, triggerEvents)
 end
 
 function List:UnselectAll()
-    for _, entry in ipairs(self.entries) do entry.selected = false end
+    for _, entry in ipairs(self.entries) do
+        entry.selected = false
+    end
     self:_RefreshRows()
 end
 

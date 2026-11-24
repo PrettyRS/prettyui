@@ -40,9 +40,11 @@ local function component(parent, kind, categoryID, dynamicID)
 end
 
 local function factory(kind)
-    return { new = function(parent, categoryID, dynamicID)
-        return component(parent, kind, categoryID, dynamicID)
-    end }
+    return {
+        new = function(parent, categoryID, dynamicID)
+            return component(parent, kind, categoryID, dynamicID)
+        end,
+    }
 end
 
 ui = {
