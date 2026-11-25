@@ -86,8 +86,6 @@ local function drawRegion(
     local left = paddingLeft
     local width = -(paddingLeft + paddingRight)
     if edgeToEdge == true then
-        local previous = regions[index - 1]
-        local following = regions[index + 1]
         top = previous == nil and 0 or math.floor((previous.bottom + region.top) * 0.5 + 0.5)
         bottom = following == nil and contentHeight or math.floor((region.bottom + following.top) * 0.5 + 0.5)
         left = 0
