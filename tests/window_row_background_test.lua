@@ -154,8 +154,8 @@ expect(groupedBackground.destroyed, true, "mode change removes grouped row backd
 expect(window.rowBackgrounds[1].x, 0, "edge backdrop reaches the left edge")
 expect(window.rowBackgrounds[1].width, 0, "edge backdrop reaches the right edge")
 expect(window.rowBackgrounds[1].y, 0, "edge backdrop fills top padding")
-expect(window.rowBackgrounds[1].height, 32, "edge backdrop stops before an excluded row")
-expect(window.rowBackgrounds[2].y, 54, "edge backdrop resumes after an excluded row")
+expect(window.rowBackgrounds[1].height, 36, "edge backdrop ends halfway between row bottom 34 and excluded top 38")
+expect(window.rowBackgrounds[2].y, 50, "edge backdrop starts halfway between excluded bottom 46 and row top 54")
 local activeBackground = window.rowBackgrounds[1]
 window:Destroy()
 expect(activeBackground.destroyed, true, "destroy removes row backdrops")
