@@ -243,6 +243,51 @@ local function slayerPositionIsOptionalAndNeverShiftedTwice()
     expect(foreign.slayer.posWrites, positionWrites, "client-owned Slayer position is not overwritten")
     ClassicLayout.restore()
     expect(foreign.slayer.position.y, 31, "client-owned Slayer position survives teardown")
+
+    local warningTotal = warningCount("cannot move the Slayer counter")
+    scene({ noSlayer = true })
+    expect(ClassicLayout.update(44), true, "missing Slayer does not block native area")
+    ClassicLayout.update(44)
+    expect(warningCount("cannot move the Slayer counter"), warningTotal, "absent optional counter stays quiet")
+    ClassicLayout.restore()
+
+    local malformed = scene()
+    malformed.slayer.position.y = "invalid"
+    expect(ClassicLayout.update(44), true, "malformed Slayer descriptor stays optional")
+    expect(warningCount("cannot move the Slayer counter"), warningTotal, "unclaimed optional counter stays quiet")
+    ClassicLayout.restore()
+end
+
+local function slayerOnlyCapturesVisibleClassicRightAnchor()
+    local view = scene()
+    local warningTotal = #warnings
+    view.slayer:SetPos(3198, 2, 0, 0, 0, 0)
+    local nativeWrites = view.slayer.posWrites
+    expect(ClassicLayout.update(44), true, "modern absolute Slayer cannot block Classic area")
+    expect(view.slayer.posWrites, nativeWrites, "transitional absolute Slayer is not shifted")
+    expect(view.slayer.position.x, 3198, "modern absolute Slayer is not captured as native baseline")
+    expect(#warnings, warningTotal, "transitional absolute Slayer causes no spurious warning")
+
+    view.slayer:SetPos(-4000, 2, 1, 0, 1, 0)
+    nativeWrites = view.slayer.posWrites
+    ClassicLayout.update(44)
+    expect(view.slayer.posWrites, nativeWrites, "offscreen right anchor is not captured")
+    expect(#warnings, warningTotal, "offscreen Slayer causes no spurious warning")
+
+    view.slayer:SetPos(-245, 2, 1, 0, 1, 0)
+    view.slayerPosition = copy(view.slayer.position, positionFields)
+    nativeWrites = view.slayer.posWrites
+    ClassicLayout.update(44)
+    expect(view.slayer.posWrites, nativeWrites + 1, "Classic right anchor is shifted once")
+    expect(globalX(view.slayer), view.viewport.width - 44 - view.slayer.width - 245,
+        "Classic Slayer is visibly inset after transition")
+    ClassicLayout.update(44)
+    expect(view.slayer.posWrites, nativeWrites + 1, "unchanged Classic anchor is not shifted twice")
+    expect(#warnings, warningTotal, "successful transition causes no warning")
+    ClassicLayout.restore()
+    expect(globalX(view.slayer), view.viewport.width - view.slayer.width - 245,
+        "native Classic Slayer position returns on restore")
+    assertRestored(view, "transition restores actual Classic baseline")
 end
 
 local function optionalGameviewCannotBlockMandatoryReservation()
@@ -271,6 +316,146 @@ local function optionalGameviewCannotBlockMandatoryReservation()
     ClassicLayout.restore()
     expect(foreign.area.size.width, 0, "native reservation restored on teardown")
     expect(foreign.gameview.size.width, -17, "foreign gameview write survives teardown")
+
+    local displaced = scene()
+    displaced.gameview:SetPos(10, 0, 0, 0, 0, 0)
+    expect(ClassicLayout.update(44), true, "gameview geometry mismatch stays optional")
+    ClassicLayout.restore()
+
+    local layoutChanged = scene()
+    layoutChanged.gameview:SetSize(-12, 0, 1, 1)
+    expect(ClassicLayout.update(44), true, "gameview baseline mismatch stays optional")
+    ClassicLayout.restore()
+end
+
+local function zeroReservationDoesNotClaimUnchangedProportionalGameview()
+    local view = scene()
+    local warningTotal = #warnings
+    expect(ClassicLayout.update(0), true, "zero reservation keeps full proportional native gameview")
+    expect(view.gameview.sizeWrites, 0, "zero reservation does not write proportional gameview")
+    view.gameview:SetSize(3061, 0, 0, 1)
+    local nativeWrites = view.gameview.sizeWrites
+    ClassicLayout.update(0)
+    expect(view.gameview.sizeWrites, nativeWrites, "native change after no-op remains unclaimed")
+    expect(#warnings, warningTotal, "native change after no-op is not a conflict")
+    ClassicLayout.restore()
+    expect(view.gameview.width, 3061, "teardown never restores a gameview it did not change")
+end
+
+local function explicitGameviewFitsAndTracksOverlap()
+    local view = scene()
+    view.gameview:SetSize(3061, 0, 0, 1)
+    view.gameviewSize = copy(view.gameview.size, sizeFields)
+    local warningTotal = #warnings
+    local nativeWrites = view.gameview.sizeWrites
+    expect(ClassicLayout.update(44), true, "explicit native gameview fits collapsed rail")
+    expect(view.gameview.width, 3061, "fitting explicit width remains native")
+    expect(view.gameview.sizeWrites, nativeWrites, "fitting explicit gameview has no setter call")
+    expect(#warnings, warningTotal, "fitting explicit gameview has no optional warning")
+    ClassicLayout.update(44)
+    expect(view.gameview.sizeWrites, nativeWrites, "idle fitting gameview remains unclaimed")
+
+    view.gameview:SetSize(3077, 0, 0, 1)
+    view.gameviewSize = copy(view.gameview.size, sizeFields)
+    nativeWrites = view.gameview.sizeWrites
+    ClassicLayout.update(44)
+    expect(view.gameview.sizeWrites, nativeWrites, "native rewrite while fitting remains client-owned")
+    expect(#warnings, warningTotal, "native rewrite while fitting does not warn")
+    ClassicLayout.update(404)
+    expect(view.gameview.width, view.viewport.width - 404, "expanded rail trims explicit right overlap")
+    expect(view.gameview.size.width, 3036, "only excess past reserved right edge is removed")
+    expect(view.gameview.size.heightParentPc, 1, "height remains native proportional")
+    expect(view.gameview.size.widthParentPc, 0, "pixel width remains native absolute")
+    ClassicLayout.update(504)
+    expect(view.gameview.width, view.viewport.width - 504, "later expansion recomputes from baseline")
+    ClassicLayout.update(404)
+    expect(view.gameview.width, view.viewport.width - 404, "contraction recovers only owned inset")
+    ClassicLayout.update(44)
+    expect(view.gameview.width, 3077, "collapsed rail restores real native width")
+    nativeWrites = view.gameview.sizeWrites
+    ClassicLayout.update(44)
+    expect(view.gameview.sizeWrites, nativeWrites, "released fitting gameview stays untouched")
+    expect(#warnings, warningTotal, "all valid explicit changes stay quiet")
+    ClassicLayout.restore()
+    assertRestored(view, "explicit native gameview restoration")
+
+    local inset = scene()
+    inset.gameview:SetPos(120, 0, 0, 0, 0, 0)
+    inset.gameview:SetSize(3300, 0, 0, 1)
+    inset.gameviewPosition = copy(inset.gameview.position, positionFields)
+    inset.gameviewSize = copy(inset.gameview.size, sizeFields)
+    warningTotal = #warnings
+    ClassicLayout.update(44)
+    expect(globalX(inset.gameview), 120, "inset explicit left edge stays native")
+    expect(inset.gameview.width, 3276, "initial overlap trims only 24px")
+    expect(globalX(inset.gameview) + inset.gameview.width, inset.viewport.width - 44,
+        "inset view's realized right edge clears collapsed rail")
+    ClassicLayout.update(404)
+    expect(inset.gameview.width, 2916, "expansion recomputes overlap from 3300px baseline")
+    expect(globalX(inset.gameview) + inset.gameview.width, inset.viewport.width - 404,
+        "inset view's realized right edge clears expanded rail")
+    ClassicLayout.update(0)
+    expect(inset.gameview.width, 3300, "zero reservation removes only actual inset")
+    ClassicLayout.restore()
+    assertRestored(inset, "inset explicit gameview restores native anchors and dimensions")
+    expect(#warnings, warningTotal, "inset explicit geometry remains warning-free")
+end
+
+local function explicitGameviewRecapturesAfterViewportResize()
+    local resized = scene()
+    resized.gameview:SetSize(3300, 0, 0, 1)
+    ClassicLayout.update(404)
+    expect(resized.gameview.width, 3036, "original viewport has a real explicit adjustment")
+    for _, field in ipairs(positionFields) do resized.area.position[field] = resized.position[field] end
+    for _, field in ipairs(sizeFields) do resized.area.size[field] = resized.dimensions[field] end
+    resized.gameview:SetSize(2800, 0, 0, 1)
+    resized.gameviewSize = copy(resized.gameview.size, sizeFields)
+    resized.viewport:SetSize(3000, 900, 0, 0)
+    resized.top:SetSize(3000, 900, 0, 0)
+    local nativeWrites = resized.gameview.sizeWrites
+    local warningTotal = #warnings
+    expect(ClassicLayout.update(44), true, "viewport resize captures native explicit width")
+    expect(resized.gameview.sizeWrites, nativeWrites, "resized viewport's fitting gameview is untouched")
+    expect(resized.gameview.width, 2800, "resized viewport keeps native gameview width")
+    ClassicLayout.update(404)
+    expect(resized.gameview.width, 2596, "new viewport's overlap uses its 2800px baseline")
+    expect(globalX(resized.gameview) + resized.gameview.width, resized.viewport.width - 404,
+        "resized viewport's realized right edge clears the rail")
+    ClassicLayout.restore()
+    assertRestored(resized, "resized viewport restores actual native gameview baseline")
+    expect(#warnings, warningTotal, "viewport resize recapture has no spurious warnings")
+end
+
+local function explicitGameviewRejectsUnsafeGeometryAndRealConflicts()
+    local unsafe = scene()
+    unsafe.gameview:SetSize(3500, 0, 0, 1)
+    local nativeWrites = unsafe.gameview.sizeWrites
+    expect(ClassicLayout.update(44), true, "unsafe optional view cannot block mandatory area")
+    expect(unsafe.gameview.sizeWrites, nativeWrites, "out-of-viewport view is not touched")
+    unsafe.gameview:SetSize(3300, 0, 0, 1)
+    unsafe.gameview.failSize = "before"
+    expect(ClassicLayout.update(404), true, "corrected geometry retries the optional gameview")
+    expect(unsafe.gameview.width, 3300, "failed setter leaves native explicit width")
+    ClassicLayout.restore()
+
+    local anchored = scene()
+    anchored.gameview:SetPos(0, 0, 1, 0, 1, 0)
+    anchored.gameview:SetSize(3300, 0, 0, 1)
+    nativeWrites = anchored.gameview.sizeWrites
+    expect(ClassicLayout.update(404), true, "unsafe right-anchored overlap stays optional")
+    expect(anchored.gameview.sizeWrites, nativeWrites, "right-anchored overlap remains client-owned")
+    ClassicLayout.restore()
+
+    local foreign = scene()
+    foreign.gameview:SetSize(3300, 0, 0, 1)
+    expect(ClassicLayout.update(404), true, "initial explicit overlap is adjusted")
+    foreign.gameview.size.width = 3100
+    nativeWrites = foreign.gameview.sizeWrites
+    ClassicLayout.update(44)
+    expect(foreign.gameview.sizeWrites, nativeWrites, "external write after real adjustment is protected")
+    expect(foreign.gameview.width, 3100, "external explicit width remains unchanged")
+    ClassicLayout.restore()
+    expect(foreign.gameview.width, 3100, "restore leaves external explicit width alone")
 end
 
 local function unsafeNativeLayoutsDoNotClaimReservation()
@@ -278,12 +463,31 @@ local function unsafeNativeLayoutsDoNotClaimReservation()
     incompatible.area.size.widthParentPc = .9
     expect(ClassicLayout.update(44), false, "non-full-size game area rejects reservation")
     expect(incompatible.area.sizeWrites, 0, "incompatible area receives no native write")
+    expect(warningCount("width=44 reason=area.size.widthParentPc expected=1 actual=0.9"),
+        1, "incompatible area reports the failing native width scalar")
+    expect(ClassicLayout.update(44), false, "unchanged incompatible area remains unavailable")
+    expect(warningCount("width=44 reason=area.size.widthParentPc expected=1 actual=0.9"),
+        1, "unchanged topology does not repeat the suspension warning")
     ClassicLayout.restore()
 
     local missingLayer = scene()
     components[id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP] = nil
     expect(ClassicLayout.update(44), false, "missing separate plugin layer rejects reservation")
+    expect(warningCount("width=44 reason=top.missing"),
+        1, "missing plugin layer reports its topology cause")
     expect(missingLayer.area.sizeWrites, 0, "missing mount receives no native write")
+    ClassicLayout.restore()
+
+    scene()
+    live[4202] = nil
+    expect(ClassicLayout.update(44), false, "missing native interface rejects reservation")
+    expect(warningCount("width=44 reason=interface.missing"),
+        1, "missing loaded interface reports its own cause")
+    ClassicLayout.restore()
+
+    local displaced = scene()
+    displaced.top:SetPos(5, 0, 0, 0, 0, 0)
+    expect(ClassicLayout.update(44), false, "displaced plugin layer rejects reservation")
     ClassicLayout.restore()
 
     local failed = scene()
@@ -291,6 +495,8 @@ local function unsafeNativeLayoutsDoNotClaimReservation()
     local ok, err = pcall(ClassicLayout.update, 44)
     expect(ok, false, "mandatory setter failure propagates")
     assert(tostring(err):find("native size setter failed", 1, true), "original setter error propagates")
+    expect(warningCount("width=44 reason=area.set.size.exception"),
+        1, "mandatory setter exception reports the failing descriptor")
     assertRestored(failed, "partially applied mandatory setter rolls back")
     ClassicLayout.restore()
 end
@@ -301,7 +507,11 @@ local function foreignDescriptorsRemainClientOwned()
     foreignSize.area.size.width = 0
     local sizeWrites = foreignSize.area.sizeWrites
     expect(ClassicLayout.update(44), false, "foreign overwrite suspends reservation")
+    expect(warningCount("width=44 reason=area.size.width expected=-44 actual=0"),
+        1, "foreign overwrite reports the original ownership mismatch once")
     expect(ClassicLayout.update(44), false, "later update cannot reclaim foreign size")
+    expect(warningCount("width=44 reason=area.size.width expected=-44 actual=0"),
+        1, "blocked ticks retain the first ownership cause")
     expect(foreignSize.area.sizeWrites, sizeWrites, "foreign size is never rewritten")
     ClassicLayout.restore()
     expect(foreignSize.area.size.width, 0, "teardown preserves foreign size")
@@ -360,8 +570,14 @@ local function viewportResizeRecapturesBaselineButRepeatedResetSuspends()
     for _, field in ipairs(positionFields) do view.area.position[field] = view.position[field] end
     for _, field in ipairs(sizeFields) do view.area.size[field] = view.dimensions[field] end
     local positionWrites, sizeWrites = writes(view.area)
+    local reasonTotal = warningCount("width=44 reason=area.position.xParentPc expected=0 actual=0.5")
     expect(ClassicLayout.update(44), false, "unconfirmed native reset suspends reservation")
     expect(view.area.posWrites, positionWrites, "reset anchor is not overwritten")
+    local warningTotal = warningCount("classic sidebar suspended")
+    expect(ClassicLayout.update(44), false, "unchanged suspended layout remains unavailable")
+    expect(warningCount("classic sidebar suspended"), warningTotal, "suspension warning deduplicated")
+    expect(warningCount("width=44 reason=area.position.xParentPc expected=0 actual=0.5"),
+        reasonTotal + 1, "reset warning retains its original ownership cause")
     expect(view.area.sizeWrites, sizeWrites, "reset native width is not overwritten")
     ClassicLayout.restore()
     assertRestored(view, "reset baseline remains client-owned")
@@ -450,12 +666,50 @@ local function additionalButtonTriggersCompactLayout()
     ClassicLayout.restore()
 end
 
+local function combatWaitsForClassicAnchors()
+    local view = combatScene()
+    view.strip:SetSize(1000, 34, 0, 0)
+    local primary = view.actions[1]
+    primary:SetPos(0, 896, 0, 0, 0, 0)
+    local initialWrites, messages = primary.posWrites, #warnings
+    expect(ClassicLayout.update(44), true, "rail mounts while combat anchors switch")
+    expect(view.area.width, 1876, "the rail keeps its reservation during the switch")
+    expect(primary.posWrites, initialWrites, "outgoing primary position remains native")
+    expect(view.actions[2].posWrites, 0, "mixed anchors do not split the cluster")
+    primary:SetPos(0, -76, 0.5, 1, 0.5, 1)
+    expect(ClassicLayout.update(44), true, "settled bars can compact without losing the rail")
+    expect(primary.x, view.chat.x, "settled combat cluster aligns with chat")
+    expect(view.actions[3].y + view.actions[3].height, view.chat.y, "cluster clears chat")
+    expect(#warnings, messages, "native anchor transition produces no warning")
+    ClassicLayout.restore()
+    assertDescriptor(primary.position, view.actionPositions[1], positionFields, "restore uses the Classic baseline")
+end
+
+local function disappearingActionDuringRailReservation()
+    local view = combatScene()
+    view.strip:SetSize(1000, 34, 0, 0)
+    expect(ClassicLayout.update(44), true, "collapsed rail initially fits with compact combat bars")
+    local key = id.Component.TOPLEVEL_V2__ACTION_WINDOW
+    components[key] = nil
+    local before = warningCount("width=44 reason=combat.action.component_unavailable")
+    expect(ClassicLayout.update(44), false, "missing compacted action bar suspends the rail")
+    ClassicLayout.update(44)
+    expect(warningCount("width=44 reason=combat.action.component_unavailable"), before + 1,
+        "a missing bar is distinguished from a changed layout without repeated warnings")
+    ClassicLayout.restore()
+end
+
+disappearingActionDuringRailReservation()
+
 local function combatOwnershipAndFailuresAreSafe()
     local view = combatScene()
     ClassicLayout.update(404)
+    local expectedX = view.actions[1].position.x
     view.actions[1]:SetPos(12, 16, 0, 0, 0, 0)
     local writesBefore = view.actions[1].posWrites
     expect(ClassicLayout.update(404), false, "native position changes suspend reservation")
+    expect(warningCount("width=404 reason=combat.action.ownership.position.x expected=" .. expectedX .. " actual=12"),
+        1, "changed combat anchor identifies the bar and the first conflicting native value")
     expect(view.actions[1].posWrites, writesBefore, "native position is never fought")
     expect(view.area.width, 1920, "unsafe combat layout releases sidebar reservation")
     ClassicLayout.restore()
@@ -463,14 +717,23 @@ local function combatOwnershipAndFailuresAreSafe()
 
     view = combatScene()
     view.actions[2].failPos = "after"
-    local ok = pcall(ClassicLayout.update, 404)
+    local ok, err = pcall(ClassicLayout.update, 404)
+    expect(warningCount("width=404 reason=combat.exception"),
+        1, "combat setter exception has a distinct reason")
     expect(ok, false, "combat setter error propagates")
+    assert(tostring(err):find("native position setter failed", 1, true), "original combat setter error propagates")
     for index, action in ipairs(view.actions) do
         assertDescriptor(action.position, view.actionPositions[index], positionFields, "partial rollback")
     end
     expect(view.area.width, 1920, "partial failure releases reservation")
     ClassicLayout.restore()
 
+    view = combatScene()
+    view.chat:SetPos(-4, 0, 0, 1, 0, 1)
+    expect(ClassicLayout.update(404), false, "offscreen chat rejects compact combat placement")
+    expect(warningCount("width=404 reason=combat.chat.x"),
+        1, "combat rejection identifies its failing chat guard")
+    ClassicLayout.restore()
     view = combatScene()
     -- A native compact baseline must not be shifted a second time.
     for index, action in ipairs(view.actions) do
@@ -539,12 +802,18 @@ end
 reservationFollowsRailAndRestoresOriginalLayout()
 modeExitRestoresNativeOwnership()
 slayerPositionIsOptionalAndNeverShiftedTwice()
+slayerOnlyCapturesVisibleClassicRightAnchor()
+explicitGameviewFitsAndTracksOverlap()
+zeroReservationDoesNotClaimUnchangedProportionalGameview()
+explicitGameviewRecapturesAfterViewportResize()
+explicitGameviewRejectsUnsafeGeometryAndRealConflicts()
 optionalGameviewCannotBlockMandatoryReservation()
 unsafeNativeLayoutsDoNotClaimReservation()
 foreignDescriptorsRemainClientOwned()
 remountNeverTouchesRetiredNativeHandles()
 viewportResizeRecapturesBaselineButRepeatedResetSuspends()
 combatStacksAndRestoresWithoutOscillating()
+combatWaitsForClassicAnchors()
 additionalButtonTriggersCompactLayout()
 combatOwnershipAndFailuresAreSafe()
 privateChatFollowsCompactClusterAndRestores()

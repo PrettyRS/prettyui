@@ -27,7 +27,7 @@ local function sidebar(f)
     local ribbon = require("src/ribbon_bar")
     ribbon.Start()
     return {
-        top = top, area = area,
+        top = top, area = area, gameview = view,
         click = function(panel)
             f.fire(assert(find(top, panel.tabIcon), "missing ribbon button"), ui.Hook.ONCLICK)
         end,
@@ -75,12 +75,15 @@ Fixture.run("mode round trip preserves modern grouping, selection, bounds and ri
     assert(a:DockTo(b))
     b:SelectTab()
     local groupID = f:saved("a").group
+    scene.gameview:SetSize(1000, 0, 0, 1)
     f.classicMode.value = 1
     f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
     f:emit("Logic")
     assert(a.content == nil and b.content == nil, "mode entry starts collapsed")
+    f.expect(scene.gameview.width, 1000, "collapsed rail leaves existing gameview inset alone")
     scene.click(a)
     assert(a.content ~= nil and a.root.hidden)
+    f.expect(scene.gameview.width, scene.area.width, "expanded page clips only the overlapping gameview edge")
     assert(f:saved("a").group == groupID, "Classic selection must not rewrite modern membership")
     f.classicMode.value = 0
     f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
@@ -89,6 +92,7 @@ Fixture.run("mode round trip preserves modern grouping, selection, bounds and ri
     assert(a.content == nil and b.content ~= nil)
     Fixture.rect(b.root, 500, 100, 300, 260)
     f.expect(scene.area.width, 1200, "mode exit returns native space")
+    f.expect(scene.gameview.width, 1000, "mode exit restores the native fixed-width view")
     f.expect(settings.get("ribbonBarPosition"), "top", "modern edge preference")
     f.expect(settings.get("ribbonBarAutoHide"), true, "modern auto-hide preference")
 end)
