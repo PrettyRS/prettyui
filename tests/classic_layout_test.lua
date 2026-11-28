@@ -1,5 +1,5 @@
 -- Classic layout fixture: a separate plugin layer, GAME_AREA under VIEWPORT,
--- and right-anchored native children. Component IDs are synthetic.
+-- and a native GAMEVIEW_WINDOW -> content -> RENDER_LAYER chain. Component IDs are synthetic.
 local function expect(actual, expected, message)
     assert(actual == expected, message .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
@@ -55,6 +55,13 @@ log = function(message)
     -- invoked directly by C pcall without a Lua caller environment.
     assert(debug.getinfo(2, "S").what ~= "C", "native log requires a Lua caller")
     warnings[#warnings + 1] = message
+end
+local function countWarnings(message)
+    local count = 0
+    for _, warning in ipairs(warnings) do
+        if tostring(warning):find(message, 1, true) then count = count + 1 end
+    end
+    return count
 end
 
 local function expectSuspended(width, reason, expected, actual)
@@ -146,9 +153,18 @@ local function scene(options)
     local top = component(4201, 71, nil, pos(0, 0, 0, 0, 0, 0), size(3440, 1440, 0, 0))
     local viewport = component(4202, 75, nil, pos(0, 0, 0, 0, 0, 0), size(3440, 1440, 0, 0))
     local area = component(4202, 81, viewport, pos(0, 0, 0.5, 0.5, 0.5, 0.5), size(0, 0, 1, 1))
-    local gameview
+    local gameview, content, render
     if not options.noGameview then
-        gameview = component(4202, 87, viewport, pos(0, 0, 0, 0, 0, 0), size(0, 0, 1, 1))
+        gameview = component(
+            4202,
+            87,
+            viewport,
+            pos(0, 0, 0, 0, 0, 0),
+            size(options.gameviewWidth or 0, 0, options.gameviewWidth and 0 or 1, 1)
+        )
+        content = component(4202, 88, gameview, pos(0, 0, 0, 0, 0, 0), size(0, 0, 1, 1))
+        render = component(4202, 89, content, pos(0, 0, 0, 0, 0, 0), size(0, 0, 1, 1))
+        render.visibleGlobal = not options.hiddenRender
     end
     -- Native right-anchored wrappers use xSelfPc = 1; children retain local positions.
     local minimapWrapper = component(4202, nil, area, pos(-25, 0, 1, 0, 1, 0), size(250, 250, 0, 0))
@@ -168,6 +184,8 @@ local function scene(options)
         TOPLEVEL_V2__VIEWPORT = (4202 << 16) | 75,
         TOPLEVEL_V2__GAME_AREA = (4202 << 16) | 81,
         TOPLEVEL_V2__GAMEVIEW_WINDOW = (4202 << 16) | 87,
+        TOPLEVEL_V2__GAMEVIEW_WINDOW_CONTENT = (4202 << 16) | 88,
+        TOPLEVEL_V2__RENDER_LAYER = (4202 << 16) | 89,
         TOPLEVEL_V2__GAMEPLAY_HUDS = (4202 << 16) | 91,
         TOPLEVEL_V2__SLAYER_COUNTER_WINDOW = (4202 << 16) | 93,
     }
@@ -176,6 +194,8 @@ local function scene(options)
         viewport = viewport,
         area = area,
         gameview = gameview,
+        content = content,
+        render = render,
         minimap = minimap,
         buttons = buttons,
         hud = hud,
@@ -186,11 +206,52 @@ local function scene(options)
         dimensions = copy(area.size, sizeFields),
         gameviewPosition = gameview and copy(gameview.position, positionFields),
         gameviewSize = gameview and copy(gameview.size, sizeFields),
+        contentPosition = content and copy(content.position, positionFields),
+        contentSize = content and copy(content.size, sizeFields),
+        renderPosition = render and copy(render.position, positionFields),
+        renderSize = render and copy(render.size, sizeFields),
     }
 end
 local function globalX(item)
     return item.x + (item.parent and globalX(item.parent) or 0)
 end
+local function assertCrop(sceneValue, reservedWidth, message)
+    local clipWidth = sceneValue.viewport.width - reservedWidth
+    expect(sceneValue.gameview.x, 0, message .. " gameview stays left-aligned")
+    expect(sceneValue.gameview.width, clipWidth, message .. " gameview clips before the rail")
+    expect(sceneValue.gameview.height, sceneValue.viewport.height, message .. " gameview retains native height")
+    expect(sceneValue.content.width, clipWidth, message .. " content fills the clipped window")
+    expect(sceneValue.content.height, sceneValue.viewport.height, message .. " content retains native height")
+    expect(sceneValue.render.visibleGlobal, true, message .. " visible native render")
+    expect(sceneValue.render.width, sceneValue.viewport.width, message .. " native render keeps full viewport width")
+    expect(sceneValue.render.height, sceneValue.viewport.height, message .. " render retains native height")
+    expect(sceneValue.render.size.widthParentPc, 0, message .. " render width is absolute, not parent-relative")
+    expect(globalX(sceneValue.render), -math.floor(reservedWidth / 2), message .. " centered horizontal crop")
+end
+local function assertUncropped(sceneValue, message)
+    assertDescriptor(
+        sceneValue.gameview.position,
+        sceneValue.gameviewPosition,
+        positionFields,
+        message .. " window position"
+    )
+    assertDescriptor(sceneValue.gameview.size, sceneValue.gameviewSize, sizeFields, message .. " window size")
+    assertDescriptor(
+        sceneValue.content.position,
+        sceneValue.contentPosition,
+        positionFields,
+        message .. " content position"
+    )
+    assertDescriptor(sceneValue.content.size, sceneValue.contentSize, sizeFields, message .. " content size")
+    assertDescriptor(
+        sceneValue.render.position,
+        sceneValue.renderPosition,
+        positionFields,
+        message .. " render position"
+    )
+    assertDescriptor(sceneValue.render.size, sceneValue.renderSize, sizeFields, message .. " render size")
+end
+
 local function assertArea(sceneValue, width, message)
     local area = sceneValue.area
     expect(area.x, 0, message .. " native left edge")
@@ -215,15 +276,6 @@ local function assertArea(sceneValue, width, message)
         )
         expect(sceneValue.slayerContent.position.x, 12, message .. " unchanged Slayer child offset")
     end
-    if sceneValue.gameview then
-        expect(sceneValue.gameview.width, sceneValue.viewport.width - width, message .. " gameview width")
-        assertDescriptor(
-            sceneValue.gameview.position,
-            sceneValue.gameviewPosition,
-            positionFields,
-            message .. " unchanged gameview position"
-        )
-    end
 end
 local function assertRestored(sceneValue, message)
     assertDescriptor(sceneValue.area.position, sceneValue.position, positionFields, message .. " position")
@@ -236,15 +288,7 @@ local function assertRestored(sceneValue, message)
             message .. " Slayer position"
         )
     end
-    if sceneValue.gameview then
-        assertDescriptor(
-            sceneValue.gameview.position,
-            sceneValue.gameviewPosition,
-            positionFields,
-            message .. " gameview position"
-        )
-        assertDescriptor(sceneValue.gameview.size, sceneValue.gameviewSize, sizeFields, message .. " gameview size")
-    end
+    if sceneValue.gameview then assertUncropped(sceneValue, message .. " restored gameview") end
 end
 local function writes(item) return item.posWrites, item.sizeWrites end
 local function poison(item)
@@ -265,6 +309,7 @@ local function reservationFollowsRailAndRestoresOriginalLayout()
     expect(ClassicLayout.update(44), true, "collapsed rail reserves native width")
     expect(#warnings, warningCount, "successful reservation emits no diagnostic")
     assertArea(view, 44, "collapsed rail")
+    assertCrop(view, 44, "collapsed rail")
     assertDescriptor(
         view.area.position,
         pos(0, 0, 0, 0, 0, 0),
@@ -272,13 +317,20 @@ local function reservationFollowsRailAndRestoresOriginalLayout()
         "reservation removes centered native anchors"
     )
     local positionWrites, sizeWrites = writes(view.area)
+    local renderPositionWrites, renderSizeWrites = writes(view.render)
+    local gameviewWrites = view.gameview.sizeWrites
     ClassicLayout.update(44)
     expect(view.area.posWrites, positionWrites, "idle update does not reposition native area")
     expect(view.area.sizeWrites, sizeWrites, "idle update does not resize native area")
+    expect(view.render.posWrites, renderPositionWrites, "idle update does not recenter native render")
+    expect(view.render.sizeWrites, renderSizeWrites, "idle update does not resize native render")
+    expect(view.gameview.sizeWrites, gameviewWrites, "idle update does not resize native gameview")
     expect(ClassicLayout.update(404), true, "expansion reserves panel body")
     assertArea(view, 404, "expanded rail")
+    assertCrop(view, 404, "expanded rail")
     expect(ClassicLayout.update(44), true, "collapse removes body reservation")
     assertArea(view, 44, "collapsed again")
+    assertCrop(view, 44, "collapsed again")
     ClassicLayout.restore()
     assertRestored(view, "shutdown restores all native descriptors")
     expect(view.area.width, 3440, "restored game area fills viewport")
@@ -295,6 +347,7 @@ local function modeExitRestoresNativeOwnership()
     classicValue = 0
     expect(ClassicLayout.update(44), false, "mode exit stops reserving Classic space")
     assertRestored(view, "mode exit restores owned descriptors")
+    assertUncropped(view, "mode exit releases crop")
     classicValue = 1
     ClassicLayout.restore()
 end
@@ -401,8 +454,7 @@ end
 
 local function explicitGameviewOnlyClaimsActualOverlap()
     local view = scene()
-    view.gameview:SetSize(3061, -12, 0, 1)
-    view.gameview:SetPos(0, 12, 0, 0, 0, 0)
+    view.gameview:SetSize(3061, 0, 0, 1)
     local nativePosition = copy(view.gameview.position, positionFields)
     local nativeSize = copy(view.gameview.size, sizeFields)
     local writesBefore, warningsBefore = view.gameview.sizeWrites, #warnings
@@ -410,17 +462,17 @@ local function explicitGameviewOnlyClaimsActualOverlap()
     expect(view.gameview.sizeWrites, writesBefore, "fitting pixel width is never claimed or rewritten")
     expect(#warnings, warningsBefore, "fitting explicit gameview does not warn")
 
-    view.gameview:SetSize(3000, -12, 0, 1)
+    view.gameview:SetSize(3000, 0, 0, 1)
     writesBefore = view.gameview.sizeWrites
     ClassicLayout.update(404)
     expect(view.gameview.sizeWrites, writesBefore, "native rewrite before inset stays client-owned")
     expect(#warnings, warningsBefore, "native rewrite before inset does not warn")
 
-    view.gameview:SetSize(3061, -12, 0, 1)
+    view.gameview:SetSize(3061, 0, 0, 1)
     ClassicLayout.update(404)
     expect(view.gameview.size.width, 3036, "expansion clips only the overlap past usable right edge")
     expect(view.gameview.width, 3036, "rendered explicit gameview fits expanded rail")
-    expect(view.gameview.size.height, -12, "height remains native while inset")
+    expect(view.gameview.height, view.viewport.height, "clipping preserves native height")
     expect(view.gameview.size.heightParentPc, 1, "vertical relative size remains native")
     ClassicLayout.update(600)
     expect(view.gameview.size.width, 2840, "subsequent reservation recomputes from original native width")
@@ -430,7 +482,7 @@ local function explicitGameviewOnlyClaimsActualOverlap()
     assertDescriptor(view.gameview.size, nativeSize, sizeFields, "no overlap restores native pixel size")
     assertDescriptor(view.gameview.position, nativePosition, positionFields, "no overlap preserves anchors")
     writesBefore = view.gameview.sizeWrites
-    view.gameview:SetSize(3050, -12, 0, 1)
+    view.gameview:SetSize(3050, 0, 0, 1)
     ClassicLayout.update(44)
     expect(view.gameview.sizeWrites, writesBefore + 1, "native rewrite after release is not fought")
     expect(view.gameview.size.width, 3050, "latest native width survives a fitting reservation")
@@ -439,13 +491,21 @@ local function explicitGameviewOnlyClaimsActualOverlap()
     expect(view.gameview.size.width, 3036, "next overlap starts from latest unclaimed native baseline")
     ClassicLayout.restore()
     expect(view.gameview.size.width, 3050, "teardown restores the latest native explicit width")
-    expect(view.gameview.size.height, -12, "teardown preserves latest native height")
+
+    view.gameview:SetSize(3061, -12, 0, 1)
+    view.gameview:SetPos(0, 12, 0, 0, 0, 0)
+    ClassicLayout.update(404)
+    expect(view.area.width, 3036, "partial-height gameview still reserves the HUD")
+    expect(view.gameview.width, 3061, "partial-height gameview remains native even when overlapping")
+    expect(view.render.width, 3061, "partial-height render is not stretched to viewport width")
+    ClassicLayout.restore()
+    expect(view.gameview.size.height, -12, "teardown preserves the native height inset")
 end
 
 local function insetExplicitGameviewKeepsBaselineAndProtectsConflicts()
     local view = scene()
-    view.gameview:SetPos(120, 14, 0, 0, 0, 0)
-    view.gameview:SetSize(3200, -14, 0, 1)
+    view.gameview:SetPos(120, 0, 0, 0, 0, 0)
+    view.gameview:SetSize(3200, 0, 0, 1)
     local nativeSize = copy(view.gameview.size, sizeFields)
     ClassicLayout.update(44)
     expect(view.gameview.size.width, 3200, "inset explicit baseline already fits collapsed rail")
@@ -465,20 +525,166 @@ local function insetExplicitGameviewKeepsBaselineAndProtectsConflicts()
     ClassicLayout.restore()
     expect(view.gameview.size.width, 2917, "foreign explicit width survives teardown")
 
-    local unsafe = scene()
-    unsafe.gameview:SetSize(3061, 0, 0, 1)
-    unsafe.gameview:SetPos(-44, 0, 1, 0, 1, 0)
-    local nativeWrites = unsafe.gameview.sizeWrites
+    local anchored = scene()
+    anchored.gameview:SetSize(3061, 0, 0, 1)
+    anchored.gameview:SetPos(-44, 0, 1, 0, 1, 0)
+    local nativePosition = copy(anchored.gameview.position, positionFields)
     ClassicLayout.update(44)
-    expect(unsafe.gameview.sizeWrites, nativeWrites, "unsafe anchor is harmless while rect fits")
-    local warningCount = #warnings
+    expect(anchored.gameview.x, 335, "fitting right-anchored window keeps its origin")
     ClassicLayout.update(404)
-    expect(unsafe.gameview.sizeWrites, nativeWrites, "unsafe self anchor is never resized")
-    expect(#warnings, warningCount + 1, "unsupported overlapping anchor warns")
+    expect(anchored.gameview.x, 335, "crop pins the resolved left edge")
+    expect(anchored.gameview.width, 2701, "right-anchored crop stops at the sidebar")
+    expect(anchored.render.x, -369, "full-width render stays centered inside the clip")
     ClassicLayout.update(44)
-    expect(#warnings, warningCount + 1, "fitting geometry after failure is re-evaluated silently")
-    ClassicLayout.update(404)
-    expect(#warnings, warningCount + 2, "overlap is re-evaluated after reservation changes again")
+    assertDescriptor(anchored.gameview.position, nativePosition, positionFields, "restore native right anchor")
+    expect(anchored.gameview.width, 3061, "fitting right-anchored window regains its full width")
+    ClassicLayout.restore()
+end
+local function fixedGameviewOnlyCropsWhenOverlapping()
+    local fitting = scene({ gameviewWidth = 3000 })
+    expect(ClassicLayout.update(44), true, "fixed window already clears collapsed rail")
+    expect(ClassicLayout.update(404), true, "fixed window also clears expanded rail")
+    assertUncropped(fitting, "already fitting native gameview")
+    expect(fitting.gameview.sizeWrites, 0, "fitting native window is not resized")
+    expect(fitting.render.posWrites, 0, "fitting native render is not repositioned")
+    ClassicLayout.restore()
+    assertRestored(fitting, "fitting window remains native")
+
+    local overlapping = scene({ gameviewWidth = 3200 })
+    expect(ClassicLayout.update(44), true, "fixed window fits beside collapsed rail")
+    assertUncropped(overlapping, "collapsed rail leaves fixed gameview alone")
+    expect(ClassicLayout.update(404), true, "fixed window is cropped when expanded rail overlaps")
+    assertArea(overlapping, 404, "expanded rail crops fixed window")
+    assertCrop(overlapping, 404, "expanded rail crops fixed window")
+    expect(ClassicLayout.update(44), true, "collapse restores exact fixed native window")
+    assertUncropped(overlapping, "fixed gameview after collapse")
+    expect(overlapping.gameview.width, 3200, "collapse does not expand native fixed window to viewport")
+    ClassicLayout.restore()
+    assertRestored(overlapping, "fixed native gameview after shutdown")
+end
+
+local function oddWidthCropUsesWholePixelOffset()
+    local view = scene()
+    expect(ClassicLayout.update(45), true, "odd reserved width supports a pixel-accurate crop")
+    assertArea(view, 45, "odd width")
+    assertCrop(view, 45, "odd width")
+    expect(view.render.position.x, -22, "odd width rounds crop offset down")
+    expect(ClassicLayout.update(46), true, "one more rail pixel moves the centered render")
+    assertArea(view, 46, "even width")
+    assertCrop(view, 46, "even width")
+    expect(view.render.position.x, -23, "even width uses an exact half-width offset")
+    ClassicLayout.restore()
+    assertRestored(view, "odd-width crop restoration")
+end
+
+local function cropFailureKeepsHudReservationButRestoresWorld()
+    local failedRender = scene()
+    failedRender.render.failPos = "after"
+    local before = countWarnings("reason=render.position.exception:")
+    expect(ClassicLayout.update(44), true, "optional render failure cannot block HUD reservation")
+    expect(failedRender.area.width, 3396, "HUD stays reserved after render failure")
+    assertUncropped(failedRender, "render failure leaves full native gameview")
+    expect(ClassicLayout.update(44), true, "failed crop does not repeatedly narrow the world")
+    assertUncropped(failedRender, "failed crop remains absent on idle update")
+    expect(countWarnings("reason=render.position.exception:"), before + 1, "report the failed setter only once")
+    ClassicLayout.restore()
+    assertRestored(failedRender, "render failure cleanup")
+
+    local failedWindow = scene()
+    failedWindow.gameview.failSize = "after"
+    expect(ClassicLayout.update(404), true, "optional window failure cannot block HUD reservation")
+    expect(failedWindow.area.width, 3036, "HUD stays reserved after window failure")
+    assertUncropped(failedWindow, "partial window resize rolls back render and window")
+    ClassicLayout.restore()
+    assertRestored(failedWindow, "window failure cleanup")
+
+    local expanded = scene()
+    ClassicLayout.update(44)
+    expanded.render.failPos = "before"
+    expect(ClassicLayout.update(404), true, "failed recenter does not block HUD expansion")
+    assertUncropped(expanded, "restore the previous owned offset after a rejected recenter")
+    ClassicLayout.restore()
+end
+
+local function foreignCropDescriptorsStayClientOwned()
+    local foreignRender = scene()
+    expect(ClassicLayout.update(44), true, "initial crop is owned")
+    foreignRender.render.position.y = 7
+    local before = countWarnings("reason=render.ownership.position.y expected=0 actual=7")
+    local renderWrites = foreignRender.render.posWrites
+    expect(ClassicLayout.update(404), true, "foreign render does not block HUD reservation")
+    expect(
+        countWarnings("reason=render.ownership.position.y expected=0 actual=7"),
+        before + 1,
+        "report the foreign field before restoring owned descriptors"
+    )
+    expect(foreignRender.area.width, 3036, "HUD expands independently of foreign render")
+    expect(foreignRender.gameview.width, 3440, "owned narrow window is released for a foreign render")
+    expect(foreignRender.render.posWrites, renderWrites, "foreign render descriptor is not overwritten")
+    ClassicLayout.restore()
+    expect(foreignRender.render.position.y, 7, "shutdown preserves foreign render")
+
+    local foreignWindow = scene()
+    expect(ClassicLayout.update(44), true, "initial window crop is owned")
+    foreignWindow.gameview:SetSize(-120, 0, 1, 1)
+    local windowWrites = foreignWindow.gameview.sizeWrites
+    expect(ClassicLayout.update(404), true, "foreign window does not block HUD reservation")
+    expect(foreignWindow.gameview.sizeWrites, windowWrites, "foreign window size is never overwritten")
+    expect(foreignWindow.gameview.width, 3320, "native replacement width survives")
+    expect(foreignWindow.render.position.x, 0, "owned render offset restores after window ownership changes")
+    ClassicLayout.restore()
+    expect(foreignWindow.gameview.size.width, -120, "shutdown preserves foreign window width")
+end
+
+local function invisibleRenderDoesNotCropNativeWindow()
+    local view = scene({ hiddenRender = true })
+    expect(ClassicLayout.update(44), true, "hidden native render leaves crop optional")
+    expect(view.area.width, 3396, "hidden render does not block HUD reservation")
+    assertUncropped(view, "hidden render")
+    view.render.visibleGlobal = true
+    expect(ClassicLayout.update(44), true, "visible render becomes eligible without rail width change")
+    assertArea(view, 44, "visible render")
+    assertCrop(view, 44, "visible render")
+    ClassicLayout.restore()
+    assertRestored(view, "visibility transition")
+end
+
+local function deferredCropStillReservesHud()
+    local view = scene()
+    expect(ClassicLayout.update(44, true), true, "deferred crop still reserves the native HUD")
+    assertArea(view, 44, "deferred crop reservation")
+    assertUncropped(view, "deferred crop leaves native world geometry intact")
+    expect(view.gameview.sizeWrites, 0, "deferred crop does not resize gameview")
+    expect(view.render.posWrites + view.render.sizeWrites, 0, "deferred crop does not move render")
+    expect(ClassicLayout.update(44, false), true, "same-width update applies previously deferred crop")
+    assertCrop(view, 44, "crop after defer")
+    local renderPositionWrites, renderSizeWrites = writes(view.render)
+    local gameviewWrites = view.gameview.sizeWrites
+    expect(ClassicLayout.update(404, true), true, "deferred expansion updates HUD without recentering world")
+    assertArea(view, 404, "deferred expansion")
+    assertCrop(view, 44, "deferred expansion retains owned world crop")
+    expect(view.render.posWrites, renderPositionWrites, "deferred expansion leaves render position alone")
+    expect(view.render.sizeWrites, renderSizeWrites, "deferred expansion leaves render size alone")
+    expect(view.gameview.sizeWrites, gameviewWrites, "deferred expansion leaves gameview size alone")
+    ClassicLayout.restore()
+    assertRestored(view, "deferred crop shutdown restores native world")
+end
+
+local function incompatibleGameviewLeavesHudReservation()
+    local short = scene()
+    short.gameview:SetSize(0, 900, 1, 0)
+    short.gameviewSize = copy(short.gameview.size, sizeFields)
+    expect(ClassicLayout.update(44), true, "short native view leaves crop optional")
+    expect(short.area.width, 3396, "short view does not block HUD reservation")
+    assertUncropped(short, "short native view")
+    ClassicLayout.restore()
+
+    local partialContent = scene()
+    partialContent.content:SetSize(-1, 0, 1, 1)
+    partialContent.contentSize = copy(partialContent.content.size, sizeFields)
+    expect(ClassicLayout.update(44), true, "non-filling content must not be cropped")
+    expect(partialContent.area.width, 3396, "content mismatch does not block HUD reservation")
+    assertUncropped(partialContent, "non-filling content")
     ClassicLayout.restore()
 end
 
@@ -608,10 +814,24 @@ local function remountNeverTouchesRetiredNativeHandles()
     poison(retired.area)
     poison(retired.gameview)
     poison(retired.slayer)
+    poison(retired.content)
+    poison(retired.render)
     expect(ClassicLayout.update(44), true, "same-ID remount captures fresh native targets")
     assertArea(nextGeneration, 44, "remounted game area")
+    assertCrop(nextGeneration, 44, "remounted gameview")
     ClassicLayout.restore()
     assertRestored(nextGeneration, "remounted native generation")
+end
+
+local function resetNativeCrop(view)
+    for _, field in ipairs(positionFields) do
+        view.gameview.position[field] = view.gameviewPosition[field]
+        view.render.position[field] = view.renderPosition[field]
+    end
+    for _, field in ipairs(sizeFields) do
+        view.gameview.size[field] = view.gameviewSize[field]
+        view.render.size[field] = view.renderSize[field]
+    end
 end
 
 local function viewportResizeRecapturesBaselineButRepeatedResetSuspends()
@@ -622,18 +842,20 @@ local function viewportResizeRecapturesBaselineButRepeatedResetSuspends()
     end
     for _, field in ipairs(sizeFields) do
         view.area.size[field] = view.dimensions[field]
-        view.gameview.size[field] = view.gameviewSize[field]
     end
+    resetNativeCrop(view)
     view.viewport:SetSize(3000, 900, 0, 0)
     view.top:SetSize(3000, 900, 0, 0)
     expect(ClassicLayout.update(44), true, "viewport resize permits recapturing reset baseline")
     assertArea(view, 44, "resized viewport")
+    assertCrop(view, 44, "resized viewport")
     for _, field in ipairs(positionFields) do
         view.area.position[field] = view.position[field]
     end
     for _, field in ipairs(sizeFields) do
         view.area.size[field] = view.dimensions[field]
     end
+    resetNativeCrop(view)
     local positionWrites, sizeWrites = writes(view.area)
     expect(ClassicLayout.update(44), false, "unconfirmed native reset suspends reservation")
     expect(view.area.posWrites, positionWrites, "reset anchor is not overwritten")
@@ -865,6 +1087,13 @@ local function privateChatFollowsCompactClusterAndRestores()
     expect(view.privateChat.position.y, 20, "shutdown preserves native PM changes")
 end
 
+fixedGameviewOnlyCropsWhenOverlapping()
+oddWidthCropUsesWholePixelOffset()
+cropFailureKeepsHudReservationButRestoresWorld()
+foreignCropDescriptorsStayClientOwned()
+invisibleRenderDoesNotCropNativeWindow()
+incompatibleGameviewLeavesHudReservation()
+deferredCropStillReservesHud()
 reservationFollowsRailAndRestoresOriginalLayout()
 modeExitRestoresNativeOwnership()
 slayerPositionIsOptionalAndNeverShiftedTwice()
@@ -881,4 +1110,4 @@ combatWaitsForClassicAnchors()
 additionalButtonTriggersCompactLayout()
 combatOwnershipAndFailuresAreSafe()
 privateChatFollowsCompactClusterAndRestores()
-print("classic_layout_test: native reservation and lifecycle passed")
+print("classic_layout_test: centered gameview crop, native reservation and lifecycle passed")
