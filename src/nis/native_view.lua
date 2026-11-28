@@ -679,7 +679,7 @@ function View.new(Host, actions)
         if not panel.root or not ui.Interfaces:GetInterface(panel.interfaceID) then return end
         local x, y, width, height = Host.rectInParent(panel, host.content)
         if not group.grouped then
-            y, height = y + HEIGHT, height - HEIGHT
+            y, height = y + HEIGHT, math.max(0, height - HEIGHT)
         end
         local changed = panel.root.x ~= x
             or panel.root.y ~= y

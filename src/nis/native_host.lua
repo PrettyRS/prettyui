@@ -461,8 +461,8 @@ function Host.new(byFrame)
             or scroll and not same(scroll.parent, frame)
             or not same(tabs.parent, frame)
             or not same(backdrop.parent, frame)
-            or content.width <= 0
-            or content.height <= HEIGHT
+            or content.width < 0
+            or content.height < 0
             or not allowHidden and (content.hidden or scroll and scroll.hidden)
         then
             return nil
@@ -487,7 +487,7 @@ function Host.new(byFrame)
                 groupedStrip(tabs, content, backdrop, previous, reference, resident)
             if not backgrounds then return nil end
         else
-            if not frame.visibleGlobal or content.width < WIDTH then return nil end
+            if not frame.visibleGlobal then return nil end
             nativeIcon = standaloneIcon(spec, tabs, frameKey)
             if not nativeIcon then return nil end
             backgrounds, children, signature, used = {}, {}, "", WIDTH
@@ -550,17 +550,31 @@ function Host.new(byFrame)
         },
     }
 
+    local function fitInset(saved)
+        local inset, parent = saved.inset, saved.component.parent
+        local width = math.max(saved.widthInset, -parent.width * inset[9])
+        local height = math.max(saved.heightInset, -parent.height * inset[10])
+        if width == inset[7] and height == inset[8] then return end
+        local oldWidth, oldHeight = inset[7], inset[8]
+        inset[7], inset[8] = width, height
+        return oldWidth, oldHeight
+    end
+
     local function snapshotRoot(child, original, inset)
-        return {
+        local saved = {
             component = child,
             owner = child.interfaceID,
             key = identity(child),
             packed = (child.interfaceID << 16) | child.staticID,
             original = original,
             inset = inset,
+            widthInset = inset[7],
+            heightInset = inset[8],
             hidden = child.hidden,
             changed = false,
         }
+        fitInset(saved)
+        return saved
     end
 
     -- Familiar availability swaps an embedded page for native edit-block children.
@@ -590,9 +604,6 @@ function Host.new(byFrame)
                 end
                 local inset = { table.unpack(original) }
                 inset[2], inset[8] = inset[2] + HEIGHT, inset[8] - HEIGHT * inset[10]
-                if parent.width * inset[9] + inset[7] <= 0 or parent.height * inset[10] + inset[8] <= 0 then
-                    return false
-                end
                 saved = snapshotRoot(child, original, inset)
             end
             roots[#roots + 1] = saved
@@ -607,7 +618,10 @@ function Host.new(byFrame)
         if not include(page, { 0, 0, 0.5, 0.5, 0.5, 0.5, 0, 0, 1, 1 }, host.content) then return nil end
         if page and not retained[identity(page)] then
             -- Normalize both parent/self anchors when shrinking a centered root.
-            roots[#roots].inset = { 0, HEIGHT, 0, 0, 0, 0, 0, -HEIGHT, 1, 1 }
+            local saved = roots[#roots]
+            saved.inset = { 0, HEIGHT, 0, 0, 0, 0, 0, -HEIGHT, 1, 1 }
+            saved.widthInset, saved.heightInset = 0, -HEIGHT
+            fitInset(saved)
         end
         local edit = component(host.spec.EDIT_BLOCK)
         if not edit or not same(edit.parent, host.frame) then return nil end
@@ -636,9 +650,6 @@ function Host.new(byFrame)
         local inset = { table.unpack(original) }
         inset[2] = inset[2] + HEIGHT
         inset[8] = inset[8] - HEIGHT * inset[10]
-        if host.content.width * inset[9] + inset[7] <= 0 or host.content.height * inset[10] + inset[8] <= 0 then
-            return nil
-        end
         return snapshotRoot(child, original, inset)
     end
 
@@ -833,31 +844,6 @@ function Host.new(byFrame)
         if tabs and tabs.visible == true then return capture(spec, area, true) end
     end
 
-    local function hasCapacity(group, host)
-        if host.content.width < WIDTH or host.content.height <= HEIGHT then return false end
-        local height = host.content.height - (group.grouped and 0 or HEIGHT)
-        for _, panel in ipairs(group.members) do
-            if
-                host.content.width < panel.minWidth
-                or height < panel.minHeight
-                or host.content.width > (panel.maxWidth or math.huge)
-                or height > (panel.maxHeight or math.huge)
-            then
-                return false
-            end
-        end
-        return true
-    end
-
-    local function checkCapacity(group)
-        for _, host in ipairs(group.hosts) do
-            if not hasCapacity(group, host) then
-                group.capacityLost = true
-                error("native host resized out of docking capacity")
-            end
-        end
-    end
-
     local function validHost(group, host)
         if
             not (
@@ -868,7 +854,6 @@ function Host.new(byFrame)
                 and (not host.scroll or same(host.scroll.parent, host.frame))
                 and same(host.tabs.parent, host.frame)
                 and host.tabs.visible == host.grouped
-                and host.content.width >= WIDTH
             )
         then
             return false
@@ -903,7 +888,7 @@ function Host.new(byFrame)
         captureAt = captureAt,
         captureHiddenGroup = captureHiddenGroup,
         indexSpecs = indexSpecs,
-        checkCapacity = checkCapacity,
+        fitInset = fitInset,
         validHost = validHost,
         specByID = specByID,
         HEIGHT = HEIGHT,

@@ -2,6 +2,7 @@ local Components = require("src/core/components")
 local Cursor = require("src/core/cursor")
 local Sprites = require("src/core/sprites")
 local Tooltip = require("src/tooltip")
+local Trace = require("src/nis/dock_trace")
 
 local NisTabs = {}
 NisTabs.__index = NisTabs
@@ -13,9 +14,29 @@ local CORNER = 4
 local ICON = 24
 local NAV_WIDTH = 8
 
-local function sprite(view, parent, spriteID, opaque)
+local function sprite(view, parent, spriteID, opaque, iconPanel)
     local part = Components.new(ui.Sprite, parent)
-    part.sprite = spriteID
+    if iconPanel and Trace.enabled(view.panel, iconPanel) then
+        local ok, problem = pcall(function()
+            part.sprite = spriteID
+        end)
+        if not ok then
+            Trace.log(
+                "tab-icon-assignment-failed",
+                "owner",
+                Trace.panel(view.panel),
+                "member",
+                Trace.panel(iconPanel),
+                "icon",
+                spriteID,
+                "error",
+                problem
+            )
+            error(problem, 0)
+        end
+    else
+        part.sprite = spriteID
+    end
     part.clickthrough = true
     part.alpha = opaque and 1 or view.alpha
     if not opaque then view.visuals[#view.visuals + 1] = part end
@@ -94,7 +115,7 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
     tab.background:SetSize(NisTabs.WIDTH, NisTabs.HEIGHT)
     -- Native getters expose the resolved sprite, not the plugin resource wrapper.
     tab.icon = panel.tabIcon
-    tab.iconSprite = sprite(view, visual, panel.tabIcon, true)
+    tab.iconSprite = sprite(view, visual, panel.tabIcon, true, panel)
     tab.iconSprite:SetPos((NisTabs.WIDTH - ICON) / 2, 2)
     tab.iconSprite:SetSize(ICON, ICON)
     tab.seam = sprite(view, visual, Sprites.NIS_PANEL.tabBarTile)
@@ -203,6 +224,14 @@ local function syncTooltips(tabs, visible)
     end
 end
 
+local function syncHit(hit, x, y, height, visible)
+    if hit.x ~= x or hit.y ~= y then hit:SetPos(x, y) end
+    if hit.height ~= height then hit:SetHeight(height) end
+    Components.setHidden(hit, not visible)
+    hit.enabled = visible
+    if visible then hit:MoveToFront() end
+end
+
 function NisTabs:Sync(hidden)
     if not loaded(self) then
         syncTooltips(self.tabs, false)
@@ -218,7 +247,8 @@ function NisTabs:Sync(hidden)
         self:Refresh(self.members, self.active, self.previewPanel)
         return
     end
-    if self.root.width ~= width then self.root:SetSize(width, NisTabs.HEIGHT) end
+    local height = math.max(0, math.min(NisTabs.HEIGHT, root.y + root.height - y))
+    if self.root.width ~= width or self.root.height ~= height then self.root:SetSize(width, height) end
     local visible = self.visible == true
         and not hidden
         and root.hidden ~= true
@@ -229,18 +259,11 @@ function NisTabs:Sync(hidden)
     for _, tab in ipairs(self.tabs) do
         local hit = tab.hit
         if hit and not tab.retained then
-            if hit.x ~= x + tab.x or hit.y ~= y then hit:SetPos(x + tab.x, y) end
-            Components.setHidden(hit, not visible)
-            hit.enabled = visible
-            if visible then hit:MoveToFront() end
+            syncHit(hit, x + tab.x, y, height, visible)
         end
     end
     for _, item in ipairs(self.navigationHits) do
-        local hit = item.component
-        if hit.x ~= x + item.x or hit.y ~= y then hit:SetPos(x + item.x, y) end
-        Components.setHidden(hit, not visible)
-        hit.enabled = visible
-        if visible then hit:MoveToFront() end
+        syncHit(item.component, x + item.x, y, height, visible)
     end
     syncTooltips(self.tabs, visible)
 end
@@ -255,7 +278,7 @@ function NisTabs:Contains(parentX, parentY)
     return parentX >= left
         and parentX < left + root.width - CORNER * 2
         and parentY >= top
-        and parentY < top + NisTabs.HEIGHT
+        and parentY < math.min(top + NisTabs.HEIGHT, root.y + root.height)
 end
 
 -- Drag retention ends at the last tab or navigation control; docking uses the full strip.

@@ -26,16 +26,9 @@ local function visible(panel, allowLocked)
         )
 end
 
-local function limits(list)
-    local minWidth, minHeight, maxWidth, maxHeight = 64, 49, math.huge, math.huge
-    for _, panel in ipairs(list) do
-        minWidth = math.max(minWidth, panel.minWidth)
-        minHeight = math.max(minHeight, panel.minHeight)
-        maxWidth = math.min(maxWidth, panel.maxWidth or math.huge)
-        maxHeight = math.min(maxHeight, panel.maxHeight or math.huge)
-    end
-    if minWidth > maxWidth or minHeight > maxHeight then return nil end
-    return minWidth, minHeight, maxWidth, maxHeight
+local function limits()
+    -- Tabs use the host's bounds, not the standalone limits of their pages.
+    return 64, 21, math.huge, math.huge
 end
 
 local function refreshMember(panel, group)
@@ -74,10 +67,11 @@ local function refresh(group)
 end
 
 local function setLimits(group)
-    local minWidth, minHeight, maxWidth, maxHeight = limits(group.members)
+    local minWidth, minHeight, maxWidth, maxHeight = limits()
     group.minWidth, group.minHeight = minWidth, minHeight
     group.maxWidth, group.maxHeight = maxWidth, maxHeight
     for _, panel in ipairs(group.members) do
+        panel._nisStandaloneClamp = nil
         if panel.resize then
             panel.resize.minWidth, panel.resize.minHeight = minWidth, minHeight
             panel.resize.maxWidth, panel.resize.maxHeight = maxWidth, maxHeight
@@ -92,6 +86,20 @@ local function restoreLimits(panel)
         panel.resize.maxWidth = panel.maxWidth or math.huge
         panel.resize.maxHeight = panel.maxHeight or math.huge
         panel.resize:Refresh()
+    end
+    if not loaded(panel) then return end
+    local root = panel.root
+    local width = math.max(panel.minWidth, math.min(panel.maxWidth or math.huge, root.width))
+    local height = math.max(panel.minHeight, math.min(panel.maxHeight or math.huge, root.height))
+    local x = math.max(0, math.min(root.x, panel.parent.width - width))
+    local y = math.max(0, math.min(root.y, panel.parent.height - height))
+    if x ~= root.x or y ~= root.y or width ~= root.width or height ~= root.height then
+        panel._updatingBounds = true
+        panel:_ApplyRectSingle(x, y, width, height)
+        panel._updatingBounds = nil
+        if panel._nisPersistenceID then
+            panel._nisStandaloneClamp = { x, y, width, height }
+        end
     end
 end
 
@@ -186,24 +194,14 @@ end
 local function eligible(source, target, includeMembers, allowLocked)
     if not canDock(source, target, allowLocked) then return false end
     local combined = includeMembers and {} or nil
-    local minWidth, minHeight, maxWidth, maxHeight = 64, 49, math.huge, math.huge
     for side = 1, 2 do
         local owner = side == 1 and target or source
         local list = owner._nisGroup and owner._nisGroup.members
         for index = 1, list and #list or 1 do
             local panel = list and list[index] or owner
             if not availableMember(panel, allowLocked) then return false end
-            minWidth = math.max(minWidth, panel.minWidth)
-            minHeight = math.max(minHeight, panel.minHeight)
-            maxWidth = math.min(maxWidth, panel.maxWidth or math.huge)
-            maxHeight = math.min(maxHeight, panel.maxHeight or math.huge)
             if combined then combined[#combined + 1] = panel end
         end
-    end
-    if minWidth > maxWidth or minHeight > maxHeight then return false end
-    local root = target.root
-    if root.width < minWidth or root.width > maxWidth or root.height < minHeight or root.height > maxHeight then
-        return false
     end
     return true, combined
 end
@@ -479,8 +477,7 @@ function NisGroup.restore(snapshot, notifyCallbacks)
             return false
         end
     end
-    local minWidth, minHeight, maxWidth, maxHeight = limits(snapshot.members)
-    if not minWidth then return false end
+    local minWidth, minHeight, maxWidth, maxHeight = limits()
     local width = math.max(minWidth, math.min(maxWidth, snapshot.width))
     local height = math.max(minHeight, math.min(maxHeight, snapshot.height))
     local x = math.max(0, math.min(snapshot.x, owner.parent.width - width))
