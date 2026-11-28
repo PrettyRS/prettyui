@@ -7,7 +7,7 @@ weight: 21
 
 ## Mouseover tooltips {#tooltip-api}
 
-Tooltip-enabled PrettyUI controllers accept a string or options table through their `tooltip` option and expose `SetTooltip(value)` for later changes. Tooltips are built on demand and cleaned up when hidden.
+Tooltip-enabled PrettyUI controllers accept a string or options table through their `tooltip` option and expose `SetTooltip(value)` for later changes. Mouseover tooltips appear immediately in 11-point Museo Sans, including on dock tabs. They are built on demand and cleaned up when hidden.
 
 ```lua
 local button = prettyui.SpriteButton.new(

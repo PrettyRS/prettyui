@@ -27,15 +27,10 @@ local function reorder(f, panel, x, commit)
     else f:emit("KeyDown", { gameKey = GameKey.ESCAPE }) end
     Mouse.GetPosition = function() return nil end
 end
-local function hoverTab(f, entry)
+local function hoverTab(entry)
     local callback = assert(entry.hit.namedSubscriptions[ui.Hook.ONMOUSEOVER].prettyui_tooltip)
     assert(callback(entry.hit, 10, 10), "tab hover is handled by its tooltip attachment")
-    f.expect(entry.tooltipAttachment._parts, nil, "native tab mouseover waits before showing")
-    f:emit("Logic", { logicTick = 100 })
-    f:emit("Logic", { logicTick = 114 })
-    f.expect(entry.tooltipAttachment._parts, nil, "native tab stays hidden before the hover deadline")
-    f:emit("Logic", { logicTick = 115 })
-    return assert(entry.tooltipAttachment._parts, "hover constructs the tooltip at the deadline")
+    return assert(entry.tooltipAttachment._parts, "hover immediately constructs the native tab tooltip")
 end
 
 run("native-docked tab hover stays above and selection re-raises the same tooltip", function(f)
@@ -49,7 +44,7 @@ run("native-docked tab hover stays above and selection re-raises the same toolti
     local before = #scene.area.children
     tooltip:_RefreshIfVisible()
     f.expect(#scene.area.children, before, "idle tab refresh cannot allocate hidden components")
-    local parts = hoverTab(f, own)
+    local parts = hoverTab(own)
     local root, hit = parts.root, own.hit
     f.expect(parts.label.font, id.Font.MUSEO_SANS_11PT_REGULAR_MULTILINE, "docked tab uses native desktop font")
     f.expect(root.width, #"Magic" * 6 + 16, "native tab measures compact font")
@@ -82,7 +77,7 @@ run("native-docked top-right tab hover falls below without covering the tab", fu
     local panel = f:panel({ tabText = "Magic abilities available when selecting this tab" })
     assert(panel:DockTo(scene.notes.frame))
     local own = tab(panel)
-    local parts = hoverTab(f, own)
+    local parts = hoverTab(own)
     local root, hit = parts.root, own.hit
     f.expect(root.width, 240, "long native tab tooltip respects the default maximum width")
     f.expect(root.x, scene.area.width - root.width - 6, "right-edge tooltip clamps horizontally")
