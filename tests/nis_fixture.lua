@@ -178,7 +178,7 @@ function Fixture.new()
             rawset(sprites, key, nextSpriteID)
             return nextSpriteID
         end }),
-        Font = { MUSEO_SANS_15PT_REGULAR = 1, CINZEL_13PT_BOLD = 2 },
+        Font = { MUSEO_SANS_15PT_REGULAR = 1, CINZEL_13PT_BOLD = 2, MUSEO_SANS_11PT_REGULAR_MULTILINE = 3 },
         VarPlayer = { TOPLEVEL_V2_SKINS_VARP = 12, TOPLEVEL_V2_TRANSPARENCY = -13,
             TOPLEVEL_V2_GENERAL_VARP = 14 },
         Component = {
@@ -192,13 +192,19 @@ function Fixture.new()
         GetStringWidth = function(_, text) return #text * 7 end,
         GetStringHeightAndLineCount = function() return 18 end,
     }
+    local tabFont = {
+        baseline = 16,
+        GetStringWidth = function(_, text) return #text * 6 end,
+        GetStringHeightAndLineCount = function() return 16 end,
+    }
     config = {
         Cursor = {
             TOPLEVEL_V2_MOVE = 194,
             TOPLEVEL_V2_SCALE_VERT = 195, TOPLEVEL_V2_SCALE_HORZ = 196,
             TOPLEVEL_V2_SCALE_DIAG_1 = 197, TOPLEVEL_V2_SCALE_DIAG_2 = 198,
         },
-        Font = { MUSEO_SANS_15PT_REGULAR = font, CINZEL_13PT_BOLD = font },
+        Font = { MUSEO_SANS_15PT_REGULAR = font, CINZEL_13PT_BOLD = font,
+            MUSEO_SANS_11PT_REGULAR_MULTILINE = tabFont },
     }
     Mouse = { GetPosition = function() return nil end }
     Keyboard = {

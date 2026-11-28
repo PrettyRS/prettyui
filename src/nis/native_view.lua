@@ -198,7 +198,7 @@ function View.new(Host, actions)
                 return stop(component, x, y)
             end)
             Tooltip.bind(tab, tab.hit, panel.parent, {
-                text = panel.tabText or "Panel", placement = "above", placementFallback = false,
+                text = panel.tabText or "Panel", _nisTab = true,
             }, "tooltipAttachment")
         end
         group.constructingTab = nil
@@ -206,7 +206,10 @@ function View.new(Host, actions)
     end
 
     local function alignTab(tab, x, y, show, sorting)
-        if not tab.visual then return end
+        if not tab.visual then
+            if tab.tooltipAttachment then tab.tooltipAttachment:Hide() end
+            return
+        end
         local view = tab.host.overflow
         tab.x, tab.y = x, y
         local vx, vy = x - view.viewport.x, y - view.viewport.y
@@ -218,14 +221,19 @@ function View.new(Host, actions)
             tab.clipOffset = left - x
             local tx, ty = Host.rectInParent(tab.member or tab.group.members[1], tab.host.frame)
             tx, ty = tx + left, ty + y
-            if hit.x ~= tx or hit.y ~= ty then hit:SetPos(tx, ty) end
-            if hit.width ~= width then hit:SetSize(width, HEIGHT) end
+            local moved = hit.x ~= tx or hit.y ~= ty
+            local resized = hit.width ~= width
+            if moved then hit:SetPos(tx, ty) end
+            if resized then hit:SetSize(width, HEIGHT) end
             local input = show and width > 0 and not sorting and not tab.group.incomingPreview
             if hit.hidden == input then Components.setHidden(hit, not input) end
             if hit.enabled ~= input then hit.enabled = input end
             if input and not tab.shown then hit:MoveToFront() end
             if not input and tab.tooltipAttachment then tab.tooltipAttachment:Hide() end
+            tab.tooltipNeedsRefresh = input and (moved or resized) or nil
             tab.shown = input
+        elseif tab.retained and tab.tooltipAttachment then
+            tab.tooltipAttachment:Hide()
         end
     end
 
@@ -497,6 +505,18 @@ function View.new(Host, actions)
         return group.tabScroll
     end
 
+    local function refreshVisibleTabTooltips(group)
+        for _, panel in ipairs(group.members) do
+            local tab = group.bindings[panel].tabs[group.current]
+            if tab.tooltipNeedsRefresh then
+                tab.tooltipNeedsRefresh = nil
+                if tab.shown and not tab.retained and tab.tooltipAttachment then
+                    tab.tooltipAttachment:_RefreshIfVisible()
+                end
+            end
+        end
+    end
+
     local function align(group)
         local current = Host.selectedFrame(group)
         if not current then error("native group has no unique visible frame") end
@@ -615,7 +635,9 @@ function View.new(Host, actions)
                 binding.current = current
             end
         end
+        refreshVisibleTabTooltips(group)
     end
+
 
     local function raiseGroup(group)
         local host = group.hosts[group.current]
@@ -632,6 +654,12 @@ function View.new(Host, actions)
             raiseTab(group.bindings[panel].tabs[group.current])
         end
         host.overflow:Raise()
+        for _, panel in ipairs(group.members) do
+            local tab = group.bindings[panel].tabs[group.current]
+            if tab.shown and tab.hit and not tab.retained and tab.tooltipAttachment then
+                tab.tooltipAttachment:_RefreshIfVisible()
+            end
+        end
     end
 
     return {

@@ -13,6 +13,7 @@ local CURSOR_OFFSET = 12
 local DEFAULT_MAX_WIDTH = 240
 local FALLBACK_LINE_HEIGHT = 18
 local TEXT_COLOUR = 0xFFFFFFFF
+local TAB_TEXT_COLOUR = 0xE3D7CFFF
 local HOOK_ID = "prettyui_tooltip"
 local contexts = setmetatable({}, { __mode = "k" })
 
@@ -28,8 +29,42 @@ local function normalize(value)
     return { text = tostring(value or "") }
 end
 
+local TAB_GAP = 2
+local TAB_HOVER_TICKS = 15 -- 300 ms at 50 client logic ticks per second
+local TAB_HOVER_EVENT = "prettyui_tab_tooltip_hover"
+local pendingTab, dueTick
+
+local function cancelTabHover(tooltip)
+    if pendingTab ~= tooltip then return end
+    pendingTab, dueTick = nil, nil
+    Event.Logic.Unsubscribe(TAB_HOVER_EVENT)
+end
+
+local function advanceTabHover(event)
+    local tooltip = pendingTab
+    if not tooltip then return end
+    dueTick = dueTick or event.logicTick + TAB_HOVER_TICKS
+    if event.logicTick < dueTick then return end
+    cancelTabHover(tooltip)
+    if ui.Interfaces:GetInterface(tooltip.targetInterfaceID) and not WorldMap.isSuspended() then
+        local target = tooltip.target
+        if not target.hidden and target.enabled ~= false then tooltip:Show() end
+    end
+end
+
+local function startTabHover(tooltip)
+    if pendingTab == tooltip then return end
+    if not pendingTab then Event.Logic.Subscribe(TAB_HOVER_EVENT, advanceTabHover) end
+    pendingTab, dueTick = tooltip, nil
+end
+
+local function fontName(options)
+    -- Native desktop dock-tab hover (clientscripts 8800 and 9567).
+    return options._nisTab and "MUSEO_SANS_11PT_REGULAR_MULTILINE" or "MUSEO_SANS_15PT_REGULAR"
+end
+
 local function measure(text, options)
-    local font = config.Font.MUSEO_SANS_15PT_REGULAR
+    local font = config.Font[fontName(options)]
     local maxWidth = options.maxWidth or DEFAULT_MAX_WIDTH
     local width = options.width
     if width == nil then
@@ -268,8 +303,9 @@ local function buildParts(self)
     parts.label:SetPos(PADDING_X, PADDING_Y)
     parts.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
     parts.label.content = tostring(self.options.text or "")
-    parts.label.font = id.Font.MUSEO_SANS_15PT_REGULAR
-    parts.label.rgba = TEXT_COLOUR
+    parts.label.font = id.Font[fontName(self.options)]
+    parts.label.rgba = self.options._nisTab and TAB_TEXT_COLOUR or TEXT_COLOUR
+    if self.options._nisTab then parts.label.isShadowed = true end
     parts.label.maxLines = 0
     parts.label.clickthrough = true
     self._parts = parts
@@ -332,6 +368,8 @@ local function buildTooltip(target, parent, value, hoverHandlers)
         if self.followCursor then self.cursorX, self.cursorY = x, y end
         if hoverHandlers and hoverHandlers.onMouseOver then
             hoverHandlers.onMouseOver(self)
+        elseif options._nisTab then
+            startTabHover(self)
         else
             self:Show()
         end
@@ -372,7 +410,15 @@ function Tooltip.attach(target, parent, value, hoverHandlers)
     end)
 end
 
+local function tabPosition(x, y, width, height, tipWidth, tipHeight, margin)
+    x = x + math.floor((width - tipWidth) / 2)
+    local above = y - tipHeight - TAB_GAP
+    if above >= margin then return x, above end
+    return x, y + height + TAB_GAP
+end
+
 function Tooltip:Show()
+    cancelTabHover(self)
     if self.target == nil
         or ui.Interfaces:GetInterface(self.interfaceID) == nil
         or ui.Interfaces:GetInterface(self.targetInterfaceID) == nil then return end
@@ -395,14 +441,17 @@ function Tooltip:Show()
     local parentHeight = self.parent and (self.parent.height or 0) or 0
     local margin = self.options.boundsMargin or OFFSET
     local x, y
-    for _, placement in ipairs(placementOrder(self.options.placement, self.options.placementFallback)) do
-        local candidateX, candidateY = placedPosition(
-            placement, targetX, targetY, targetWidth, targetHeight, self.width, self.height, offset
-        )
-        x, y = candidateX, candidateY
-        if parentWidth <= 0 or parentHeight <= 0 or
-            fitsParent(x, y, self.width, self.height, parentWidth, parentHeight, margin) then
-            break
+    if self.options._nisTab then
+        x, y = tabPosition(targetX, targetY, targetWidth, targetHeight, self.width, self.height, margin)
+    else
+        for _, placement in ipairs(placementOrder(self.options.placement, self.options.placementFallback)) do
+            x, y = placedPosition(
+                placement, targetX, targetY, targetWidth, targetHeight, self.width, self.height, offset
+            )
+            if parentWidth <= 0 or parentHeight <= 0 or
+                fitsParent(x, y, self.width, self.height, parentWidth, parentHeight, margin) then
+                break
+            end
         end
     end
     x = self.options.x or x
@@ -416,6 +465,11 @@ function Tooltip:Show()
     self._parts.root:SetPos(x, y)
     Components.setHidden(self._parts.root, false)
     self._parts.root:MoveToFront()
+end
+
+function Tooltip:_RefreshIfVisible()
+    local parts = self._parts
+    if parts and ui.Interfaces:GetInterface(self.interfaceID) and not parts.root.hidden then self:Show() end
 end
 
 function Tooltip:SetText(text)
@@ -434,6 +488,7 @@ function Tooltip:SetText(text)
 end
 
 function Tooltip:Hide()
+    cancelTabHover(self)
     self.cursorX, self.cursorY = nil, nil
     if not self.keepBuilt then
         release(self)
@@ -443,6 +498,7 @@ function Tooltip:Hide()
 end
 
 function Tooltip:Destroy()
+    cancelTabHover(self)
     if self.target ~= nil and ui.Interfaces:GetInterface(self.targetInterfaceID) ~= nil then
         self.target:Unsubscribe(ui.Hook.ONMOUSEOVER, HOOK_ID)
         self.target:Unsubscribe(ui.Hook.ONMOUSELEAVE, HOOK_ID)

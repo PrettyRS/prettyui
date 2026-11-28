@@ -140,8 +140,7 @@ local function makeTab(view, panel, x, selected, preview, previousTabs)
         end)
         Tooltip.bind(tab, tab.hit, view.panel.parent, {
             text = tabText(panel),
-            placement = "above",
-            placementFallback = false,
+            _nisTab = true,
         }, "tooltipAttachment")
     end
     view.tabs[#view.tabs + 1] = tab
@@ -189,8 +188,21 @@ function NisTabs.new(panel)
     return self
 end
 
+local function syncTooltips(tabs, visible)
+    for _, tab in ipairs(tabs) do
+        local tooltip = tab.tooltipAttachment
+        if tooltip then
+            if visible and not tab.retained then tooltip:_RefreshIfVisible()
+            else tooltip:Hide() end
+        end
+    end
+end
+
 function NisTabs:Sync(hidden)
-    if not loaded(self) then return end
+    if not loaded(self) then
+        syncTooltips(self.tabs, false)
+        return
+    end
     local root = self.panel.root
     local x = root.x + CORNER
     local y = root.y + (self.panel.locked and 0 or 12) + CORNER
@@ -203,6 +215,7 @@ function NisTabs:Sync(hidden)
     end
     if self.root.width ~= width then self.root:SetSize(width, NisTabs.HEIGHT) end
     local visible = self.visible == true and not hidden and root.hidden ~= true
+        and root.enabled ~= false and root.visibleGlobal ~= false
     Components.setHidden(self.root, not visible)
     if visible then self.root:MoveToFront() end
     for _, tab in ipairs(self.tabs) do
@@ -221,6 +234,7 @@ function NisTabs:Sync(hidden)
         hit.enabled = visible
         if visible then hit:MoveToFront() end
     end
+    syncTooltips(self.tabs, visible)
 end
 
 -- Coordinates are in the panel's native parent's space. The invisible band is
@@ -444,7 +458,10 @@ function NisTabs:Refresh(members, active, previewPanel)
     end
     blockGap(used, bandWidth)
     for _, tab in ipairs(previousTabs) do
-        if not tab.reused and not tab.retained then tab:Release() end
+        if not tab.reused then
+            if tab.retained and tab.tooltipAttachment then tab.tooltipAttachment:Hide() end
+            if not tab.retained then tab:Release() end
+        end
         tab.reused = nil
     end
     self.members = {}

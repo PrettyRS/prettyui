@@ -27,6 +27,80 @@ local function reorder(f, panel, x, commit)
     else f:emit("KeyDown", { gameKey = GameKey.ESCAPE }) end
     Mouse.GetPosition = function() return nil end
 end
+local function hoverTab(f, entry)
+    local callback = assert(entry.hit.namedSubscriptions[ui.Hook.ONMOUSEOVER].prettyui_tooltip)
+    assert(callback(entry.hit, 10, 10), "tab hover is handled by its tooltip attachment")
+    f.expect(entry.tooltipAttachment._parts, nil, "native tab mouseover waits before showing")
+    f:emit("Logic", { logicTick = 100 })
+    f:emit("Logic", { logicTick = 114 })
+    f.expect(entry.tooltipAttachment._parts, nil, "native tab stays hidden before the hover deadline")
+    f:emit("Logic", { logicTick = 115 })
+    return assert(entry.tooltipAttachment._parts, "hover constructs the tooltip at the deadline")
+end
+
+run("native-docked tab hover stays above and selection re-raises the same tooltip", function(f)
+    local scene = nativeScene(f)
+    local panel = f:panel({ tabText = "Magic" })
+    assert(panel:DockTo(scene.notes.frame))
+    nativeClick(f, scene.notes.backgrounds[1])
+    local own = tab(panel)
+    local tooltip = assert(own.tooltipAttachment)
+    f.expect(tooltip._parts, nil, "an idle native tab allocates no tooltip tree")
+    local before = #scene.area.children
+    tooltip:_RefreshIfVisible()
+    f.expect(#scene.area.children, before, "idle tab refresh cannot allocate hidden components")
+    local parts = hoverTab(f, own)
+    local root, hit = parts.root, own.hit
+    f.expect(parts.label.font, id.Font.MUSEO_SANS_11PT_REGULAR_MULTILINE, "docked tab uses native desktop font")
+    f.expect(root.width, #"Magic" * 6 + 16, "native tab measures compact font")
+    f.expect(root.height, 26, "compact text determines native tab height")
+    f.expect(root.x, hit.x + (hit.width - root.width) / 2, "tooltip centers on native tab")
+    f.expect(root.y, hit.y - root.height - 2, "native tab tooltip prefers above")
+    f.expect(scene.area.renderChildren[#scene.area.renderChildren], root, "hover raises tooltip over native artwork")
+    f.fire(hit, ui.Hook.ONCLICK, 10, 10)
+    f:emit("Logic"); f:emit("Draw")
+    assert(panel._nisNative.group.active == panel and not panel.root.hidden, "tab selects the PrettyUI page")
+    f.expect(tooltip._parts.root, root, "selection does not allocate another hovered tooltip")
+    f.expect(root.hidden, false, "hovered tab tooltip stays visible through selection")
+    f.expect(root.x, hit.x + (hit.width - root.width) / 2, "selected tab tooltip remains centered")
+    f.expect(root.y, hit.y - root.height - 2, "selected tab tooltip remains above")
+    f.expect(scene.area.renderChildren[#scene.area.renderChildren], root, "selected page does not cover tooltip")
+    local origin = scene.area.xyGlobal
+    f.expect(scene.paintedAt(scene.area, origin.x + root.x + 2, origin.y + root.y + 2), parts.topLeft,
+        "tooltip border paints above selected page")
+    tooltip:Hide()
+    local withoutTooltip = #scene.area.children
+    f:emit("Logic"); f:emit("Draw")
+    f.expect(tooltip._parts, nil, "idle ticks do not rebuild a hidden tab tooltip")
+    f.expect(#scene.area.children, withoutTooltip, "idle native tab allocates no hidden components")
+end)
+
+run("native-docked top-right tab hover falls below without covering the tab", function(f)
+    local scene = nativeScene(f)
+    scene.notes.frame:SetPos(621, 0)
+    scene.notes:rebuild({ 9001, 9002, 9003, 9004, 9005, 9006 }, 1)
+    local panel = f:panel({ tabText = "Magic abilities available when selecting this tab" })
+    assert(panel:DockTo(scene.notes.frame))
+    local own = tab(panel)
+    local parts = hoverTab(f, own)
+    local root, hit = parts.root, own.hit
+    f.expect(root.width, 240, "long native tab tooltip respects the default maximum width")
+    f.expect(root.x, scene.area.width - root.width - 6, "right-edge tooltip clamps horizontally")
+    f.expect(root.y, hit.y + hit.height + 2, "top-edge tooltip falls completely below its tab")
+    assert(root.y >= hit.y + hit.height, "tooltip must not overlap the tab")
+    assert(root.x >= 6 and root.x + root.width <= scene.area.width - 6, "tooltip stays inside game area")
+    local origin = scene.area.xyGlobal
+    f.expect(scene.paintedAt(scene.area, origin.x + root.x + 2, origin.y + root.y + 2), parts.topLeft,
+        "below-tab tooltip paints above native content")
+    f.fire(hit, ui.Hook.ONCLICK, 10, 10)
+    assert(panel._nisNative.group.active == panel, "edge tab selects its page")
+    f.expect(own.tooltipAttachment._parts.root, root, "selection retains the hovered edge tooltip")
+    f.expect(root.y, hit.y + hit.height + 2, "selection cannot move the tooltip over the edge tab")
+    f.expect(scene.area.renderChildren[#scene.area.renderChildren], root, "selected content stays behind tooltip")
+    f.expect(scene.paintedAt(scene.area, origin.x + root.x + 2, origin.y + root.y + 2), parts.topLeft,
+        "tooltip remains painted above selected content")
+end)
+
 
 run("idle nesting leaves unrelated rows alone and follows same-ID input replacements", function(f)
     local scene = nativeScene(f)

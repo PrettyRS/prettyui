@@ -56,6 +56,46 @@ run("tab selection rebuilds only the selected page and retains pressed input", f
     assert(not target.root.hidden and not target.dragLayer.enabled, "locked tabs still select, not drag")
 end)
 
+run("PrettyUI-only grouped tab selection keeps the hovered tooltip above the page", function(f)
+    local source = f:panel({ tabText = "Magic" })
+    local target = f:panel({ x = 500, width = 300, height = 260, tabText = "Settings" })
+    assert(source:DockTo(target))
+    local view = source._nisTabs
+    local selected = view.tabs[2].tooltipAttachment
+    local hovered = view.tabs[1].tooltipAttachment
+    f.expect(selected._parts, nil, "unhovered grouped tab allocates no tooltip")
+    f.expect(hovered._parts, nil, "grouped tab tooltip is lazy")
+    local hit = view.tabs[1].hit
+    assert(hit.namedSubscriptions[ui.Hook.ONMOUSEOVER].prettyui_tooltip(hit, 10, 10))
+    f.expect(hovered._parts, nil, "mouseover does not immediately show a grouped tab tooltip")
+    f:emit("Logic", { logicTick = 100 })
+    f:emit("Logic", { logicTick = 114 })
+    f.expect(hovered._parts, nil, "grouped tab stays hidden before the hover deadline")
+    f:emit("Logic", { logicTick = 115 })
+    local parts = assert(hovered._parts)
+    local root = parts.root
+    f.expect(parts.label.font, id.Font.MUSEO_SANS_11PT_REGULAR_MULTILINE, "group tab uses native desktop font")
+    f.expect(root.width, #target.tabText * 6 + 16, "group tab measures compact font")
+    f.expect(root.x, hit.x + (hit.width - root.width) / 2, "group tab tooltip centers above input")
+    f.expect(root.y, hit.y - root.height - 2, "group tab tooltip sits above its tab")
+    f.fire(hit, ui.Hook.ONCLICK, 10, 10)
+    assert(target._nisGroup.active == target and not target.root.hidden, "hovered tab selects the target page")
+    f.expect(hovered._parts.root, root, "selection reuses the visible grouped tooltip")
+    f.expect(root.hidden, false, "group tooltip remains visible after page selection")
+    f.expect(root.x, hit.x + (hit.width - root.width) / 2, "group tooltip remains centered")
+    f.expect(root.y, hit.y - root.height - 2, "group tooltip remains above the tab")
+    -- Transparent drag and resize inputs may sit above the last painted layer.
+    local order = {}
+    for index, child in ipairs(f.parent.renderChildren) do order[child] = index end
+    assert(order[root] > order[target.root] and order[root] > order[view.root],
+        "tooltip paints above both the selected page and its tab strip")
+    f.expect(selected._parts, nil, "switching pages does not create an unhovered tab tooltip")
+    local childCount = #f.parent.children
+    f:emit("Logic"); f:emit("Draw")
+    f.expect(#f.parent.children, childCount, "idle grouped selection allocates no hidden tooltip")
+    f.expect(selected._parts, nil, "unhovered grouped tab stays unbuilt")
+end)
+
 run("group size limits apply to every member and disappear on undock", function(f)
     local source = f:panel({ maxWidth = 340 })
     local target = f:panel({ x = 500, width = 300, height = 260, minWidth = 280 })
