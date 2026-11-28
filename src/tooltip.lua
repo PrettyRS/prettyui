@@ -12,8 +12,7 @@ local OFFSET = 6
 local CURSOR_OFFSET = 12
 local DEFAULT_MAX_WIDTH = 240
 local FALLBACK_LINE_HEIGHT = 18
-local TEXT_COLOUR = 0xFFFFFFFF
-local TAB_TEXT_COLOUR = 0xE3D7CFFF
+local TEXT_COLOUR = 0xE3D7CFFF
 local HOOK_ID = "prettyui_tooltip"
 local contexts = setmetatable({}, { __mode = "k" })
 
@@ -314,7 +313,7 @@ local function buildParts(self)
     parts.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
     parts.label.content = tostring(self.options.text or "")
     parts.label.font = id.Font[fontName(self.options)]
-    parts.label.rgba = self.options._nisTab and TAB_TEXT_COLOUR or TEXT_COLOUR
+    parts.label.rgba = TEXT_COLOUR
     if self.options._nisTab then parts.label.isShadowed = true end
     parts.label.maxLines = 0
     parts.label.clickthrough = true

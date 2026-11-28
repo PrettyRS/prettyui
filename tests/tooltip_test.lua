@@ -171,6 +171,7 @@ tooltip.options.placementFallback = false
 tooltip:Show()
 expect(tooltip._parts.root.y, 6, "repeated show observes changed placement without fallback")
 expect(tooltip._parts.label.font, id.Font.MUSEO_SANS_15PT_REGULAR, "ordinary tooltip keeps its default font")
+expect(tooltip._parts.label.rgba, 0xE3D7CFFF, "ordinary tooltip uses the native tab text colour")
 
 local tabTarget = component()
 tabTarget.x, tabTarget.y, tabTarget.width, tabTarget.height = 20, 55, 40, 20
