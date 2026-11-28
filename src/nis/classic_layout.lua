@@ -5,7 +5,7 @@ local NativeInterfaceSettings = require("src/core/native_interface_settings")
 local ClassicLayout = {}
 local positions = { "x", "y", "xParentPc", "yParentPc", "xSelfPc", "ySelfPc" }
 local sizes = { "width", "height", "widthParentPc", "heightParentPc" }
-local centeredPosition = { 0, 0, 0.5, 0.5, 0.5, 0.5 }
+local centeredArea = { 0, 0, 0.5, 0.5, 0.5, 0.5, 0, 0, 1, 1 }
 local names = {
     top = "TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP",
     viewport = "TOPLEVEL_V2__VIEWPORT",
@@ -27,7 +27,7 @@ local HUD_GAP = 4
 local SUSPENDED = "PrettyUI: classic sidebar suspended; native layout is unavailable"
 local NO_GAMEVIEW = "PrettyUI: classic sidebar cannot resize the gameview"
 local NO_SLAYER = "PrettyUI: classic sidebar cannot move the Slayer counter"
-local state, suspendedEnvironment, optionalEnvironment
+local state, suspendedEnvironment, suspendedReason, optionalEnvironment
 
 local function warn(message)
     if type(log) == "function" then
@@ -63,12 +63,16 @@ local function readLayout(value, expected)
     local scalars = expected or {}
     for i, field in ipairs(positions) do
         local scalar = pos[field]
-        if type(scalar) ~= "number" or expected and scalar ~= expected[i] then return nil end
+        if type(scalar) ~= "number" or expected and scalar ~= expected[i] then
+            return nil, "position." .. field, expected and expected[i], scalar
+        end
         if not expected then scalars[i] = scalar end
     end
     for i, field in ipairs(sizes) do
         local scalar = size[field]
-        if type(scalar) ~= "number" or expected and scalar ~= expected[i + 6] then return nil end
+        if type(scalar) ~= "number" or expected and scalar ~= expected[i + 6] then
+            return nil, "size." .. field, expected and expected[i + 6], scalar
+        end
         if not expected then scalars[i + 6] = scalar end
     end
     return scalars
@@ -89,6 +93,15 @@ end
 
 local function fullSize(saved)
     return saved[7] == 0 and saved[8] == 0 and saved[9] == 1 and saved[10] == 1
+end
+
+local function explicitWidth(saved)
+    return saved[9] == 0 and saved[7] > 0
+end
+
+local function gameviewWidth(saved, current, width)
+    if fullSize(saved.original) then return -width end
+    return math.min(saved.original[7], current.width - width - saved.originX)
 end
 
 local function originValues(value)
@@ -128,11 +141,12 @@ local function resolve(saved, interfaceObject)
     local ok, loaded = pcall(function()
         return ui.Interfaces:GetInterface(saved.interfaceID)
     end)
-    if not ok or not loaded or loaded ~= interfaceObject then return nil end
+    if not ok or not loaded or loaded ~= interfaceObject then return nil, "interface_changed" end
     local found, fresh = pcall(function() return ui.Interfaces:GetComponent(saved.packed) end)
-    if not found or identity(fresh) ~= saved.key then return nil end
+    if not found or not fresh then return nil, "component_unavailable" end
+    if identity(fresh) ~= saved.key then return nil, "identity_changed" end
     local parentOK, parent = pcall(parentOf, fresh)
-    if not parentOK or identity(parent) ~= saved.parentKey then return nil end
+    if not parentOK or identity(parent) ~= saved.parentKey then return nil, "parent_changed" end
     return fresh
 end
 
@@ -190,7 +204,7 @@ end
 
 function ClassicLayout.restore()
     local result = restoreState()
-    suspendedEnvironment, optionalEnvironment = nil, nil
+    suspendedEnvironment, suspendedReason, optionalEnvironment = nil, nil, nil
     return result
 end
 
@@ -246,64 +260,120 @@ local function environment(loaded, viewport, top, area)
         viewportKey
 end
 
-local function suspend(signature)
-    if suspendedEnvironment ~= signature then warn(SUSPENDED) end
-    suspendedEnvironment = signature
+local function logValue(value)
+    if type(value) == "string" then return (value:sub(1, 200):gsub("%c", " ")) end
+    if type(value) == "number" or type(value) == "boolean" then return tostring(value) end
+    return type(value)
+end
+
+local function suspend(signature, width, reason, expected, actual)
+    if suspendedEnvironment ~= signature or suspendedReason ~= reason then
+        local detail = ""
+        if expected ~= nil or actual ~= nil then
+            detail = " expected=" .. logValue(expected) .. " actual=" .. logValue(actual)
+        end
+        warn(SUSPENDED .. " width=" .. width .. " reason=" .. reason .. detail)
+    end
+    suspendedEnvironment, suspendedReason = signature, reason
     return false
 end
 
-local function optionalWarning(signature)
-    if optionalEnvironment ~= signature then warn(NO_GAMEVIEW) end
-    optionalEnvironment = signature
+local function optionalWarning(signature, width)
+    local key = signature .. "/" .. tostring(width)
+    if optionalEnvironment ~= key then warn(NO_GAMEVIEW) end
+    optionalEnvironment = key
+end
+
+local function areaMismatch(actual, expected)
+    for i, value in ipairs(expected) do
+        if actual[i] ~= value then
+            local field = i <= 6 and "position." .. positions[i] or "size." .. sizes[i - 6]
+            return false, "area." .. field, value, actual[i]
+        end
+    end
+    return true
+end
+
+local function rectangleMatches(name, x, y, w, h, width, height)
+    if x ~= 0 then return false, name .. ".x", 0, x end
+    if y ~= 0 then return false, name .. ".y", 0, y end
+    if w ~= width then return false, name .. ".width", width, w end
+    if h ~= height then return false, name .. ".height", height, h end
+    return true
 end
 
 local function compatible(top, viewport, area, areaLayout, x, y, w, h, tx, ty, tw, th, viewportKey, reserved)
-    if
-        not (
-            top
-            and viewport
-            and area
-            and not area.isRestricted
-            and areaLayout
-            and viewportKey
-            and x == 0
-            and y == 0
-            and w > 0
-            and h > 0
-            and tx == 0
-            and ty == 0
-            and tw == w
-            and th == h
-            and fullSize(areaLayout)
-            and same(areaLayout, centeredPosition, 1, 6)
-        )
-    then
-        return false
-    end
+    if not top then return false, "top.missing" end
+    if not viewport then return false, "viewport.missing" end
+    if not area then return false, "area.missing" end
+    if area.isRestricted then return false, "area.restricted" end
+    if not areaLayout then return false, "area.layout_unreadable" end
+    if not viewportKey then return false, "viewport.identity_unreadable" end
+    if not w or w <= 0 then return false, "viewport.width", ">0", w end
+    if not h or h <= 0 then return false, "viewport.height", ">0", h end
+    if x ~= 0 then return false, "viewport.x", 0, x end
+    if y ~= 0 then return false, "viewport.y", 0, y end
+    local matches, reason, expected, actual = rectangleMatches("top", tx, ty, tw, th, w, h)
+    if not matches then return false, reason, expected, actual end
+    matches, reason, expected, actual = areaMismatch(areaLayout, centeredArea)
+    if not matches then return false, reason, expected, actual end
     local ok, topParent, viewportParent, areaParent = pcall(
         function()
             return top.parent, viewport.parent, area.parent
         end
     )
-    if not ok or topParent ~= nil or viewportParent ~= nil or identity(areaParent) ~= viewportKey then
-        return false
-    end
+    if not ok then return false, "parent.read_failed", "readable", topParent end
+    if topParent ~= nil then return false, "top.parent", "root", identity(topParent) or "unknown" end
+    if viewportParent ~= nil then return false, "viewport.parent", "root", identity(viewportParent) or "unknown" end
+    local parentKey = identity(areaParent)
+    if parentKey ~= viewportKey then return false, "area.parent", viewportKey, parentKey end
     local ax, ay, aw, ah = origin(area)
-    return ax == 0 and ay == 0 and aw == w - (reserved or 0) and ah == h
+    return rectangleMatches("area", ax, ay, aw, ah, w - (reserved or 0), h)
 end
 
 local function updateSavedGameview(current, saved, width, environmentKey)
     local fresh = resolve(saved, current.interfaceObject)
     if fresh and layout(fresh, saved.written) then
-        if saved.written[7] == saved.original[7] - width then return end
-        local desired = { table.unpack(saved.original) }
-        desired[7] = desired[7] - width
-        local ok, applied = pcall(set, saved, fresh, desired, "size")
-        if ok and applied then return end
+        local desiredWidth = gameviewWidth(saved, current, width)
+        if not explicitWidth(saved.original) or desiredWidth > 0 then
+            if desiredWidth == saved.written[7] then return end
+            local desired = { table.unpack(saved.original) }
+            desired[7] = desiredWidth
+            local ok, applied = pcall(set, saved, fresh, desired, "size")
+            if ok and applied then
+                current.gameview = desiredWidth ~= saved.original[7] and saved or nil
+                return
+            end
+        end
     end
     if restoreRecord(saved, current.interfaceObject) then current.gameview = nil end
     current.gameviewBlocked = true
-    optionalWarning(environmentKey)
+    optionalWarning(environmentKey, width)
+end
+
+local function nativeGameviewWidth(current, baseline, vx, vy, vw, vh, width)
+    if fullSize(baseline) then
+        if vx ~= 0 or vy ~= 0 or vw ~= current.width or vh ~= current.height then return nil end
+        return -width
+    end
+    if
+        not vx
+        or not vy
+        or not vw
+        or not vh
+        or vx < 0
+        or vy < 0
+        or vw <= 0
+        or vh <= 0
+        or vx + vw > current.width
+        or vy + vh > current.height
+    then
+        return nil
+    end
+    local usableWidth = current.width - width
+    if vx + vw <= usableWidth then return baseline[7] end
+    if vw ~= baseline[7] or baseline[5] ~= 0 or usableWidth <= vx then return nil end
+    return usableWidth - vx
 end
 
 local function updateGameview(current, width, environmentKey, viewportKey)
@@ -315,6 +385,8 @@ local function updateGameview(current, width, environmentKey, viewportKey)
     local baseline = layout(view)
     local vx, vy, vw, vh = origin(view)
     local signature = environmentKey
+        .. "/"
+        .. tostring(width)
         .. "/"
         .. tostring(key)
         .. "/"
@@ -329,70 +401,99 @@ local function updateGameview(current, width, environmentKey, viewportKey)
         .. tostring(vh)
     if current.optionalFailed == signature then return end
     local parentOK, parent = pcall(function() return view and view.parent end)
+    local desiredWidth
     if
-        not view
-        or view.isRestricted
-        or not baseline
-        or not fullSize(baseline)
-        or not parentOK
-        or identity(parent) ~= viewportKey
-        or vx ~= 0
-        or vy ~= 0
-        or vw ~= current.width
-        or vh ~= current.height
+        view
+        and not view.isRestricted
+        and baseline
+        and (fullSize(baseline) or explicitWidth(baseline))
+        and parentOK
+        and identity(parent) == viewportKey
     then
+        desiredWidth = nativeGameviewWidth(current, baseline, vx, vy, vw, vh, width)
+    end
+    if not desiredWidth then
         current.optionalFailed = signature
-        optionalWarning(environmentKey)
+        optionalWarning(environmentKey, width)
+        return
+    end
+    if desiredWidth == baseline[7] then
+        current.optionalFailed = nil
+        optionalEnvironment = nil
         return
     end
     saved = record(view, viewportKey, baseline)
     if not saved then
         current.optionalFailed = signature
-        optionalWarning(environmentKey)
+        optionalWarning(environmentKey, width)
         return
     end
     local desired = { table.unpack(baseline) }
-    desired[7] = -width
+    desired[7] = desiredWidth
+    saved.originX = vx
     current.gameview = saved
     local ok, applied = pcall(set, saved, view, desired, "size")
     if not ok or not applied then
         if restoreRecord(saved, current.interfaceObject) then current.gameview = nil end
         current.optionalFailed = signature
-        optionalWarning(environmentKey)
+        optionalWarning(environmentKey, width)
     else
         current.optionalFailed = nil
         optionalEnvironment = nil
     end
 end
 
+local function captureSlayer(current)
+    local hud = component("hud")
+    local target = child(hud, "slayer")
+    if
+        not target
+        or target.isRestricted
+        or not hud
+        or identity(hud.parent) ~= current.viewportKey
+        or identity(target.parent) ~= identity(hud)
+    then
+        return nil
+    end
+    local hx, hy, hw, hh = origin(hud)
+    local hudLayout = layout(hud)
+    if
+        not hudLayout
+        or not fullSize(hudLayout)
+        or hx ~= 0
+        or hy ~= 0
+        or hw ~= current.width
+        or hh ~= current.height
+    then
+        return nil
+    end
+    local baseline = layout(target)
+    local sx, sy, sw, sh = origin(target)
+    if
+        not baseline
+        or baseline[3] ~= 1
+        or not sx
+        or not sy
+        or not sw
+        or not sh
+        or sx < 0
+        or sy < 0
+        or sw <= 0
+        or sh <= 0
+        or sx + sw > hw
+        or sy + sh > hh
+    then
+        return nil
+    end
+    return record(target, identity(hud), baseline)
+end
+
 local function updateSlayer(current, width)
     if current.slayerBlocked then return end
+    if width == 0 and not current.slayer then return end
     local saved = current.slayer
     if not saved then
-        local hud = component("hud")
-        local target = child(hud, "slayer")
-        if
-            not target
-            or target.isRestricted
-            or not hud
-            or identity(hud.parent) ~= current.viewportKey
-            or identity(target.parent) ~= identity(hud)
-        then
-            return
-        end
-        local hx, hy, hw, hh = origin(hud)
-        local hudLayout = layout(hud)
-        if
-            not hudLayout
-            or not fullSize(hudLayout)
-            or hx ~= 0
-            or hy ~= 0
-            or hw ~= current.width
-            or hh ~= current.height
-        then
-            return
-        end
-        saved = record(target, identity(hud), layout(target))
+        saved = captureSlayer(current)
         if not saved then return end
         current.slayer = saved
     end
@@ -404,7 +505,10 @@ local function updateSlayer(current, width)
     local desired = { table.unpack(saved.original) }
     desired[1] = desired[1] - width
     local ok, applied = pcall(set, saved, fresh, desired, "position")
-    if ok and applied then return end
+    if ok and applied then
+        if desired[1] == saved.original[1] then current.slayer = nil end
+        return
+    end
     if restoreRecord(saved, current.interfaceObject) then current.slayer = nil end
     current.slayerBlocked = true
     warn(NO_SLAYER)
@@ -463,26 +567,36 @@ local function updatePrivateChat(current, area, chat, clusterWidth, clusterHeigh
     local target
     if saved then
         target = resolve(saved, current.interfaceObject)
-        if not target or not layout(target, saved.written) then return false end
+        if not target or not layout(target, saved.written) then return false, "combat.privateChat.ownership" end
     elseif clusterHeight > 0 then
         target = component("privateChat")
     end
     local shift, parentKey = privateChatShift(current, area, chat, clusterWidth, clusterHeight, target, saved)
-    if shift == nil then return false end
+    if shift == nil then return false, "combat.privateChat.parent" end
     if shift ~= 0 and not saved then
-        if target.isRestricted then return false end
+        if target.isRestricted then return false, "combat.privateChat.restricted" end
         saved = record(target, parentKey, layout(target))
-        if not saved then return false end
+        if not saved then return false, "combat.privateChat.record" end
         current.privateChat = saved
     end
     if shift == 0 then
-        if not restoreRecord(saved, current.interfaceObject) then return false end
+        if not restoreRecord(saved, current.interfaceObject) then return false, "combat.privateChat.restore" end
         current.privateChat = nil
         return true
     end
     local desired = { table.unpack(saved.original) }
     desired[2] = desired[2] + shift
-    return set(saved, target, desired, "position")
+    if not set(saved, target, desired, "position") then return false, "combat.privateChat.set" end
+    return true
+end
+
+local function ownedAction(current, saved, name)
+    local target, why = resolve(saved, current.interfaceObject)
+    if not target then return nil, "combat." .. name .. "." .. why end
+    local ok, matches, field, expected, actual = pcall(readLayout, target, saved.written)
+    if not ok then return nil, "combat." .. name .. ".layout_unreadable" end
+    if not matches then return nil, "combat." .. name .. ".ownership." .. field, expected, actual end
+    return target
 end
 
 local function combatBounds(current, area, areaKey, chat, buttons)
@@ -493,11 +607,12 @@ local function combatBounds(current, area, areaKey, chat, buttons)
         local saved = current.actions and current.actions[index]
         local target
         if saved then
-            target = resolve(saved, current.interfaceObject)
+            local reason, expected, actual
+            target, reason, expected, actual = ownedAction(current, saved, name)
+            if not target then return nil, reason, expected, actual end
         else
             target = component(name)
         end
-        if saved and (not target or not layout(target, saved.written)) then return nil end
         if target and target.visibleGlobal and identity(target.parent) == areaKey then
             local x, y = target.x, target.y
             if saved then
@@ -522,38 +637,48 @@ local function componentInArea(target, areaKey)
     return target
 end
 
+-- The mode flag can switch before all native bars switch their anchors.
+-- Moving even one bar now would record the outgoing layout as its baseline.
+local function combatAnchorsReady(targets, areaHeight)
+    for _, target in pairs(targets) do
+        if target.position.yParentPc ~= 1 or target.y < 0 or target.y + target.height > areaHeight then return false end
+    end
+    return true
+end
+
 local function updateCombat(current, area)
     local areaKey = identity(area)
     local chat, buttons = component("chat"), component("buttons")
     chat, buttons = componentInArea(chat, areaKey), componentInArea(buttons, areaKey)
     local targets, left, top, right, bottom, collision = combatBounds(current, area, areaKey, chat, buttons)
-    if not targets then return false end
-    if not collision then
-        if not updatePrivateChat(current, area, nil, 0, 0) then return false end
+    if not targets then return false, left, top, right end
+    if not collision or not combatAnchorsReady(targets, area.height) then
+        local privateOK, privateReason = updatePrivateChat(current, area, nil, 0, 0)
+        if not privateOK then return false, privateReason end
         for index, saved in pairs(current.actions or {}) do
-            if not restoreRecord(saved, current.interfaceObject) then return false end
+            if not restoreRecord(saved, current.interfaceObject) then
+                return false, "combat." .. actionNames[index] .. ".restore"
+            end
             current.actions[index] = nil
         end
         return true
     end
     -- Keep every bar's relative offset, placing the entire cluster above chat.
     -- Evaluate the original anchors, not our last write, to avoid oscillation.
-    if
-        not chat
-        or not chat.visibleGlobal
-        or chat.x < 0
-        or chat.x + right - left > area.width
-        or chat.y - (bottom - top) < 0
-    then
-        return false
-    end
+    if not chat then return false, "combat.chat.missing" end
+    if not chat.visibleGlobal then return false, "combat.chat.hidden" end
+    if chat.x < 0 then return false, "combat.chat.x" end
+    if chat.x + right - left > area.width then return false, "combat.chat.width" end
+    if chat.y - (bottom - top) < 0 then return false, "combat.chat.height" end
     local dx, dy = math.floor(chat.x - left), math.floor(chat.y - bottom)
-    if not updatePrivateChat(current, area, chat, right - left, bottom - top) then return false end
+    local privateOK, privateReason = updatePrivateChat(current, area, chat, right - left, bottom - top)
+    if not privateOK then return false, privateReason end
     current.actions = current.actions or {}
     for index, target in pairs(targets) do
         if not current.actions[index] then
+            if target.isRestricted then return false, "combat." .. actionNames[index] .. ".restricted" end
             local saved = record(target, areaKey, layout(target))
-            if not saved or target.isRestricted then return false end
+            if not saved then return false, "combat." .. actionNames[index] .. ".record" end
             current.actions[index] = saved
         end
     end
@@ -562,20 +687,38 @@ local function updateCombat(current, area)
         if target then
             local desired = { table.unpack(saved.original) }
             desired[1], desired[2] = desired[1] + dx, desired[2] + dy
-            if not set(saved, target, desired, "position") then return false end
+            if not set(saved, target, desired, "position") then
+                return false, "combat." .. actionNames[index] .. ".set"
+            end
         else
-            if not restoreRecord(saved, current.interfaceObject) then return false end
+            if not restoreRecord(saved, current.interfaceObject) then
+                return false, "combat." .. actionNames[index] .. ".restore"
+            end
             current.actions[index] = nil
         end
     end
     return true
 end
 
-local function mandatoryFailure(previous, signature, ok, result)
+local function rollbackAndSuspend(previous, signature, width, reason, expected, actual)
     restoreState()
     previous.blocked, previous.blockedEnvironment = true, signature
+    previous.blockedReason, previous.blockedExpected, previous.blockedActual = reason, expected, actual
     state = previous
-    suspend(signature)
+    return suspend(signature, width, reason, expected, actual)
+end
+
+local function rejectAreaChange(previous, signature, width, fresh)
+    local current = layout(fresh)
+    if current then
+        local _, reason, expected, actual = areaMismatch(current, previous.area.written)
+        return rollbackAndSuspend(previous, signature, width, reason or "area.layout_changed", expected, actual)
+    end
+    return rollbackAndSuspend(previous, signature, width, "area.layout_unreadable")
+end
+
+local function mandatoryFailure(previous, signature, width, ok, result, reason, expected, actual)
+    rollbackAndSuspend(previous, signature, width, reason, expected, actual)
     if not ok then error(result, 0) end
     return false
 end
@@ -585,18 +728,29 @@ local function reserveMandatory(previous, fresh, reservedWidth, signature)
     -- desired descriptor or repeated setter-side layout reads.
     if previous.reservedWidth ~= reservedWidth then
         local desired = { 0, 0, 0, 0, 0, 0, -reservedWidth, 0, 1, 1 }
-        local ok, applied = pcall(
-            function()
-                return set(previous.area, fresh, desired, "position") and set(previous.area, fresh, desired, "size")
-            end
-        )
+        local stage = "position"
+        local ok, applied = pcall(function()
+            if not set(previous.area, fresh, desired, "position") then return false end
+            stage = "size"
+            return set(previous.area, fresh, desired, "size")
+        end)
         if not ok or not applied then
-            return mandatoryFailure(previous, signature, ok, applied)
+            local reason = "area.set." .. stage .. (ok and "" or ".error")
+            return mandatoryFailure(previous, signature, reservedWidth, ok, applied, reason)
         end
     end
-    local combatOK, combatApplied = pcall(updateCombat, previous, fresh)
+    local combatOK, combatApplied, reason, wanted, observed = pcall(updateCombat, previous, fresh)
     if not combatOK or not combatApplied then
-        return mandatoryFailure(previous, signature, combatOK, combatApplied)
+        return mandatoryFailure(
+            previous,
+            signature,
+            reservedWidth,
+            combatOK,
+            combatApplied,
+            combatOK and reason or "combat.error",
+            wanted,
+            observed
+        )
     end
     return true
 end
@@ -613,7 +767,7 @@ local function reserveOptional(previous, reservedWidth, generation, viewportKey)
     local optionalOK = pcall(updateGameview, previous, reservedWidth, generation, viewportKey)
     if not optionalOK then
         previous.gameviewBlocked = true
-        optionalWarning(generation)
+        optionalWarning(generation, reservedWidth)
     end
     local slayerOK = pcall(updateSlayer, previous, reservedWidth)
     if not slayerOK then
@@ -639,61 +793,67 @@ function ClassicLayout.update(reservedWidth)
         environment(loaded, viewport, top, area)
     local previous = state
     if previous and reservationChanged(previous, loaded, w, h, viewportKey) then
-        if not restoreState() then return suspend(signature) end
+        if not restoreState() then return suspend(signature, reservedWidth, "restore.failed") end
         previous = nil
         signature, generation, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey =
             environment(loaded, viewport, top, area)
     end
-    if previous and previous.blocked then return suspend(previous.blockedEnvironment) end
+    if previous and previous.blocked then
+        return suspend(
+            previous.blockedEnvironment,
+            reservedWidth,
+            previous.blockedReason,
+            previous.blockedExpected,
+            previous.blockedActual
+        )
+    end
     local fresh = previous and resolve(previous.area, loaded)
     if fresh and not layout(fresh, previous.area.written) then
-        restoreState()
-        previous.blocked, previous.blockedEnvironment = true, signature
-        state = previous
-        return suspend(signature)
+        return rejectAreaChange(previous, signature, reservedWidth, fresh)
     end
-    if
-        not compatible(
-            top,
-            viewport,
-            area,
-            previous and previous.area.original or areaLayout,
-            x,
-            y,
-            w,
-            h,
-            tx,
-            ty,
-            tw,
-            th,
-            viewportKey,
-            previous and previous.reservedWidth
-        )
-    then
+    local allowed, reason, expected, actual = compatible(
+        top,
+        viewport,
+        area,
+        previous and previous.area.original or areaLayout,
+        x,
+        y,
+        w,
+        h,
+        tx,
+        ty,
+        tw,
+        th,
+        viewportKey,
+        previous and previous.reservedWidth
+    )
+    if not allowed then
         if previous then
             if not restoreState() then
                 previous.blocked, previous.blockedEnvironment = true, signature
+                previous.blockedReason, previous.blockedExpected, previous.blockedActual = reason, expected, actual
                 state = previous
             else
                 signature = environment(loaded, viewport, top, area)
             end
         end
-        return suspend(signature)
+        return suspend(signature, reservedWidth, reason, expected, actual)
     end
     if not previous then
+        if not loaded then return suspend(signature, reservedWidth, "interface.missing") end
         local saved = record(area, viewportKey, areaLayout)
-        if not loaded or not saved then return suspend(signature) end
+        if not saved then return suspend(signature, reservedWidth, "area.record") end
         previous = { interfaceObject = loaded, viewportKey = viewportKey, width = w, height = h, area = saved }
         state = previous
         fresh = resolve(saved, loaded)
     end
     if not fresh then
         restoreState()
-        return suspend(signature)
+        return suspend(signature, reservedWidth, "area.resolve")
     end
     if not reserveMandatory(previous, fresh, reservedWidth, signature) then return false end
     previous.reservedWidth = reservedWidth
-    suspendedEnvironment = nil
+    suspendedEnvironment, suspendedReason = nil, nil
     reserveOptional(previous, reservedWidth, generation, viewportKey)
     return true
 end
