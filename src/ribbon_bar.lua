@@ -29,7 +29,7 @@ local AUTO_HIDE_SLIDE_STEP = 8
 local SETTINGS_WIDTH = 480
 local SETTINGS_HEIGHT = 410
 local CLASSIC_CONTENT_WIDTH = 300
-local MODERN_NATIVE_RESTORE_TICKS = 10 -- 200 ms at the client's fixed 50 Hz.
+local MODE_LAYOUT_SETTLE_TICKS = 10 -- 200 ms at the client's fixed 50 Hz.
 local RAIL_WIDTH = BUTTON_SIZE + PADDING * 2
 local PITCH = BUTTON_SIZE + BUTTON_GAP
 local SETTINGS_PITCH = SETTINGS_BUTTON_SIZE + BUTTON_GAP
@@ -41,6 +41,7 @@ local settingsView, settingsLayerView
 local started, settingsOpen, hitboxHovered = false, false, false
 local slideOffset = 0
 local classic = false
+local cropDelayTicks = 0
 local classicSelectedPanel, classicBody
 local iconList, previousIndicator, nextIndicator
 local iconScroll = 0
@@ -80,7 +81,7 @@ local function syncClassicButtons()
 end
 
 local function reserveClassic(width)
-    local ok, result = pcall(ClassicLayout.update, width)
+    local ok, result = pcall(ClassicLayout.update, width, cropDelayTicks > 0)
     if (not ok or not result) and root and ui.Interfaces:GetInterface(interfaceID) ~= nil then
         Components.setHidden(root, true)
     end
@@ -446,10 +447,14 @@ local function changeMode(enabled)
         if not ok and problem == nil then problem = failure end
     end
     if enabled then
+        -- A live Modern ribbon can see the mode var before the client's last
+        -- gameview SetSize. Reserve the HUD now, but capture the crop later.
+        cropDelayTicks = gameArea and MODE_LAYOUT_SETTLE_TICKS or 0
         classic = true
         attempt(suspendPanels)
         attempt(destroySurface)
     else
+        cropDelayTicks = 0
         -- Shared content and native reservation go away before shell geometry
         -- or consumer content can resume.
         attempt(destroySurface)
@@ -475,7 +480,7 @@ local function changeMode(enabled)
                 -- Let native mode-change scripts finish before redocking.
                 -- Queue only native redocking; normal modern panels resume now.
                 if panel._nisNativePending then
-                    attempt(NisNative.register, panel, false, MODERN_NATIVE_RESTORE_TICKS)
+                    attempt(NisNative.register, panel, false, MODE_LAYOUT_SETTLE_TICKS)
                 end
                 panel._nisInactiveGroup, panel._nisInactiveNative = nil, nil
             else
@@ -545,7 +550,7 @@ ensureMounted = function()
         if not classic then clearEntries(); return end
     end
     if current == nil or generation == nil then
-        if classic then ClassicLayout.update(0) end
+        if classic then ClassicLayout.update(0, cropDelayTicks > 0) end
         return
     end
     gameArea, interfaceID = current, current.interfaceID
@@ -752,7 +757,10 @@ function RibbonBar.Start()
         if key == "ribbonBarPosition" or key == "ribbonBarButtonCap" then layoutRoot() end
     end)
     Event.SettingsLayerReady.Subscribe(EVENT_ID, mountSettingsLayer)
-    Event.Logic.Subscribe(EVENT_ID, ensureMounted)
+    Event.Logic.Subscribe(EVENT_ID, function()
+        if cropDelayTicks > 0 then cropDelayTicks = cropDelayTicks - 1 end
+        ensureMounted()
+    end)
     Event.VarTransmit.Subscribe(EVENT_ID, function(event)
         if #entries > 0 and event.var.id == id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP then ensureMounted() end
     end)
@@ -767,6 +775,7 @@ function RibbonBar.Shutdown()
         Event.SettingsLayerReady.Unsubscribe(EVENT_ID)
     end
     started = false
+    cropDelayTicks = 0
     Settings.destroy(settingsLayerView)
     settingsLayerView = nil
     local ok, problem = pcall(destroySurface)

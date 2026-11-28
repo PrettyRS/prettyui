@@ -4,7 +4,7 @@ local function expect(actual, expected, message)
 end
 
 local loaded = {}
-local area, top, viewport, gameview, inventory, chat, action
+local area, top, viewport, gameview, gamecontent, render, inventory, chat, action
 local staticComponents = {}
 local classicMode = 0
 local nextDynamic = 0
@@ -84,7 +84,7 @@ local function native(interfaceID, staticID, parent, position, dimensions)
         self.position = { x = x, y = y, xParentPc = xp, yParentPc = yp, xSelfPc = xs, ySelfPc = ys }
     end
     function result:SetSize(w, h, wp, hp)
-        if self.isRestricted or self.failSize then error("native size restricted") end
+        if self.isRestricted then error("native size restricted") end
         self.sizeWrites = self.sizeWrites + 1
         self.size = { width = w, height = h, widthParentPc = wp, heightParentPc = hp }
     end
@@ -106,6 +106,13 @@ local function gameArea(interfaceID, width, height)
     gameview = native(interfaceID, 87, viewport,
         { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
         { width = 0, height = 0, widthParentPc = 1, heightParentPc = 1 })
+    gamecontent = native(interfaceID, 88, gameview,
+        { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
+        { width = 0, height = 0, widthParentPc = 1, heightParentPc = 1 })
+    render = native(interfaceID, 89, gamecontent,
+        { x = 0, y = 0, xParentPc = 0, yParentPc = 0, xSelfPc = 0, ySelfPc = 0 },
+        { width = 0, height = 0, widthParentPc = 1, heightParentPc = 1 })
+    gameview.visibleGlobal, gamecontent.visibleGlobal, render.visibleGlobal = true, true, true
     inventory = native(interfaceID, 91, result,
         { x = 0, y = 0, xParentPc = 1, yParentPc = 1, xSelfPc = 1, ySelfPc = 1 },
         { width = 212, height = 312, widthParentPc = 0, heightParentPc = 0 })
@@ -121,6 +128,8 @@ local function gameArea(interfaceID, width, height)
         id.Component.TOPLEVEL_V2__VIEWPORT = (interfaceID << 16) | 75
         id.Component.TOPLEVEL_V2__GAME_AREA = (interfaceID << 16) | 81
         id.Component.TOPLEVEL_V2__GAMEVIEW_WINDOW = (interfaceID << 16) | 87
+        id.Component.TOPLEVEL_V2__GAMEVIEW_WINDOW_CONTENT = (interfaceID << 16) | 88
+        id.Component.TOPLEVEL_V2__RENDER_LAYER = (interfaceID << 16) | 89
         id.Component.TOPLEVEL_V2__INVENTORY_WINDOW = (interfaceID << 16) | 91
         id.Component.TOPLEVEL_V2__CHAT_WINDOW = (interfaceID << 16) | 92
         id.Component.TOPLEVEL_V2__ACTION_WINDOW = (interfaceID << 16) | 93
@@ -189,6 +198,8 @@ id = {
         TOPLEVEL_V2__VIEWPORT = (10 << 16) | 75,
         TOPLEVEL_V2__GAME_AREA = (10 << 16) | 81,
         TOPLEVEL_V2__GAMEVIEW_WINDOW = (10 << 16) | 87,
+        TOPLEVEL_V2__GAMEVIEW_WINDOW_CONTENT = (10 << 16) | 88,
+        TOPLEVEL_V2__RENDER_LAYER = (10 << 16) | 89,
     },
     VarPlayer = {
         TOPLEVEL_V2_GENERAL_VARP = 101, TOPLEVEL_V2_CUSTOMIZATION_LOCK = 102,
@@ -557,6 +568,22 @@ local function rail(width, description)
     expect(area.width, viewport.width - width, description .. " native reserved width")
     return surface
 end
+local function croppedGameview(reserved, description)
+    local visibleWidth = viewport.width - reserved
+    expect(gameview.width, visibleWidth, description .. " native window clips at sidebar")
+    expect(gameview.size.widthParentPc, 0, description .. " clipped window uses absolute width")
+    expect(gameview.height, viewport.height, description .. " native window keeps height")
+    expect(gamecontent.parent, gameview, description .. " content belongs to gameview")
+    expect(gamecontent.width, visibleWidth, description .. " content fills clipped window")
+    expect(gamecontent.height, viewport.height, description .. " content fills window height")
+    expect(render.parent, gamecontent, description .. " render belongs to content")
+    expect(render.visibleGlobal, true, description .. " render remains visible")
+    expect(render.width, viewport.width, description .. " render keeps full native viewport width")
+    expect(render.height, viewport.height, description .. " render keeps native height")
+    expect(render.size.widthParentPc, 0, description .. " render uses absolute width")
+    expect(render.x, -math.floor((viewport.width - visibleWidth) / 2),
+        description .. " viewport center is retained")
+end
 local lifecycle = {}
 local nextPanelIcon = 10000
 local function classicPanel(name, enabled)
@@ -612,18 +639,27 @@ local function classicSelectionAndModeTransitions()
     varEvents.prettyui_ribbon_bar({ var = { id = id.VarPlayer.TOPLEVEL_V2_SKINS_VARP } })
     expect(buttons(), modern, "unrelated variable does not switch mode")
     classicMode = 0
+    gameview:SetSize(3400, 0, 0, 1)
     mode(1)
     expect(modern.destroyed, true, "entering Classic retires modern surface")
     local surface = rail(44, "collapsed Classic rail")
     expect(a.root.hidden, true, "modern panel shell hidden")
     expect(a.builds + b.builds, 0, "Classic content is lazy")
-    expect(gameview.width, 3396, "collapsed rail reserves gameview")
+    expect(gameview.width, 3400, "mode notification does not claim the Modern gameview")
+    for _ = 1, 9 do
+        mode(1) -- extra var notifications must not consume logic ticks
+        tick()
+    end
+    expect(render.size.widthParentPc, 1, "render remains native while the mode switch settles")
+    gameview:SetSize(0, 0, 1, 1) -- late native Classic layout
+    tick()
+    croppedGameview(44, "collapsed rail")
     expect(buttonNamed("A").children[2].sprite, Plugin.resources.encounter.runtimeSprite,
         "Classic button renders resource icon")
 
     clickRoot(buttonNamed("A"))
     rail(344, "selected content")
-    expect(gameview.width, 3096, "expanded rail reserves body and gameview")
+    croppedGameview(344, "expanded rail")
     expect(a.classicHost.parent, surface, "selected content belongs to full-screen rail")
     expect(a.classicHost.width, 300, "selected content width")
     expect(a.builds, 1, "selected content builds on first click")
@@ -639,10 +675,12 @@ local function classicSelectionAndModeTransitions()
     expect(a:IsActive() and b:IsActive(), true, "selection does not disable panels")
     clickRoot(buttonNamed("B"))
     rail(44, "collapsed selection")
+    croppedGameview(44, "collapsed selection")
     expect(b.releases, 1, "collapse releases content")
     expect(b:IsActive(), true, "collapse keeps panel enabled")
     expect(RibbonBar.selectClassic(a, false), true, "API selects enabled panel")
     rail(344, "programmatic selection")
+    croppedGameview(344, "programmatic selection")
     expect(RibbonBar.selectClassic(a, true), true, "API toggles selected panel closed")
     top:SetSize(45, 120, 0, 0)
     viewport:SetSize(45, 120, 0, 0)
@@ -652,6 +690,7 @@ local function classicSelectionAndModeTransitions()
     top:SetSize(3440, 1440, 0, 0)
     viewport:SetSize(3440, 1440, 0, 0)
     tick()
+    croppedGameview(44, "programmatic collapse")
     rail(44, "programmatic collapse")
     clickRoot(buttonNamed("Disabled"))
     expect(RibbonBar.isClassicSelected(disabled), true, "first click enables and selects disabled panel")
@@ -695,17 +734,52 @@ local function classicSelectionAndModeTransitions()
     mode(0)
     expect(settings.destroyed, true, "mode exit destroys Classic settings")
     expect(area.width, 3440, "mode exit restores native game area")
-    expect(gameview.width, 3440, "mode exit restores gameview")
+    expect(gameview.width, 3440, "mode exit restores full native gameview")
+    expect(render.position.x, 0, "mode exit restores render origin")
+    expect(render.size.widthParentPc, 1, "mode exit restores render width descriptor")
     expect(surface.destroyed, true, "mode exit destroys Classic surface")
     expect(a.root.hidden, false, "modern panel shell restored")
     expect(buttonNamed("A").children[2].sprite, Plugin.resources.alternate.runtimeSprite,
         "modern button retains updated icon")
     mode(1)
     rail(44, "mode reentry starts collapsed")
+    for _ = 1, 10 do tick() end
+    croppedGameview(44, "mode reentry")
     expect(RibbonBar.isClassicSelected(a), false, "old selection does not return")
     RibbonBar.Shutdown()
     expect(area.width, 3440, "shutdown restores native geometry")
+    expect(gameview.width, 3440, "shutdown restores native gameview")
+    expect(render.position.x, 0, "shutdown restores render origin")
     expect(next(map.watches), nil, "shutdown removes map observers")
+end
+local function classicFixedWidthGameview()
+    start(46, 1)
+    gameview:SetSize(3000, 0, 0, 1)
+    local owner = classicPanel("Fixed width", true)
+    RibbonBar.register(owner)
+    rail(44, "fixed-width collapsed rail")
+    expect(gameview.width, 3000, "already-fitting native window remains untouched")
+    clickRoot(buttonNamed("Fixed width"))
+    rail(344, "fixed-width expanded sidebar")
+    expect(gameview.width, 3000, "native gameview fitting beside expanded sidebar remains untouched")
+    expect(render.size.widthParentPc, 1, "already-fitting render retains native fill width")
+    expect(render.position.x, 0, "already-fitting render retains native origin")
+    clickRoot(buttonNamed("Fixed width"))
+    gameview:SetSize(3300, 0, 0, 1)
+    tick()
+    rail(44, "overlapping fixed-width rail")
+    expect(gameview.width, 3300, "fixed-width gameview fits beside collapsed rail")
+    clickRoot(buttonNamed("Fixed width"))
+    rail(344, "overlapping fixed-width sidebar")
+    croppedGameview(344, "overlapping fixed-width sidebar")
+    clickRoot(buttonNamed("Fixed width"))
+    rail(44, "fixed-width collapse")
+    expect(gameview.width, 3300, "collapse restores exact native fixed width")
+    expect(gameview.size.width, 3300, "collapse restores fixed-width descriptor")
+    expect(gameview.size.widthParentPc, 0, "collapse restores fixed-width anchor")
+    expect(render.position.x, 0, "collapse restores native render origin")
+    expect(render.size.widthParentPc, 1, "collapse restores native render sizing")
+    RibbonBar.Shutdown()
 end
 
 local function classicWidthProtectsChatAndInventory()
@@ -734,10 +808,11 @@ local function classicWidthProtectsChatAndInventory()
     top:SetSize(1920, 1080, 0, 0)
     viewport:SetSize(1920, 1080, 0, 0)
     tick()
-    inventory:SetSize(380, 312, 0, 0)
+    inventory:SetSize(381, 312, 0, 0)
     tick()
-    rail(424, "sidebar grows to fit a wider inventory")
-    expect(owner.classicHost.width, 380, "inventory floor uses live native width")
+    rail(425, "sidebar grows to fit an odd-width inventory")
+    croppedGameview(425, "odd-width sidebar")
+    expect(owner.classicHost.width, 381, "inventory floor uses live native width")
     expect(chat.y - (action.y + action.height), 0, "resized bars remain flush with chat")
     expect(owner.releases, 0, "inventory changes retain content")
     clickRoot(buttonNamed("Responsive"))
@@ -864,15 +939,28 @@ end
 
 local function classicUnavailableNativeLayoutAndRemount()
     start(60, 1)
-    gameview.failSize = true
-    local optional = classicPanel("Optional", true)
-    RibbonBar.register(optional)
-    rail(44, "gameview failure still allows reservation")
-    clickRoot(buttonNamed("Optional"))
-    rail(344, "gameview failure still allows selection")
-    expect(gameview.width, 3440, "failed optional gameview remains client-owned")
-    RibbonBar.unregister(optional)
-    expect(area.width, 3440, "last unregister restores mandatory reservation")
+    id.Component.TOPLEVEL_V2__GAMEVIEW_WINDOW = nil
+    local overlay = classicPanel("Overlay", true)
+    RibbonBar.register(overlay)
+    rail(44, "rail reserves HUD space without a gameview ID")
+    clickRoot(buttonNamed("Overlay"))
+    rail(344, "selection reserves HUD space without a gameview ID")
+    expect(gameview.width, 3440, "missing gameview ID does not narrow world")
+    expect(render.width, 3440, "missing gameview ID leaves native render untouched")
+    RibbonBar.unregister(overlay)
+    expect(area.width, 3440, "last unregister releases HUD space")
+    expect(gameview.width, 3440, "missing gameview remains full width after unregister")
+    id.Component.TOPLEVEL_V2__GAMEVIEW_WINDOW = (60 << 16) | 87
+    render.isRestricted = true
+    local blocked = classicPanel("Blocked render", true)
+    RibbonBar.register(blocked)
+    rail(44, "render setter failure keeps collapsed HUD reservation")
+    expect(gameview.width, 3440, "failed render update does not leave narrow-only gameview")
+    clickRoot(buttonNamed("Blocked render"))
+    rail(344, "render setter failure keeps expanded HUD reservation")
+    expect(gameview.width, 3440, "failed expanded crop leaves full-width native gameview")
+    RibbonBar.unregister(blocked)
+    render.isRestricted = false
 
     area = gameArea(61, 3440, 1440)
     local foreign = classicPanel("Foreign", true)
@@ -991,6 +1079,7 @@ end
 
 classicSelectionAndModeTransitions()
 classicWidthProtectsChatAndInventory()
+classicFixedWidthGameview()
 classicOverflowKeepsButtonsReachable()
 classicUnavailableNativeLayoutAndRemount()
 modernOverflowAndCap()

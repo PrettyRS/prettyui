@@ -1,5 +1,5 @@
--- Reserves Classic sidebar space and keeps the native combat bars clear of
--- chat and buttons. Saves scalar layouts for restoration across UI rebuilds.
+-- Reserve Classic sidebar space for the HUD and clip a full-width world render.
+-- Save native layouts for restoration across UI rebuilds.
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
 
 local ClassicLayout = {}
@@ -10,7 +10,8 @@ local names = {
     top = "TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP",
     viewport = "TOPLEVEL_V2__VIEWPORT",
     area = "TOPLEVEL_V2__GAME_AREA",
-    gameview = "TOPLEVEL_V2__GAMEVIEW_WINDOW",
+    window = "TOPLEVEL_V2__GAMEVIEW_WINDOW",
+    render = "TOPLEVEL_V2__RENDER_LAYER",
     hud = "TOPLEVEL_V2__GAMEPLAY_HUDS",
     slayer = "TOPLEVEL_V2__SLAYER_COUNTER_WINDOW",
     chat = "TOPLEVEL_V2__CHAT_WINDOW",
@@ -25,9 +26,8 @@ local names = {
 local actionNames = { "action", "action2", "action3", "action4", "action5" }
 local HUD_GAP = 4
 local SUSPENDED = "PrettyUI: classic sidebar suspended; native layout is unavailable"
-local NO_GAMEVIEW = "PrettyUI: classic sidebar cannot resize the gameview"
 local NO_SLAYER = "PrettyUI: classic sidebar cannot move the Slayer counter"
-local state, suspendedEnvironment, suspendedReason, optionalEnvironment
+local state, suspendedEnvironment, suspendedReason
 
 local function warn(message)
     if type(log) == "function" then
@@ -160,19 +160,29 @@ local function restoreRecord(saved, interfaceObject)
     return true
 end
 
+local function restoreCrop(current)
+    local crop = current.crop
+    if not crop then return true end
+    local renderOK, renderRestored = pcall(restoreRecord, crop.render, current.interfaceObject)
+    local windowOK, windowRestored = pcall(restoreRecord, crop.window, current.interfaceObject)
+    if not (renderOK and renderRestored and windowOK and windowRestored) then return false end
+    current.crop = nil
+    return true
+end
+
 local function restoreState()
     if not state then return true end
     local saved = state
+    local cropOK = restoreCrop(saved)
     local actionsOK = true
     for _, action in pairs(saved.actions or {}) do
         local called, restored = pcall(restoreRecord, action, saved.interfaceObject)
         actionsOK = called and restored and actionsOK
     end
-    local viewCall, gameviewOK = pcall(restoreRecord, saved.gameview, saved.interfaceObject)
     local areaCall, areaOK = pcall(restoreRecord, saved.area, saved.interfaceObject)
     local slayerCall, slayerOK = pcall(restoreRecord, saved.slayer, saved.interfaceObject)
     local privateCall, privateOK = pcall(restoreRecord, saved.privateChat, saved.interfaceObject)
-    local complete = actionsOK and viewCall and gameviewOK and areaCall and areaOK
+    local complete = cropOK and actionsOK and areaCall and areaOK
         and slayerCall and slayerOK and privateCall and privateOK
     if complete then state = nil end
     return complete
@@ -180,8 +190,14 @@ end
 
 function ClassicLayout.restore()
     local result = restoreState()
-    suspendedEnvironment, suspendedReason, optionalEnvironment = nil, nil, nil
+    suspendedEnvironment, suspendedReason = nil, nil
     return result
+end
+
+local function logValue(value)
+    if type(value) == "string" then return (value:sub(1, 200):gsub("%c", " ")) end
+    if type(value) == "number" or type(value) == "boolean" then return tostring(value) end
+    return type(value)
 end
 
 local function set(saved, fresh, desired, which)
@@ -189,13 +205,148 @@ local function set(saved, fresh, desired, which)
     if not current then return false, "ownership" end
     local first, last = which == "position" and 1 or 7, which == "position" and 6 or 10
     if same(current, desired, first, last) then return true end
-    -- Mark the intended descriptor before invoking the setter: setters can
-    -- mutate their target before raising, and the rollback must still own it.
-    for i = first, last do saved.written[i] = desired[i] end
-    if which == "position" then fresh:SetPos(table.unpack(desired, 1, 6))
-    else fresh:SetSize(table.unpack(desired, 7, 10)) end
-    if not same(layout(fresh) or {}, desired, first, last) then return false, "readback" end
+    -- A setter can throw before OR after writing. Keep the previous descriptor
+    -- owned if it didn't land (notably when adjusting an already active crop).
+    local ok, err = pcall(function()
+        if which == "position" then fresh:SetPos(table.unpack(desired, 1, 6))
+        else fresh:SetSize(table.unpack(desired, 7, 10)) end
+    end)
+    local observed = layout(fresh)
+    local applied = observed and same(observed, desired, first, last)
+    if applied or not observed then
+        for i = first, last do saved.written[i] = desired[i] end
+    end
+    if not ok then error(err, 0) end
+    if not applied then
+        if not observed then return false, "readback.unavailable" end
+        for i = first, last do
+            if observed[i] ~= desired[i] then
+                local field = which == "position" and positions[i] or sizes[i - 6]
+                return false, "readback." .. field, desired[i], observed[i]
+            end
+        end
+    end
     return true
+end
+
+-- The render may be nested inside a content layer. Every intervening layer
+-- must still fill the clip window; otherwise its own bounds would clip first.
+local function fillsClipWindow(node, window)
+    while node and node.interfaceID == window.interfaceID do
+        if node.staticID == window.staticID and node.dynamicID == -1 then return true end
+        if node.x ~= 0 or node.y ~= 0 or node.width ~= window.width or node.height ~= window.height then
+            return false, node
+        end
+        node = node.parent
+    end
+    return false
+end
+
+local function captureCrop(current, reserved)
+    local window = component("window")
+    if not window or window.isRestricted or identity(window.parent) ~= current.viewportKey then return end
+    local x, y, w, h = origin(window)
+    if not x or x < 0 or y ~= 0 or h ~= current.height or w <= 0 or x + w > current.width then return end
+    local available = current.width - reserved - x
+    if available <= 0 or w <= available then return end
+    local render = component("render")
+    if not render or render.isRestricted or not render.visibleGlobal or not fillsClipWindow(render, window) then
+        return
+    end
+    local win = record(window, current.viewportKey, layout(window))
+    local layer = record(render, identity(render.parent), layout(render))
+    if not win or not layer or win.key == layer.key then return end
+    local crop = { window = win, render = layer, x = x, nativeWidth = w,
+        clipLayout = { table.unpack(win.original) }, renderLayout = { table.unpack(layer.original) } }
+    -- Pin the clip's left edge even when the native window has a self anchor.
+    crop.clipLayout[1], crop.clipLayout[3], crop.clipLayout[5], crop.clipLayout[9] = x, 0, 0, 0
+    crop.renderLayout[3], crop.renderLayout[5] = 0, 0
+    crop.renderLayout[7], crop.renderLayout[9] = current.width, 0
+    current.crop = crop
+    return crop
+end
+
+local function cropRect(name, componentValue, x, width, height)
+    if componentValue.x ~= x then return false, name .. ".x", x, componentValue.x end
+    if componentValue.y ~= 0 then return false, name .. ".y", 0, componentValue.y end
+    if componentValue.width ~= width then return false, name .. ".width", width, componentValue.width end
+    if componentValue.height ~= height then return false, name .. ".height", height, componentValue.height end
+    return true
+end
+
+local function cropMatches(current, crop, window, render, width)
+    local ok, why, expected, actual = cropRect("window", window, crop.x, width, current.height)
+    if not ok then return false, why, expected, actual end
+    ok, why, expected, actual = cropRect("render", render, crop.renderLayout[1], current.width, current.height)
+    if not ok then return false, why, expected, actual end
+    local fills, ancestor = fillsClipWindow(render.parent, window)
+    if fills then return true end
+    if not ancestor then return false, "render.ancestry" end
+    return cropRect("ancestor[" .. ancestor.staticID .. "]", ancestor, 0, width, current.height)
+end
+
+local function ownedCropPart(current, saved, name)
+    local part, why = resolve(saved, current.interfaceObject)
+    if not part then return nil, name .. "." .. why end
+    local ok, matches, field, expected, actual = pcall(readLayout, part, saved.written)
+    if not ok then return nil, name .. ".layout_unreadable: " .. logValue(matches) end
+    if not matches then return nil, name .. ".ownership." .. field, expected, actual end
+    return part
+end
+
+local function writeCropPart(name, saved, part, desired, first, second)
+    local function write(which)
+        local ok, applied, why, expected, actual = pcall(set, saved, part, desired, which)
+        if not ok then return false, name .. "." .. which .. ".exception: " .. logValue(applied) end
+        if not applied then return false, name .. "." .. which .. "." .. why, expected, actual end
+        return true
+    end
+    local ok, why, expected, actual = write(first)
+    if not ok then return false, why, expected, actual end
+    return write(second)
+end
+
+local function applyCrop(current, reserved)
+    local crop = current.crop or captureCrop(current, reserved)
+    if not crop then return true end
+    local window, why, expected, actual = ownedCropPart(current, crop.window, "window")
+    if not window then return false, why, expected, actual end
+    local render
+    render, why, expected, actual = ownedCropPart(current, crop.render, "render")
+    if not render then return false, why, expected, actual end
+    local width = current.width - reserved - crop.x
+    if width <= 0 or width >= crop.nativeWidth or not render.visibleGlobal then
+        return restoreCrop(current), "restore.failed"
+    end
+    if crop.clipWidth ~= width then
+        crop.clipLayout[7] = width
+        crop.renderLayout[1] = -((current.width - width) // 2)
+        local ok
+        ok, why, expected, actual = writeCropPart("window", crop.window, window, crop.clipLayout, "position", "size")
+        if not ok then return false, why, expected, actual end
+        ok, why, expected, actual = writeCropPart("render", crop.render, render, crop.renderLayout, "size", "position")
+        if not ok then return false, why, expected, actual end
+        crop.clipWidth = width
+    end
+    return cropMatches(current, crop, window, render, width)
+end
+
+local function updateCrop(current, reserved)
+    if current.cropBlocked then
+        if current.crop then restoreCrop(current) end
+        return
+    end
+    local ok, applied, why, expected, actual = pcall(applyCrop, current, reserved)
+    if ok and applied then return end
+    local restored = restoreCrop(current)
+    current.cropBlocked = true
+    local reason = ok and why or "exception: " .. logValue(applied)
+    if expected ~= nil or actual ~= nil then
+        reason = reason .. " expected=" .. logValue(expected) .. " actual=" .. logValue(actual)
+    end
+    warn("PrettyUI: Classic gameview crop unavailable; keeping the HUD reservation; reason=" .. reason
+        .. " viewport=" .. current.width .. "x" .. current.height .. " reserved=" .. reserved
+        .. (restored and "" or " restore=pending"))
 end
 
 local function environment(loaded, viewport, top, area)
@@ -208,13 +359,7 @@ local function environment(loaded, viewport, top, area)
         tostring(areaKey), tostring(x), tostring(y), tostring(w), tostring(h),
         tostring(tx), tostring(ty), tostring(tw), tostring(th) }, "/")
     return signature .. "/" .. (areaLayout and table.concat(areaLayout, ":") or "?"),
-        signature, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey
-end
-
-local function logValue(value)
-    if type(value) == "string" then return (value:sub(1, 200):gsub("%c", " ")) end
-    if type(value) == "number" or type(value) == "boolean" then return tostring(value) end
-    return type(value)
+        x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey
 end
 
 local function suspend(signature, width, reason, expected, actual)
@@ -227,11 +372,6 @@ local function suspend(signature, width, reason, expected, actual)
     end
     suspendedEnvironment, suspendedReason = signature, reason
     return false
-end
-
-local function optionalWarning(signature)
-    if optionalEnvironment ~= signature then warn(NO_GAMEVIEW) end
-    optionalEnvironment = signature
 end
 
 local function areaMismatch(actual, expected)
@@ -278,114 +418,6 @@ local function compatible(top, viewport, area, areaLayout, x, y, w, h, tx, ty, t
     if parentKey ~= viewportKey then return false, "area.parent", viewportKey, parentKey end
     local ax, ay, aw, ah = origin(area)
     return rectangleMatches("area", ax, ay, aw, ah, w - (reserved or 0), h)
-end
-
-local function explicitGameviewEligible(baseline, vx, vy, vw, vh, width, height, reserved)
-    if not (vx and vy and vw and vh and vx >= 0 and vy >= 0 and vw > 0 and vh > 0
-        and vx + vw <= width and vy + vh <= height) then return false end
-    return vx + vw <= width - reserved or baseline[5] == 0 and vx < width - reserved
-end
-
-local function gameviewCompatible(view, baseline, parentOK, parent, viewportKey,
-        vx, vy, vw, vh, width, height, reserved)
-    if not view or view.isRestricted or not baseline or not parentOK
-        or identity(parent) ~= viewportKey then return false end
-    local explicit = baseline[9] == 0 and baseline[7] > 0
-    if not fullSize(baseline) and not explicit then return false end
-    if explicit then
-        return explicitGameviewEligible(baseline, vx, vy, vw, vh, width, height, reserved), true
-    end
-    return vx == 0 and vy == 0 and vw == width and vh == height, false
-end
-
-local function desiredGameviewWidth(saved, width, viewportWidth)
-    if saved.explicitX then return math.min(saved.original[7], viewportWidth - width - saved.explicitX) end
-    return saved.original[7] - width
-end
-
-local function blockGameview(current, saved, environmentKey)
-    if restoreRecord(saved, current.interfaceObject) then current.gameview = nil end
-    current.gameviewBlocked = true
-    optionalWarning(environmentKey)
-end
-
-local function updateOwnedGameview(current, width, environmentKey, saved)
-    local fresh = resolve(saved, current.interfaceObject)
-    if not fresh or not layout(fresh, saved.written) then
-        blockGameview(current, saved, environmentKey)
-        return
-    end
-    local desiredWidth = desiredGameviewWidth(saved, width, current.width)
-    if saved.explicitX and desiredWidth <= 0 then
-        blockGameview(current, saved, environmentKey)
-        return
-    end
-    if desiredWidth == saved.original[7] then
-        if restoreRecord(saved, current.interfaceObject) then
-            current.gameview = nil
-            current.optionalFailed = nil
-            optionalEnvironment = nil
-            return
-        end
-        current.gameviewBlocked = true
-        optionalWarning(environmentKey)
-        return
-    end
-    if saved.written[7] == desiredWidth then return end
-    local desired = { table.unpack(saved.original) }
-    desired[7] = desiredWidth
-    local ok, applied = pcall(set, saved, fresh, desired, "size")
-    if ok and applied then return end
-    blockGameview(current, saved, environmentKey)
-end
-
-local function updateGameview(current, width, environmentKey, viewportKey)
-    if current.gameviewBlocked then return end
-    if current.gameview then
-        updateOwnedGameview(current, width, environmentKey, current.gameview)
-        return
-    end
-    local view = component("gameview")
-    local key = identity(view)
-    local baseline = layout(view)
-    local vx, vy, vw, vh = origin(view)
-    local signature = environmentKey .. "/" .. width .. "/" .. tostring(key) .. "/"
-        .. (baseline and table.concat(baseline, ":") or "?") .. "/"
-        .. tostring(vx) .. ":" .. tostring(vy) .. ":" .. tostring(vw) .. ":" .. tostring(vh)
-    if current.optionalFailed == signature then return end
-    local parentOK, parent = pcall(function() return view and view.parent end)
-    local eligible, explicit = gameviewCompatible(view, baseline,
-        parentOK, parent, viewportKey, vx, vy, vw, vh, current.width, current.height, width)
-    if not eligible then
-        current.optionalFailed = signature
-        optionalWarning(environmentKey)
-        return
-    end
-    local desiredWidth = explicit and math.min(baseline[7], current.width - width - vx) or -width
-    if desiredWidth == baseline[7] then
-        current.optionalFailed = nil
-        optionalEnvironment = nil
-        return
-    end
-    local saved = record(view, viewportKey, baseline)
-    if not saved then
-        current.optionalFailed = signature
-        optionalWarning(environmentKey)
-        return
-    end
-    saved.explicitX = explicit and vx or nil
-    local desired = { table.unpack(baseline) }
-    desired[7] = desiredWidth
-    current.gameview = saved
-    local ok, applied = pcall(set, saved, view, desired, "size")
-    if not ok or not applied then
-        if restoreRecord(saved, current.interfaceObject) then current.gameview = nil end
-        current.optionalFailed = signature
-        optionalWarning(environmentKey)
-    else
-        current.optionalFailed = nil
-        optionalEnvironment = nil
-    end
 end
 
 local function visibleClassicSlayer(target, width, height)
@@ -593,7 +625,7 @@ local function updateCombat(current, area)
     return true
 end
 
-function ClassicLayout.update(reservedWidth)
+function ClassicLayout.update(reservedWidth, deferCrop)
     if not NativeInterfaceSettings.isClassicUI() then
         ClassicLayout.restore()
         return false
@@ -604,14 +636,14 @@ function ClassicLayout.update(reservedWidth)
     local top, viewport, area = component("top"), component("viewport"), component("area")
     local interfaceID = (id.Component[names.viewport] or 0) >> 16
     local loaded = ui.Interfaces:GetInterface(interfaceID)
-    local signature, generation, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey =
+    local signature, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey =
         environment(loaded, viewport, top, area)
     local previous = state
     if previous and (not loaded or loaded ~= previous.interfaceObject
         or previous.width ~= w or previous.height ~= h or previous.viewportKey ~= viewportKey) then
         if not restoreState() then return suspend(signature, reservedWidth, "restore.failed") end
         previous = nil
-        signature, generation, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey =
+        signature, x, y, w, h, tx, ty, tw, th, areaLayout, viewportKey =
             environment(loaded, viewport, top, area)
     end
     if previous and previous.blocked then
@@ -695,11 +727,7 @@ function ClassicLayout.update(reservedWidth)
     end
     previous.reservedWidth = reservedWidth
     suspendedEnvironment, suspendedReason = nil, nil
-    local optionalOK = pcall(updateGameview, previous, reservedWidth, generation, viewportKey)
-    if not optionalOK then
-        previous.gameviewBlocked = true
-        optionalWarning(generation)
-    end
+    if not deferCrop then updateCrop(previous, reservedWidth) end
     local slayerOK = pcall(updateSlayer, previous, reservedWidth)
     if not slayerOK then
         previous.slayerBlocked = true
