@@ -29,41 +29,8 @@ local function normalize(value)
 end
 
 local TAB_GAP = 2
-local TAB_HOVER_TICKS = 15 -- 300 ms at 50 client logic ticks per second
-local TAB_HOVER_EVENT = "prettyui_tab_tooltip_hover"
-local pendingTab, dueTick
-
-local function cancelTabHover(tooltip)
-    if pendingTab ~= tooltip then return end
-    pendingTab, dueTick = nil, nil
-    Event.Logic.Unsubscribe(TAB_HOVER_EVENT)
-end
-
-local function advanceTabHover(event)
-    local tooltip = pendingTab
-    if not tooltip then return end
-    dueTick = dueTick or event.logicTick + TAB_HOVER_TICKS
-    if event.logicTick < dueTick then return end
-    cancelTabHover(tooltip)
-    if ui.Interfaces:GetInterface(tooltip.targetInterfaceID) and not WorldMap.isSuspended() then
-        local target = tooltip.target
-        if not target.hidden and target.enabled ~= false then tooltip:Show() end
-    end
-end
-
-local function startTabHover(tooltip)
-    if pendingTab == tooltip then return end
-    if not pendingTab then Event.Logic.Subscribe(TAB_HOVER_EVENT, advanceTabHover) end
-    pendingTab, dueTick = tooltip, nil
-end
-
-local function fontName(options)
-    -- Native desktop dock-tab hover (clientscripts 8800 and 9567).
-    return options._nisTab and "MUSEO_SANS_11PT_REGULAR_MULTILINE" or "MUSEO_SANS_15PT_REGULAR"
-end
-
 local function measure(text, options)
-    local font = config.Font[fontName(options)]
+    local font = config.Font.MUSEO_SANS_11PT_REGULAR_MULTILINE
     local maxWidth = options.maxWidth or DEFAULT_MAX_WIDTH
     local width = options.width
     if width == nil then
@@ -312,7 +279,7 @@ local function buildParts(self)
     parts.label:SetPos(PADDING_X, PADDING_Y)
     parts.label:SetSize(-PADDING_X * 2, -PADDING_Y * 2, 1.0, 1.0)
     parts.label.content = tostring(self.options.text or "")
-    parts.label.font = id.Font[fontName(self.options)]
+    parts.label.font = id.Font.MUSEO_SANS_11PT_REGULAR_MULTILINE
     parts.label.rgba = TEXT_COLOUR
     if self.options._nisTab then parts.label.isShadowed = true end
     parts.label.maxLines = 0
@@ -388,9 +355,9 @@ local function buildTooltip(target, parent, value, hoverHandlers)
         end
         if hoverHandlers and hoverHandlers.onMouseOver then
             hoverHandlers.onMouseOver(self)
-        elseif options._nisTab then
-            startTabHover(self)
-        else
+        elseif
+            not options._nisTab or (not target.hidden and target.enabled ~= false and not WorldMap.isSuspended())
+        then
             self:Show()
         end
         return true
@@ -460,7 +427,6 @@ local function tabPosition(x, y, width, height, tipWidth, tipHeight, margin)
 end
 
 function Tooltip:Show()
-    cancelTabHover(self)
     if
         self.target == nil
         or ui.Interfaces:GetInterface(self.interfaceID) == nil
@@ -524,7 +490,6 @@ function Tooltip:SetText(text)
 end
 
 function Tooltip:Hide()
-    cancelTabHover(self)
     self.cursorX, self.cursorY = nil, nil
     if not self.keepBuilt then
         release(self)
@@ -534,7 +499,6 @@ function Tooltip:Hide()
 end
 
 function Tooltip:Destroy()
-    cancelTabHover(self)
     if self.target ~= nil and ui.Interfaces:GetInterface(self.targetInterfaceID) ~= nil then
         self.target:Unsubscribe(ui.Hook.ONMOUSEOVER, HOOK_ID)
         self.target:Unsubscribe(ui.Hook.ONMOUSELEAVE, HOOK_ID)

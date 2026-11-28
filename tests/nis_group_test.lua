@@ -74,11 +74,6 @@ run("PrettyUI-only grouped tab selection keeps the hovered tooltip above the pag
     f.expect(hovered._parts, nil, "grouped tab tooltip is lazy")
     local hit = view.tabs[1].hit
     assert(hit.namedSubscriptions[ui.Hook.ONMOUSEOVER].prettyui_tooltip(hit, 10, 10))
-    f.expect(hovered._parts, nil, "mouseover does not immediately show a grouped tab tooltip")
-    f:emit("Logic", { logicTick = 100 })
-    f:emit("Logic", { logicTick = 114 })
-    f.expect(hovered._parts, nil, "grouped tab stays hidden before the hover deadline")
-    f:emit("Logic", { logicTick = 115 })
     local parts = assert(hovered._parts)
     local root = parts.root
     f.expect(parts.label.font, id.Font.MUSEO_SANS_11PT_REGULAR_MULTILINE, "group tab uses native desktop font")
