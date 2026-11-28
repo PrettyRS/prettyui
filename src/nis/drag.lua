@@ -554,7 +554,10 @@ function NisDrag.install(NisPanel)
         if not press.dragging then
             if math.max(math.abs(px - press.pressX), math.abs(py - press.pressY)) < 4 then return false end
             press.dragging = true
-            if press.tab then press.tab.retained = true end
+            if press.tab then
+                press.tab.retained = true
+                if press.tab.tooltipAttachment then press.tab.tooltipAttachment:Hide() end
+            end
             self.dragFeedback = DragFeedback.new(self.parent, self.root, press.source)
             InterfaceMouse.BeginCapture(press.component)
             press.component:SetPos(0, 0)
@@ -736,7 +739,10 @@ function NisDrag.install(NisPanel)
         if not press.dragging then
             if math.max(math.abs(px - press.pressX), math.abs(py - press.pressY)) < 4 then return false end
             press.dragging = true
-            if press.tab then press.tab.retained = true end
+            if press.tab then
+                press.tab.retained = true
+                if press.tab.tooltipAttachment then press.tab.tooltipAttachment:Hide() end
+            end
             member.dragFeedback = DragFeedback.new(member.parent, member.root)
             capture:SetPos(0, 0)
             capture:SetSize(0, 0, 1, 1)

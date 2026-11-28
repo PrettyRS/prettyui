@@ -66,8 +66,35 @@ ui = {
     },
 }
 
+local logicListeners = {}
+Event = {
+    Logic = {
+        Subscribe = function(name, callback)
+            logicListeners[name] = callback
+        end,
+        Unsubscribe = function(name)
+            logicListeners[name] = nil
+        end,
+    },
+}
+local function logicTick(tick)
+    for _, callback in pairs(logicListeners) do
+        callback({ logicTick = tick })
+    end
+end
+local function tabMouse(target, hook)
+    return assert(target.subscriptions[tostring(hook) .. ":prettyui_tooltip"])(target, 10, 10)
+end
+local function listenerCount()
+    local count = 0
+    for _ in pairs(logicListeners) do
+        count = count + 1
+    end
+    return count
+end
+
 id = {
-    Font = { MUSEO_SANS_15PT_REGULAR = 1 },
+    Font = { MUSEO_SANS_15PT_REGULAR = 1, MUSEO_SANS_11PT_REGULAR_MULTILINE = 2 },
 }
 
 local font = {
@@ -75,8 +102,13 @@ local font = {
     GetStringWidth = function(_, text) return #text * 5 end,
     GetStringHeightAndLineCount = function() return 18 end,
 }
+local tabFont = {
+    baseline = 14,
+    GetStringWidth = function(_, text) return #text * 4 end,
+    GetStringHeightAndLineCount = function() return 16 end,
+}
 config = {
-    Font = { MUSEO_SANS_15PT_REGULAR = font },
+    Font = { MUSEO_SANS_15PT_REGULAR = font, MUSEO_SANS_11PT_REGULAR_MULTILINE = tabFont },
 }
 
 package.loaded["src/core/sprites"] = {
@@ -138,6 +170,93 @@ tooltip.options.placement = "above"
 tooltip.options.placementFallback = false
 tooltip:Show()
 expect(tooltip._parts.root.y, 6, "repeated show observes changed placement without fallback")
+expect(tooltip._parts.label.font, id.Font.MUSEO_SANS_15PT_REGULAR, "ordinary tooltip keeps its default font")
+
+local tabTarget = component()
+tabTarget.x, tabTarget.y, tabTarget.width, tabTarget.height = 20, 55, 40, 20
+local tabTooltip = Tooltip.attach(tabTarget, parent, { text = "NIS tab", _nisTab = true })
+local idleChildren = #parent.children
+tabTooltip:_RefreshIfVisible()
+expect(tabTooltip._parts, nil, "refresh does not allocate an unhovered tab tooltip")
+expect(#parent.children, idleChildren, "idle refresh adds no tooltip components")
+expect(tabTooltip.width, 44, "tab tooltip width uses its compact font")
+expect(tabTooltip.height, 26, "tab tooltip height uses its compact font")
+tabTooltip:Show()
+expect(tabTooltip._parts.label.font, id.Font.MUSEO_SANS_11PT_REGULAR_MULTILINE, "tab uses the native desktop font")
+expect(tabTooltip._parts.label.rgba, 0xE3D7CFFF, "tab uses the native text colour")
+expect(tabTooltip._parts.label.isShadowed, true, "tab text casts the native shadow")
+expect(tabTooltip._parts.root.x, 18, "tab tooltip is centered on its target")
+expect(tabTooltip._parts.root.y, 27, "tab tooltip prefers above the target")
+local tabRoot = tabTooltip._parts.root
+local moves = tabRoot.frontCount
+tabTooltip:_RefreshIfVisible()
+expect(tabTooltip._parts.root, tabRoot, "visible refresh reuses the tooltip root")
+expect(tabRoot.frontCount, moves + 1, "visible refresh raises the tooltip")
+tabTooltip:Hide()
+tabTooltip:_RefreshIfVisible()
+expect(tabTooltip._parts, nil, "refresh after leave keeps the tab tooltip unallocated")
+expect(listenerCount(), 0, "idle tabs have no pending hover tick")
+expect(tabMouse(tabTarget, ui.Hook.ONMOUSEOVER), true, "tab mouseover is handled")
+expect(tabTooltip._parts, nil, "mouseover waits before constructing the tab tooltip")
+expect(listenerCount(), 1, "waiting tab hover subscribes to one logic event")
+logicTick(100)
+logicTick(114)
+expect(tabTooltip._parts, nil, "tab tooltip remains hidden before 300 ms")
+logicTick(115)
+expect(tabTooltip._parts.root.hidden, false, "tab tooltip appears at 300 ms")
+expect(listenerCount(), 0, "shown tab hover releases the pending subscription")
+tabMouse(tabTarget, ui.Hook.ONMOUSELEAVE)
+expect(tabTooltip._parts, nil, "leaving hides the delayed tab tooltip")
+
+tabMouse(tabTarget, ui.Hook.ONMOUSEOVER)
+logicTick(200)
+tabMouse(tabTarget, ui.Hook.ONMOUSELEAVE)
+expect(listenerCount(), 0, "leaving before the delay cancels the logic subscription")
+logicTick(230)
+expect(tabTooltip._parts, nil, "leaving before the deadline never shows the tooltip")
+tabMouse(tabTarget, ui.Hook.ONMOUSEOVER)
+logicTick(300)
+logicTick(314)
+expect(tabTooltip._parts, nil, "re-entering starts a fresh hover delay")
+logicTick(315)
+expect(tabTooltip._parts.root.hidden, false, "re-entered tab shows after its fresh delay")
+tabTooltip:Hide()
+
+local replacementTarget = component()
+replacementTarget.x, replacementTarget.y, replacementTarget.width, replacementTarget.height = 90, 55, 40, 20
+local replacement = Tooltip.attach(replacementTarget, parent, { text = "Another tab", _nisTab = true })
+tabMouse(tabTarget, ui.Hook.ONMOUSEOVER)
+logicTick(400)
+tabMouse(replacementTarget, ui.Hook.ONMOUSEOVER)
+expect(listenerCount(), 1, "replacement hover shares the single logic subscription")
+logicTick(410)
+logicTick(415)
+expect(tabTooltip._parts, nil, "replaced tab cannot appear at its former deadline")
+logicTick(424)
+expect(replacement._parts, nil, "replacement waits until its own deadline")
+logicTick(425)
+expect(replacement._parts.root.hidden, false, "replacement appears after its own delay")
+expect(listenerCount(), 0, "replacement releases the pending subscription")
+replacement:Hide()
+tabMouse(replacementTarget, ui.Hook.ONMOUSEOVER)
+logicTick(500)
+replacement:Destroy()
+expect(listenerCount(), 0, "destroying a waiting tab releases its pending subscription")
+logicTick(530)
+expect(replacement._parts, nil, "destroyed tab cannot appear after the deadline")
+
+tabMouse(tabTarget, ui.Hook.ONMOUSEOVER)
+logicTick(600)
+tabTooltip:Hide()
+expect(listenerCount(), 0, "hiding a waiting tab releases its pending subscription")
+logicTick(630)
+expect(tabTooltip._parts, nil, "hidden tab cannot appear after the deadline")
+tabMouse(tabTarget, ui.Hook.ONMOUSEOVER)
+tabTooltip:Show()
+expect(tabTooltip._parts.root.hidden, false, "explicit Show remains immediate during a pending hover")
+expect(listenerCount(), 0, "explicit Show clears its pending subscription")
+tabTooltip:Hide()
+tabTooltip:Destroy()
 
 tooltip:Destroy()
 expect(tooltip:SetText("Ignored"), false, "destroyed tooltips reject updates")
