@@ -976,6 +976,7 @@ function NisPanel:_SyncTopLevelVisibility()
     end
     local visible = not self._nisClassic
         and not self._nisHidden
+        and not self._nisNativeDeferred
         and (not self._nisGroup or self._nisGroup.active == self)
     Components.setHidden(self.root, not visible)
     self.root.enabled = enabled

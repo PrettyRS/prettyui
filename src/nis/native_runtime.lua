@@ -3,6 +3,7 @@ local WorldMap = require("src/core/world_map")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
 
 local NativeRuntime = {}
+local IDLE_AUDIT_TICKS = 8
 
 function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending, actions)
     local Runtime = { logicSequence = 0, restoringBatch = false }
@@ -47,6 +48,61 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
             Event.Draw.Unsubscribe(EVENT_ID)
             subscribed = false
         end
+    end
+
+    local function visibleLayoutMatches(group)
+        local host = group.hosts[group.current]
+        local frame, chrome, content = host.frame, host.chrome, host.content
+        if
+            frame.x ~= chrome.x
+            or frame.y ~= chrome.y
+            or frame.width ~= chrome.width
+            or frame.height ~= chrome.height
+        then
+            return false
+        end
+        local panel = group.active or group.members[1]
+        local root, inset = panel.root, host.grouped and 0 or Host.HEIGHT
+        if
+            root.x ~= frame.x + content.x
+            or root.y ~= frame.y + content.y + inset
+            or root.width ~= content.width
+            or root.height ~= content.height - inset
+        then
+            return false
+        end
+        if group.active then
+            for _, flag in ipairs(host.flags) do
+                if not flag.component.hidden then return false end
+            end
+            local artwork = group.artwork
+            if artwork and artwork.component[artwork.field] == artwork.original then return false end
+        end
+        return true
+    end
+
+    -- Observe visible changes every tick. Hidden copies and native anchors have
+    -- no complete change notification, so still audit the whole dock periodically.
+    local function idle(group)
+        if not group.nextAudit or Runtime.logicSequence >= group.nextAudit then return false end
+        if
+            group.pending
+            or group.nativeSort
+            or group.tabDrag
+            or group.dockPreview
+            or group.incomingPreview
+            or group.selectionHandoff
+            or group.split
+            or group.lockTransition
+            or group.transient
+            or group.paintPending
+            or group.needsConceal
+            or group.mapSelection
+            or group.failure
+        then
+            return false
+        end
+        return live(group) and not nativeRowChanged(group, true) and visibleLayoutMatches(group)
     end
 
     local function advanceSort(group)
@@ -114,7 +170,12 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
         if group.failure then error(group.failure) end
         align(group)
         if lockReflow or repainted or rootReflow or settledSort then raiseGroup(group) end
-        if changed or selectionChanged or settledSort then actions.saveGroup(group) end
+        if changed or selectionChanged or settledSort then
+            group.nextAudit = nil
+            actions.saveGroup(group)
+        else
+            group.nextAudit = Runtime.logicSequence + IDLE_AUDIT_TICKS
+        end
         if group.mapSelection then
             local panel = group.mapSelection
             group.mapSelection = nil
@@ -125,6 +186,9 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
     local function updateGroup(group)
         syncObservers(group)
         syncClientSort(group)
+        -- A retired handle in the idle probe needs a rebind, not a detach.
+        local readable, quiet = pcall(idle, group)
+        if readable and quiet then return end
         if group.nativeSort and (editingLocked(group) or group.nativeSort.mapCancelled) then
             finishNativeSort(group, nil, true)
         end
@@ -203,6 +267,7 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                 or not ui.Interfaces:GetInterface(panel.interfaceID)
             then
                 pending[panel] = nil
+                actions.releaseDeferred(panel)
             elseif
                 Runtime.logicSequence >= pending[panel]
                 and not panel._nisClassic
@@ -211,8 +276,10 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                 and not (panel.resize and panel.resize.dragState)
             then
                 actions.restorePending(panel)
+                if panel._nisNative then panel._nisNative.group.nextAudit = nil end
             end
         end
+        actions.finishRestoreBatch()
         Runtime.restoringBatch = false
         Preview.validate()
         Runtime.stop()
@@ -226,20 +293,27 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
         local member = group.members[1]
         if group.dead or not member or group.mapPaused or member._nisTopLevelHidden then return end
         if not live(group) or group.area.visibleGlobal == false then return end
-        local ok, problem = pcall(syncClientSort, group)
-        if not ok then
-            group.failure = problem
-            return
+        if group.nativePress or group.nativeSort or group.pending or group.selectionHandoff then
+            local ok, problem = pcall(syncClientSort, group)
+            if not ok then
+                group.failure = problem
+                return
+            end
         end
         if group.nativeSort then
             syncObservers(group)
             presentNativeSort(group)
             return
         end
+        if group.paintPending then
+            if actions.sync(member) and selectedFrame(group) then raiseGroup(group) end
+            group.paintPending = nil
+            return
+        end
         local readOK, changed = pcall(nativeRowChanged, group)
         if not readOK then
             group.failure = changed
-        elseif group.paintPending or changed then
+        elseif changed then
             if actions.sync(member) and selectedFrame(group) then raiseGroup(group) end
             group.paintPending = nil
         elseif group.incomingPreview then

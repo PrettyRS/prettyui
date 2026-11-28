@@ -556,7 +556,9 @@ local function changeMode(enabled)
             if not panel._nisNative then
                 Components.setHidden(
                     panel.root,
-                    panel._nisHidden == true or panel._nisGroup ~= nil and panel._nisGroup.active ~= panel
+                    panel._nisHidden == true
+                        or panel._nisNativeDeferred
+                        or panel._nisGroup ~= nil and panel._nisGroup.active ~= panel
                 )
             end
             panel._contentReady = saved[panel].contentReady
