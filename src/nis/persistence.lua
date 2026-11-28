@@ -224,6 +224,14 @@ function Persistence.bounds(panel)
     if panel._nisClassic or WorldMap.isSuspended() or not panelID or restoring or not loaded(panel)
         or panel._nisHidden or panel._nisAutoX or panel._nisAutoY or busy(panel) then return end
     local record = state.panels[panelID]
+    -- A lone page's safety clamp must not replace its dormant group's host bounds.
+    local clamped = panel._nisStandaloneClamp
+    if clamped then
+        local root = panel.root
+        if record.group and not panel._nisGroup and root.x == clamped[1] and root.y == clamped[2]
+            and root.width == clamped[3] and root.height == clamped[4] then return end
+        panel._nisStandaloneClamp = nil
+    end
     local group = record.group and state.groups[record.group]
     local changed = false
     if group then
@@ -305,13 +313,22 @@ function Persistence.detach(panel)
             end
             group.active = selected or group.members[1]
         end
-        if #group.members < 2 then
-            for _, memberID in ipairs(group.members) do state.panels[memberID].group = nil end
-            state.groups[record.group] = nil
+    end
+    if group and #group.members < 2 then
+        for _, memberID in ipairs(group.members) do
+            local survivorRecord = state.panels[memberID]
+            survivorRecord.group = nil
+            local survivor = live[memberID]
+            if loaded(survivor) and not survivor._nisHidden and not busy(survivor) then
+                changed = geometry(survivorRecord, survivor.root) or changed
+            end
+            if survivor then survivor._nisStandaloneClamp = nil end
         end
+        state.groups[record.group] = nil
     end
     record.group, record.dockTo, record.native = nil, nil, nil
     panel._nisNativePending = nil
+    panel._nisStandaloneClamp = nil
     if loaded(panel) then changed = geometry(record, panel.root) or changed end
     if changed then flush() end
 end

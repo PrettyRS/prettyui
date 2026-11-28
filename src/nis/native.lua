@@ -5,6 +5,7 @@ local Persistence = require("src/nis/persistence")
 local NisGroup = require("src/nis/group")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
 local WorldMap = require("src/core/world_map")
+local Trace = require("src/nis/dock_trace")
 
 local Native = {}
 local groups, byFrame = {}, {}
@@ -41,7 +42,6 @@ Runtime = require("src/nis/native_runtime").new(Host, View, Sort, Reconcile, Pre
     releaseDeferred = function(panel) releaseDeferred(panel) end,
     saveGroup = function(group) saveGroup(group) end,
     finishGroup = function(group) return finishGroup(group) end,
-    remember = function(panel) return Native.remember(panel) end,
     detach = function(panel) return Native.detach(panel) end,
     select = function(panel) return Native.select(panel) end,
     sync = function(panel) return Native.sync(panel) end,
@@ -94,6 +94,24 @@ local reconcileLock = Reconcile.reconcileLock
 local reconcileRoots = Reconcile.reconcileRoots
 local specByID = Host.specByID
 
+local function traceDockFailure(tracing, reason, panel, host, ...)
+    if not tracing then return end
+    Trace.log("native.dock.reject", "reason", reason, "panel", Trace.panel(panel),
+        "targetSpec", host and host.spec.name, "targetFrame", host and host.key, ...)
+end
+
+local function traceCaptureFailure(tracing, panel, spec, key, okCapture, host)
+    if not tracing then return end
+    local reason = "frame-invisible"
+    if not okCapture then
+        reason = "capture-error"
+    elseif not host then
+        reason = "capture-empty"
+    end
+    traceDockFailure(true, reason, panel, okCapture and host or nil,
+        "requestedSpec", spec.name, "targetID", key, "error", not okCapture and host or nil)
+end
+
 function Native.candidate(panel, x, y)
     if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
         or panel and panel._nisClassic then return nil end
@@ -115,8 +133,8 @@ function Native.candidate(panel, x, y)
         end
     end
     if not found then return nil end
-    -- Only grouped candidates need hidden frame copies for signature/capacity
-    -- checks. Unrelated visible rows and hidden standalone pages need no capture.
+    -- Only grouped candidates need hidden frame copies for signature checks.
+    -- Unrelated visible rows and hidden standalone pages need no capture.
     if grouped then
         for _, spec in pairs(specByID) do
             local ok, host = pcall(captureHiddenGroup, spec, area)
@@ -132,14 +150,7 @@ function Native.candidate(panel, x, y)
             if px >= top.x and px < top.x + band.width
                 and py >= targetY and py < top.y + HEIGHT then
                 local occupied = frameGroup(host)
-                local capacity = not (occupied and occupied.nativeSort)
-                local height = host.content.height - (host.grouped and 0 or HEIGHT)
-                for _, member in ipairs(panel._nisGroup and panel._nisGroup.members or { panel }) do
-                    if host.content.width < member.minWidth or height < member.minHeight
-                        or host.content.width > (member.maxWidth or math.huge)
-                        or height > (member.maxHeight or math.huge) then capacity = false end
-                end
-                if capacity
+                if not (occupied and occupied.nativeSort)
                     and (occupied or not host.content.hidden and (not host.scroll or not host.scroll.hidden))
                     and (occupied or host.grouped or nativeRootsFor(host)) then
                     if best then return nil end
@@ -217,31 +228,46 @@ end
 Native.clearPreview = Preview.clear
 Native.preview = Preview.show
 
-local function buildGroup(host, area)
+local function buildGroup(host, area, panel, tracing)
     local found = host.grouped and discover(area) or { host }
     local hosts = {}
     for _, other in ipairs(found) do
         if related(host, other) then
-            if byFrame[other.key] then return nil end
+            if byFrame[other.key] then
+                traceDockFailure(tracing, "sibling-occupied", panel, host, "spec", other.spec.name, "frame", other.key)
+                return nil
+            end
             hosts[#hosts + 1] = other
         end
     end
-    if #hosts == 0 then return nil end
+    if #hosts == 0 then
+        traceDockFailure(tracing, "no-related-frames", panel, host)
+        return nil
+    end
     local current
     for i, item in ipairs(hosts) do
         if item.frame.visibleGlobal then
-            if current then return nil end
+            if current then
+                traceDockFailure(tracing, "multiple-visible-frames", panel, host, "spec", item.spec.name, "frame", item.key)
+                return nil
+            end
             current = i
         end
     end
-    if not current then return nil end
+    if not current then
+        traceDockFailure(tracing, "no-visible-frame", panel, host)
+        return nil
+    end
     local group = { area = area, owner = host.owner,
         hosts = hosts, frames = {}, members = {}, bindings = {}, hooks = {}, hookKeys = {},
         grouped = host.grouped, current = current }
     for _, item in ipairs(hosts) do group.frames[item.key] = { key = item.key, spec = item.spec } end
     if not host.grouped then
         group.nativeRoots = nativeRootsFor(host)
-        if not group.nativeRoots then return nil end
+        if not group.nativeRoots then
+            traceDockFailure(tracing, "missing-native-roots", panel, host)
+            return nil
+        end
         if host.spec.name == "TOPLEVEL_V2__LORE_WINDOW" then
             group.familiarUnavailable = component(host.spec.EDIT_BLOCK).visible == true
         end
@@ -268,9 +294,11 @@ local function abandonMember(group, panel)
     if group.active == panel then nativeOK, nativeError = pcall(nativePage, group) end
     if panel.root and ui.Interfaces:GetInterface(panel.interfaceID) then
         local rect = binding.free
+        local width = math.max(panel.minWidth, math.min(rect.width, panel.maxWidth or math.huge))
+        local height = math.max(panel.minHeight, math.min(rect.height, panel.maxHeight or math.huge))
         panel.root:SetPos(rect.x, rect.y)
-        panel.root:SetSize(rect.width, rect.height)
-        panel.width, panel.height = rect.width, rect.height
+        panel.root:SetSize(width, height)
+        panel.width, panel.height = width, height
         Components.setHidden(panel.root, panel._nisHidden == true)
         panel.root.enabled = true
         if panel.dragBounds then
@@ -358,34 +386,67 @@ local function attach(panel, group, free)
     return binding
 end
 
-local function dock(panel, target, savedFree, insertion, batched)
-    if NativeInterfaceSettings.isClassicUI() or panel and panel._nisClassic then return false end
+local function dock(panel, target, savedFree, insertion, batched, tracing)
+    if NativeInterfaceSettings.isClassicUI() or panel and panel._nisClassic then
+        traceDockFailure(tracing, "classic", panel)
+        return false
+    end
     if not panel or panel._nisNative or panel.locked and not restoring or not panel.root
-        or not ui.Interfaces:GetInterface(panel.interfaceID) then return false end
+        or not ui.Interfaces:GetInterface(panel.interfaceID) then
+        traceDockFailure(tracing, "panel-unavailable", panel)
+        return false
+    end
     local area = component(id.Component.TOPLEVEL_V2__GAME_AREA)
-    if not area then return false end
-    if not same(panel.parent, area) then return false end
+    if not area or not same(panel.parent, area) then
+        traceDockFailure(tracing, "wrong-parent-or-missing-area", panel)
+        return false
+    end
     local group = batched and byFrame[identity(target)]
     local cached = group and group._restoreBatch
+    local host
     if cached and same(cached.target, target) and same(target.parent, area) then
-        if group.failure or group.nativeSort or not live(group) then return false end
+        if group.failure or group.nativeSort or not live(group) then
+            traceDockFailure(tracing, "cached-group-unavailable", panel, nil, "failure", group.failure)
+            return false
+        end
     else
         indexSpecs()
-        local spec = specByID[resolve(target)]
-        if not spec then return false end
-        local okCapture, host = pcall(capture, spec, area, true)
-        if not okCapture or not host or not host.frame.visibleGlobal then return false end
+        local key = resolve(target)
+        local spec = specByID[key]
+        if not spec then
+            traceDockFailure(tracing, "unknown-target", panel, nil, "targetID", key)
+            return false
+        end
+        local okCapture
+        okCapture, host = pcall(capture, spec, area, true)
+        if not okCapture or not host or not host.frame.visibleGlobal then
+            traceCaptureFailure(tracing, panel, spec, key, okCapture, host)
+            return false
+        end
         group = frameGroup(host)
         if group and group._restoreBatch and not batched then finishRestore(group) end
         if group then
             if group.failure or group.nativeSort or not live(group) or group.grouped ~= host.grouped then
+                if tracing then
+                    traceDockFailure(tracing, "group-unavailable", panel, host, "failure", group.failure,
+                        "nativeSort", group.nativeSort ~= nil, "live", live(group),
+                        "grouped", group.grouped, "capturedGrouped", host.grouped)
+                end
                 return false
             end
             local refreshed, settled = pcall(reconcile, group)
-            if not refreshed or settled == nil or group.failure or not byFrame[host.key] then return false end
+            if not refreshed or settled == nil or group.failure or not byFrame[host.key] then
+                traceDockFailure(tracing, "reconcile-failed", panel, host,
+                    "error", not refreshed and settled or group.failure, "settled", settled,
+                    "registered", byFrame[host.key] ~= nil)
+                return false
+            end
         else
-            if host.content.hidden or host.scroll and host.scroll.hidden then return false end
-            group = buildGroup(host, area)
+            if host.content.hidden or host.scroll and host.scroll.hidden then
+                traceDockFailure(tracing, "host-content-hidden", panel, host)
+                return false
+            end
+            group = buildGroup(host, area, panel, tracing)
             if not group then return false end
         end
     end
@@ -393,20 +454,22 @@ local function dock(panel, target, savedFree, insertion, batched)
     for _, member in ipairs(members) do
         if member._nisClassic or member._nisNative or member.locked and not restoring
             or member._nisHidden or not member.root or not same(member.parent, panel.parent)
-            or not ui.Interfaces:GetInterface(member.interfaceID) then return false end
-    end
-    for _, item in ipairs(group.hosts) do
-        local height = item.content.height - (group.grouped and 0 or HEIGHT)
-        for _, member in ipairs(members) do
-            if item.content.width < member.minWidth or height < member.minHeight
-                or item.content.width > (member.maxWidth or math.huge)
-                or height > (member.maxHeight or math.huge) then return false end
+            or not ui.Interfaces:GetInterface(member.interfaceID) then
+            if tracing then
+                traceDockFailure(tracing, "member-unavailable", panel, host,
+                    "member", Trace.panel(member), "classic", member._nisClassic,
+                    "native", member._nisNative ~= nil, "locked", member.locked,
+                    "hidden", member._nisHidden, "root", member.root ~= nil,
+                    "sameParent", same(member.parent, panel.parent))
+            end
+            return false
         end
     end
     local oldGroup = NisGroup.snapshot(panel)
     local frees = {}
     for index, member in ipairs(members) do frees[index] = member == panel and savedFree or freeRect(member) end
     local created = #group.members == 0
+    local stage, attachingMember = "host-construction", nil
     group.attaching = true
     local success, problem = pcall(function()
         if created then
@@ -425,11 +488,14 @@ local function dock(panel, target, savedFree, insertion, batched)
             end
             for _, item in ipairs(group.hosts) do createHost(group, item) end
         end
+        stage = "member-attachment"
         for index, member in ipairs(members) do
+            attachingMember = member
             if member._nisGroup then NisGroup.undock(member) end
             if not restoring then Persistence.detach(member) end
             attach(member, group, frees[index])
         end
+        stage = "member-insertion"
         if insertion then
             for index, member in ipairs(members) do
                 local binding = group.bindings[member]
@@ -440,15 +506,24 @@ local function dock(panel, target, savedFree, insertion, batched)
                 table.insert(group.members, math.min(insertion.index + index - 1, #group.members + 1), member)
             end
         end
+        stage = "runtime-start"
         Runtime.start()
         if batched then return end
+        stage = "initial-align"
         align(group)
+        stage = "selection"
         assert(Native.select(panel), "native page selection failed")
         group.attaching = nil
+        stage = "selected-align"
         align(group)
     end)
     group.attaching = nil
     if not success then
+        if tracing then
+            Trace.log("native.dock.rollback", "panel", Trace.panel(panel), "stage", stage,
+                "member", Trace.panel(attachingMember), "targetSpec", host.spec.name, "targetFrame", host.key,
+                "error", problem, "constructingTab", group.constructingTab ~= nil, "strip", Trace.strip(panel))
+        end
         if group.constructingTab then
             local cleanupOK, cleanupError = pcall(destroyTab, group.constructingTab)
             if not cleanupOK then warn(cleanupError) end
@@ -460,16 +535,27 @@ local function dock(panel, target, savedFree, insertion, batched)
         end
         if created and #group.members == 0 and not group.dead then finishGroup(group) end
         if oldGroup then NisGroup.restore(oldGroup, false) end
+        if tracing then
+            Trace.log("native.dock.rollback-result", "panel", Trace.panel(panel), "strip", Trace.strip(panel))
+        end
         return false
     end
     saveGroup(group)
+    if tracing then
+        Trace.log("native.dock.success", "panel", Trace.panel(panel), "targetSpec", host.spec.name,
+            "targetFrame", host.key, "members", #group.members, "strip", Trace.strip(panel))
+    end
     return true
 end
 
 function Native.dock(panel, target, savedFree, insertion)
+    local tracing = not restoring and Trace.enabled(panel)
     if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
-        or panel and panel._nisClassic then return false end
-    return dock(panel, target, savedFree, insertion)
+        or panel and panel._nisClassic then
+        traceDockFailure(tracing, "world-suspended-or-classic", panel)
+        return false
+    end
+    return dock(panel, target, savedFree, insertion, nil, tracing)
 end
 
 local function sortRestored(group)

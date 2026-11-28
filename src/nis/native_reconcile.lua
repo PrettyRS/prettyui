@@ -676,27 +676,29 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         if not group.nativeRoots then return changed end
         for _, saved in ipairs(group.nativeRoots) do
             if saved.changed then
+                local oldWidth, oldHeight = Host.fitInset(saved)
                 local matches = sameLayout(saved.component, saved.inset)
                 if matches == nil then error("native content layout retired") end
                 if not matches then
-                    if not saved.baselineReset or not sameLayout(saved.component, saved.original) then
+                    local ownResize = false
+                    if oldWidth then
+                        local expected = saved.inset
+                        local width, height = expected[7], expected[8]
+                        expected[7], expected[8] = oldWidth, oldHeight
+                        ownResize = sameLayout(saved.component, expected)
+                        expected[7], expected[8] = width, height
+                    end
+                    if not ownResize and (not saved.baselineReset or not sameLayout(saved.component, saved.original)) then
                         error("native script overwrote tab inset")
                     end
-                    local parent, expected = saved.component.parent, saved.inset
-                    if parent.width * expected[9] + expected[7] <= 0
-                        or parent.height * expected[10] + expected[8] <= 0 then
-                        error("native content root resized below its bounds")
-                    end
-                    -- One baseline reset per lock/familiar-availability transition.
-                    -- Keep the allowance across idle ticks for deferred reflow.
                     saved.baselineReset = nil
-                    applyLayout(saved.component, expected)
-                    if not sameLayout(saved.component, expected) then
+                    applyLayout(saved.component, saved.inset)
+                    if not sameLayout(saved.component, saved.inset) then
                         error("native reflow did not retain tab inset")
                     end
                     changed = true
                 end
-                if saved.component.width <= 0 or saved.component.height <= 0 then
+                if saved.component.width < 0 or saved.component.height < 0 then
                     error("native content root resized below its bounds")
                 end
             end

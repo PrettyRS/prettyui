@@ -600,7 +600,7 @@ function View.new(Host, actions)
             local binding = group.bindings[panel]
             if panel.root and ui.Interfaces:GetInterface(panel.interfaceID) then
                 local x, y, width, height = Host.rectInParent(panel, host.content)
-                if not group.grouped then y, height = y + HEIGHT, height - HEIGHT end
+                if not group.grouped then y, height = y + HEIGHT, math.max(0, height - HEIGHT) end
                 local changed = panel.root.x ~= x or panel.root.y ~= y
                     or panel.root.width ~= width or panel.root.height ~= height
                 if changed or binding.visible == nil then

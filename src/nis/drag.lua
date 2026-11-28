@@ -10,6 +10,7 @@ local Tooltip = require("src/tooltip")
 local NativeInterfaceSettings = require("src/core/native_interface_settings")
 local Components = require("src/core/components")
 local WorldMap = require("src/core/world_map")
+local Trace = require("src/nis/dock_trace")
 
 local NisDrag = {}
 local activePanel
@@ -120,6 +121,38 @@ end
 local function contains(rect, x, y)
     return x >= rect.x and x < rect.x + rect.width
         and y >= rect.y and y < rect.y + rect.height
+end
+
+local function traceRelease(panel, drag, phase, outcome)
+    if not Trace.active() then return end
+    if not (drag.traceEver or Trace.enabled(panel, drag.nisTarget)) then return end
+    drag.traceEver = true
+    local group = panel._nisGroup
+    local target = drag.nisTarget
+    Trace.log(phase, "action", drag.traceCommit and "release" or "cancel",
+        "source", Trace.panel(panel), "pointerX", drag.pointerX, "pointerY", drag.pointerY,
+        "target", Trace.target(drag),
+        "candidate", Trace.panel(target),
+        "nativeFrame", drag.nativeTarget and drag.nativeTarget.spec.frame,
+        "active", Trace.panel(group and group.active),
+        "targetActive", Trace.panel(target and target._nisGroup and target._nisGroup.active),
+        "tab", Trace.panel(drag.tab and drag.tab.member), "outcome", outcome,
+        "sourceStrip", Trace.strip(panel), "targetStrip", Trace.strip(target),
+        "activeStrip", Trace.strip(group and group.active))
+end
+
+local function traceTabRelease(traced, panel, press, phase, commit, x, y, outcome)
+    if not traced or not Trace.active() then return end
+    if not outcome then outcome = commit == false and "restore" or "reorder" end
+    local member = press.member or panel
+    local group = member._nisGroup
+    Trace.log(phase, "action", commit == false and "cancel" or "release",
+        "source", Trace.panel(member), "owner", Trace.panel(press.owner or panel),
+        "pointerX", press.pressX, "pointerY", press.pressY, "hookX", x, "hookY", y,
+        "target", press.native and "native-strip" or "group-strip",
+        "active", Trace.panel(group and group.active), "tab", Trace.panel(press.tab and press.tab.member),
+        "outcome", outcome, "sourceStrip", Trace.strip(member),
+        "ownerStrip", Trace.strip(press.owner or panel), "activeStrip", Trace.strip(group and group.active))
 end
 
 local function preview(panel, drag)
@@ -325,6 +358,8 @@ function NisDrag.install(NisPanel)
         local drag = self.dragState
         if not drag then return false end
         if commit and self:_CheckDragEnvironment() then return false end
+        drag.traceCommit = commit
+        traceRelease(self, drag, "release-before-validation", "pending")
         local loaded = ui.Interfaces:GetInterface(self.interfaceID) ~= nil
         if loaded and commit and drag.moved then
             local px, py = pointer(self, component, x, y)
@@ -333,6 +368,7 @@ function NisDrag.install(NisPanel)
             collectSpaces(self, drag, true)
             preview(self, drag)
         end
+        traceRelease(self, drag, "release-after-validation", loaded and "validated" or "unloaded")
         self.dragState = nil
         unsubscribe(self)
         InterfaceMouse.EndCapture(drag.capture)
@@ -342,6 +378,7 @@ function NisDrag.install(NisPanel)
         local nisTarget = target and drag.nisTarget
         NisGroup.clearPreview(self)
         Native.clearPreview(self)
+        local outcome
         if loaded then
             if target and drag.nativeTarget and Native.dock(self, drag.nativeTarget,
                 self._nisNativeTransaction and self._nisNativeTransaction.free or {
@@ -349,10 +386,12 @@ function NisDrag.install(NisPanel)
                 }, drag.nativeInsertion) then
                 self._nisTabTransaction = nil
                 self._nisNativeTransaction = nil
+                outcome = "native-dock"
             elseif nisTarget and NisGroup.dock(self, nisTarget, false) then
                 if drag.tab then NisGroup.reorder(self, drag.pointerX) end
                 self._nisTabTransaction = nil
                 self._nisNativeTransaction = nil
+                outcome = "group-dock"
             elseif target and not nisTarget and not drag.nativeTarget then
                 NisGroup.apply(self, target.x, target.y, target.width, target.height)
                 if self._nisTabTransaction then
@@ -363,6 +402,7 @@ function NisDrag.install(NisPanel)
                     Persistence.detach(self)
                     self._nisNativeTransaction = nil
                 end
+                outcome = "free-placement"
             else
                 NisGroup.apply(self, drag.x, drag.y, drag.width, drag.height)
                 if self._nisTabTransaction then
@@ -373,10 +413,12 @@ function NisDrag.install(NisPanel)
                     Native.restore(self, self._nisNativeTransaction)
                     self._nisNativeTransaction = nil
                 end
+                outcome = commit and "restore" or "cancel"
             end
         else
             self._nisTabTransaction = nil
             self._nisNativeTransaction = nil
+            outcome = "unloaded"
         end
         if drag.tab then drag.tab:Release() end
         if self.dragFeedback then
@@ -396,6 +438,7 @@ function NisDrag.install(NisPanel)
         end
         if self._nisGroup then NisGroup.notify(self) else self:_NotifyBoundsChange() end
         self:_SyncDragLayer()
+        traceRelease(self, drag, "release-after-settlement", outcome)
         return false
     end
 
@@ -516,10 +559,18 @@ function NisDrag.install(NisPanel)
         if WorldMap.isSuspended() and commit ~= false then return false end
         if not press then return self:_StopDrag(commit ~= false, component, x, y) end
         if not press.native then return false end
+        local traced = Trace.enabled(self)
+        traceTabRelease(traced, self, press, "tab-release-before", commit, x, y, "pending")
         if commit ~= false and press.dragging and component then
             self:_MoveNativeTabDrag(component, x, y)
-            if self.dragState then return self:_StopDrag(true, component, x, y) end
-            if self._nisTabPress ~= press then return false end
+            if self.dragState then
+                traceTabRelease(traced, self, press, "tab-release-after", commit, x, y, "handoff")
+                return self:_StopDrag(true, component, x, y)
+            end
+            if self._nisTabPress ~= press then
+                traceTabRelease(traced, self, press, "tab-release-after", commit, x, y, "interrupted")
+                return false
+            end
         end
         self._nisTabPress = nil
         unsubscribe(self)
@@ -537,6 +588,7 @@ function NisDrag.install(NisPanel)
             Native.sync(self)
         end
         if press.tab then press.tab.dragOwner = nil end
+        traceTabRelease(traced, self, press, "tab-release-after", commit, x, y)
         return false
     end
 
@@ -663,10 +715,18 @@ function NisDrag.install(NisPanel)
             return false
         end
         local member = press.member
+        local traced = Trace.enabled(member, press.owner)
+        traceTabRelease(traced, member, press, "tab-release-before", commit, x, y, "pending")
         if press.dragging and commit ~= false and component then
             member:_MoveNisTabDrag(component, x, y)
-            if member.dragState then return member:_StopDrag(true, component, x, y) end
-            if member._nisTabPress ~= press then return false end
+            if member.dragState then
+                traceTabRelease(traced, member, press, "tab-release-after", commit, x, y, "handoff")
+                return member:_StopDrag(true, component, x, y)
+            end
+            if member._nisTabPress ~= press then
+                traceTabRelease(traced, member, press, "tab-release-after", commit, x, y, "interrupted")
+                return false
+            end
         end
         member._nisTabPress, press.owner._nisTabPress = nil, nil
         unsubscribe(member)
@@ -691,6 +751,7 @@ function NisDrag.install(NisPanel)
         if member.root and ui.Interfaces:GetInterface(member.interfaceID) ~= nil then
             member:_SyncOverlays(member.root.hidden == true)
         end
+        traceTabRelease(traced, member, press, "tab-release-after", commit, x, y)
         return false
     end
 end

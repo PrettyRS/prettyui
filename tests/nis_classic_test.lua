@@ -241,20 +241,19 @@ Fixture.run("missing native host keeps a usable page at the due tick and redocks
         "late native host restores membership and selected content")
 end)
 
-Fixture.run("incompatible native host falls back at the due tick and redocks after reflow", function(f)
+Fixture.run("classic round trip restores directly into a smaller native host", function(f)
     local scene = sidebar(f, true)
-    local panel = f:panel({ id = "resized-native", tabIcon = 830025 })
+    local panel = f:panel({ id = "resized-native", minHeight = 200, tabIcon = 830025 })
     assert(panel:DockTo(scene.native.notes.frame))
     f.classicMode.value = 1
     f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
-    scene.native.notes.body:SetSize(40, 309)
+    scene.native.notes.body:SetSize(371, 100)
     f.classicMode.value = 0
     f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
     for _ = 1, 10 do f:emit("Logic") end
-    assert(panel._nisNative == nil and panel._nisNativePending, "incompatible native host remains queued")
-    assert(panel.content ~= nil and not panel.root.hidden, "failed redock retains usable standalone content")
+    local binding = assert(panel._nisNative, "restore must not wait for the native host to grow")
+    assert(binding.group.active == panel and panel.content and panel.root.height == 100)
     scene.native.notes.body:SetSize(371, 309)
     f:emit("Logic")
-    assert(panel._nisNative and panel._nisNative.group.active == panel and panel.content ~= nil,
-        "native membership resumes after host reflow")
+    assert(panel._nisNative == binding and panel.root.height == 309, "reflow resizes the same docked page")
 end)

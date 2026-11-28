@@ -20,7 +20,6 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
     local tabBand = Host.tabBand
     local tabOrigin = Host.tabOrigin
     local selectedFrame = Host.selectedFrame
-    local checkCapacity = Host.checkCapacity
     local validHost = Host.validHost
     local nativePage = View.nativePage
     local suspend = View.suspend
@@ -59,7 +58,12 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
         local panel = group.active or group.members[1]
         local root, inset = panel.root, host.grouped and 0 or Host.HEIGHT
         if root.x ~= frame.x + content.x or root.y ~= frame.y + content.y + inset
-            or root.width ~= content.width or root.height ~= content.height - inset then return false end
+            or root.width ~= content.width or root.height ~= math.max(0, content.height - inset) then return false end
+        if group.nativeRoots then
+            for _, saved in ipairs(group.nativeRoots) do
+                if saved.component.width < 0 or saved.component.height < 0 then return false end
+            end
+        end
         if group.active then
             for _, flag in ipairs(host.flags) do
                 if not flag.component.hidden then return false end
@@ -113,7 +117,6 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                 suspend(group)
             elseif not group.dead and #group.members > 0 then
                 group.mapPaused = nil
-                group.capacityLost = nil
                 local ok, problem = pcall(function()
                     syncObservers(group)
                     syncClientSort(group)
@@ -144,15 +147,10 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                         group.nativeSort = nil
                         settledSort = true
                     end
-                    -- A reservation reflow can temporarily shrink even visible
-                    -- hosts. Preserve the whole group before discovery can mistake
-                    -- an uncapturable row for a native tab split.
-                    checkCapacity(group)
                     local changed = reconcile(group)
                     if changed == nil then suspend(group); return end
-                    checkCapacity(group)
                     for _, host in ipairs(group.hosts) do
-                        if not validHost(group, host) then error("native host resized out of capacity or retired") end
+                        if not validHost(group, host) then error("native host retired or changed topology") end
                     end
                     local current = selectedFrame(group)
                     local selectionChanged = group.pending or current ~= group.current
@@ -210,23 +208,8 @@ function NativeRuntime.new(Host, View, Sort, Reconcile, Preview, groups, pending
                 if not ok then
                     warn(problem)
                     local members = { table.unpack(group.members) }
-                    local remembered = group.capacityLost and {} or nil
-                    if remembered then
-                        for _, panel in ipairs(members) do remembered[panel] = actions.remember(panel) end
-                    end
                     for _, panel in ipairs(members) do actions.detach(panel) end
                     if not group.dead and #group.members == 0 then actions.finishGroup(group) end
-                    if remembered then
-                        -- Release unsafe geometry, not logical membership. Native
-                        -- layout owns when these named hosts have room again.
-                        for _, panel in ipairs(members) do
-                            if not panel._nisNative then
-                                panel._nisNativePending = remembered[panel]
-                                pending[panel] = 0
-                            end
-                        end
-                        Runtime.start()
-                    end
                 end
             end
         end
