@@ -490,7 +490,7 @@ local function changeMode(enabled)
         for _, entry in ipairs(entries) do
             local panel = entry.panel
             if not panel._nisNative then
-                Components.setHidden(panel.root, panel._nisHidden == true
+                Components.setHidden(panel.root, panel._nisHidden == true or panel._nisNativeDeferred
                     or panel._nisGroup ~= nil and panel._nisGroup.active ~= panel)
             end
             panel._contentReady = saved[panel].contentReady

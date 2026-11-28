@@ -704,40 +704,45 @@ function NativeReconcile.new(Host, View, Sort, byFrame, actions)
         return changed
     end
 
-    -- Native scripts can repaint rows after Logic, reusing components with new
-    -- icons. Detect those changes before Draw updates artwork and input positions.
-    local function nativeRowChanged(group)
-        -- Either resident can repaint its native-only coordinates before the
-        -- outgoing selection disappears. Reapply the same order to both.
-        if group.selectionHandoff then return true end
-        local selected = selectedFrame(group)
-        if selected ~= group.current then return true end
-        local host = group.hosts[selected]
-        if host and host.tabs.visible ~= host.grouped then return true end
-        if not host or not host.grouped then return false end
-        if group.incomingPreview and host.key == group.incomingPreview
-            and (host.frame.x ~= host.previewTargetX or host.frame.y ~= host.previewTargetY) then return true end
-        if Divider.changed(host) then return true end
-        if not group.incomingPreview and Host.incomingPreview(group, host) then return true end
-        if host.overflow and (host.tabs.x ~= host.overflow.x
-            or host.tabs.width ~= host.overflow.width or host.tabs.scrollX ~= host.overflow.scrollX
-            or host.content.width ~= host.overflow.bandWidth) then return true end
+    local function nativeChildrenChanged(host, tabs)
         local changed, count = false, 0
-        host.tabs:IterateDynamicComponents(function(child)
-            if not same(child.parent, host.tabs) then return false end
+        tabs:IterateDynamicComponents(function(child)
+            if not same(child.parent, tabs) then return false end
             count = count + 1
-            local saved = host.nativeByKey[identity(child)]
-            if not saved or saved.component ~= child or child.x ~= saved.x + saved.offset then
-                changed = true
-                return true
-            end
-            if saved.tabIcon and spriteID(child) ~= saved.tabIcon then
+            local saved = host.nativeLayout[count]
+            if not saved or saved.component ~= child or child.x ~= saved.x + saved.offset
+                or child.y ~= saved.y or child.width ~= saved.width or child.height ~= saved.height
+                or saved.tabIcon and spriteID(child) ~= saved.tabIcon then
                 changed = true
                 return true
             end
             return false
         end)
         return changed or count ~= #host.children
+    end
+
+    -- Native scripts can repaint rows after Logic, reusing components with new
+    -- icons. Detect those changes before Draw updates artwork and input positions.
+    local function nativeRowChanged(group, quick)
+        -- Either resident can repaint its native-only coordinates before the
+        -- outgoing selection disappears. Reapply the same order to both.
+        if group.selectionHandoff then return true end
+        local selected = selectedFrame(group)
+        if selected ~= group.current then return true end
+        local host = group.hosts[selected]
+        if not host then return false end
+        local tabs = ui.Interfaces:GetComponent(host.spec.TABS)
+        if not tabs or tabs.visible ~= host.grouped then return true end
+        if not host.grouped then return false end
+        if group.incomingPreview and host.key == group.incomingPreview
+            and (host.frame.x ~= host.previewTargetX or host.frame.y ~= host.previewTargetY) then return true end
+        if host.overflow and (tabs.x ~= host.overflow.x or tabs.y ~= host.overflow.y
+            or tabs.width ~= host.overflow.width or tabs.scrollX ~= host.overflow.scrollX
+            or host.content.width ~= host.overflow.bandWidth) then return true end
+        if quick then return nativeChildrenChanged(host, tabs) end
+        if Divider.changed(host) then return true end
+        if not group.incomingPreview and Host.incomingPreview(group, host) then return true end
+        return nativeChildrenChanged(host, tabs)
     end
 
     local function releaseGroup(group)

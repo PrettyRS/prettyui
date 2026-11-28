@@ -51,13 +51,82 @@ run("idle nesting leaves unrelated rows alone and follows same-ID input replacem
     assert(not panel.root.hidden and scene.notes.body.hidden, "both pages remain selectable after the idle rebuild")
 end)
 
+for _, grouped in ipairs({ true, false }) do
+    for _, ownPage in ipairs({ true, false }) do
+        local kind = grouped and "grouped" or "standalone"
+        local page = ownPage and "PrettyUI" or "native"
+        run("settled " .. kind .. " " .. page .. " page avoids full native alignment each Logic", function(f)
+            local scene = nativeScene(f)
+            if not grouped then scene.notes.tabs.visible = false end
+            local panel = f:panel()
+            assert(panel:DockTo(scene.notes.frame))
+            local group = panel._nisNative.group
+            if not ownPage then
+                if grouped then
+                    nativeClick(f, scene.notes.backgrounds[1])
+                else
+                    f.fire(group.hosts[group.current].nativeTab.hit, ui.Hook.ONCLICK, 10, 10)
+                end
+            end
+            f:emit("Logic"); f:emit("Draw")
+            local alignments = 0
+            for _, host in ipairs(group.hosts) do
+                local layout = host.overflow.Layout
+                host.overflow.Layout = function(view, ...)
+                    alignments = alignments + 1
+                    return layout(view, ...)
+                end
+            end
+            for _ = 1, 8 do f:emit("Logic") end
+            assert(alignments <= #group.hosts * 2, "idle Logic must not fully align the native group every tick")
+            assert(panel._nisNative.group == group and panel.root.hidden == not ownPage)
+            scene.notes.frame:SetPos(520, 120)
+            f:emit("Logic")
+            f.expect(group.hosts[group.current].chrome.x, 520, "frame motion wakes native alignment on first Logic")
+            scene.notes.body:SetSize(400, scene.notes.body.height)
+            f:emit("Logic")
+            f.expect(panel.root.width, 400, "content resize wakes native alignment on first Logic")
+        end)
+    end
+end
+
+run("same-ID native input replacement rebinds on first Logic and repaint on Draw", function(f)
+    local scene = nativeScene(f)
+    local panel = f:panel()
+    assert(panel:DockTo(scene.notes.frame))
+    local binding = panel._nisNative
+    f:emit("Logic"); f:emit("Draw")
+    local retired = scene.notes.backgrounds[1]
+    scene.notes:rebuild({ 9001, 9002 }, 1)
+    f:emit("Logic")
+    local replacement = scene.notes.backgrounds[1]
+    assert(retired.destroyed and replacement ~= retired)
+    f.expect(binding.group.hosts[binding.group.current].children[1], replacement,
+        "the first Logic adopts the new native input handle")
+    assert(replacement.namedSubscriptions[ui.Hook.ONCLICK] and
+        replacement.namedSubscriptions[ui.Hook.ONCLICK][binding.group.hookID],
+        "replacement receives the native click observer before another Draw")
+    nativeClick(f, replacement)
+    panel:SelectTab()
+    scene.notes:rebuild({ 9001, 9002 }, 1)
+    replacement = scene.notes.backgrounds[1]
+    f:emit("Draw")
+    f.expect(binding.group.hosts[binding.group.current].children[1], replacement,
+        "a native repaint after Logic adopts replacement inputs before paint")
+    nativeClick(f, replacement)
+    panel:SelectTab()
+    assert(panel._nisNative == binding and not panel.root.hidden)
+end)
+
 run("native preview cancels cleanly; docking retains content and undocking restores bounds", function(f)
     local scene = nativeScene(f)
     local panel = f:panel({ x = 50, y = 450, width = 280, height = 180,
         tabIcon = Plugin.resources.image, buildContent = function(owner) owner:AddTitle("Page") end })
     local content = panel.content
     f:begin(panel); f:move(panel, 650, 130)
-    assert(panel.root.hidden and not scene.notes.body.hidden and panel._nisNative == nil)
+    f:emit("Draw")
+    assert(panel.root.hidden and not scene.notes.body.hidden and panel._nisNative == nil,
+        "native dock preview persists when Draw precedes the next Logic")
     f:emit("KeyDown", { gameKey = GameKey.ESCAPE })
     assert(not panel.root.hidden and panel.content == content)
     f:begin(panel); f:move(panel, 650, 130); f:release(panel)
@@ -268,11 +337,17 @@ run("native sorting can rebuild the row mid-drag without ejecting the own page",
     nativeClick(f, source)
     hook(ui.Hook.ONDRAG, 12, 12)
     source:SetPos(-12, 0)
+    f:emit("Draw")
+    assert(panel._nisNative == binding and source.x == -12 and not tab(panel).hit.enabled,
+        "Draw updates native drag preview without moving the client's captured source")
     f:emit("Logic")
     assert(panel._nisNative == binding and source.x == -12,
         "mixed layout must not fight the native drag")
     assert(not tab(panel).hit.enabled, "own tab cannot steal native drag capture")
     scene.notes:rebuild({ 9002, 9001 }, 2)
+    f:emit("Draw")
+    assert(panel._nisNative == binding and not tab(panel).hit.enabled,
+        "same-ID native sort repaint keeps client capture through Draw")
     f:emit("Logic")
     hook(ui.Hook.ONRELEASE, 12, 12)
     scene.ranged:rebuild({ 9002, 9001 }, 1)

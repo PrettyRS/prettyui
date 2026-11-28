@@ -1,12 +1,19 @@
 local Fixture = require("tests/nis_fixture")
 local nativeScene = require("tests/nis_native_fixture")
 
-local function sidebar(f)
+local function sidebar(f, nativeDock)
     config.Cursor.CURSOR_OPEN = { id = 7 }
-    local scene = nativeScene(f)
+    local dock = nativeDock and nativeScene(f)
+    local scene = dock or nativeScene(f)
     local top = scene.node(4088, 51, nil, 0, 0, 1200, 800)
-    local viewport = scene.node(4089, 52, nil, 0, 0, 1200, 800)
-    local area = scene.node(4089, 53, viewport, 0, 0, 1200, 800)
+    local viewportID = dock and 1477 or 4089
+    local viewport = scene.node(viewportID, 52, nil, 0, 0, 1200, 800)
+    local area = dock and dock.area or scene.node(4089, 53, viewport, 0, 0, 1200, 800)
+    if dock then
+        area.parent = viewport
+        viewport.children[#viewport.children + 1] = area
+        viewport.renderChildren[#viewport.renderChildren + 1] = area
+    end
     area:SetSize(0, 0, 1, 1); area:SetPos(0, 0, .5, .5, .5, .5)
     local view = scene.node(4089, 54, viewport, 0, 0, 1200, 800)
     view:SetSize(0, 0, 1, 1)
@@ -17,8 +24,8 @@ local function sidebar(f)
     render.visibleGlobal = true
     scene.node(4089, 55, area, 988, 488, 212, 312)
     id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP = (4088 << 16) | 51
-    id.Component.TOPLEVEL_V2__VIEWPORT = (4089 << 16) | 52
-    id.Component.TOPLEVEL_V2__GAME_AREA = (4089 << 16) | 53
+    id.Component.TOPLEVEL_V2__VIEWPORT = (viewportID << 16) | 52
+    id.Component.TOPLEVEL_V2__GAME_AREA = (area.interfaceID << 16) | area.staticID
     id.Component.TOPLEVEL_V2__GAMEVIEW_WINDOW = (4089 << 16) | 54
     id.Component.TOPLEVEL_V2__GAMEVIEW_WINDOW_CONTENT = (4089 << 16) | 56
     id.Component.TOPLEVEL_V2__RENDER_LAYER = (4089 << 16) | 57
@@ -34,7 +41,7 @@ local function sidebar(f)
     local ribbon = require("src/ribbon_bar")
     ribbon.Start()
     return {
-        top = top, area = area, gameview = view, gamecontent = content, render = render,
+        native = dock, top = top, area = area, gameview = view, gamecontent = content, render = render,
         click = function(panel)
             f.fire(assert(find(top, panel.tabIcon), "missing ribbon button"), ui.Hook.ONCLICK)
         end,
@@ -160,4 +167,94 @@ Fixture.run("panels without geometry choose modern placement after leaving Class
     f:emit("Logic")
     Fixture.rect(panel.root, 850, 200, 300, 400)
     assert(panel.content ~= nil and not panel.root.hidden)
+end)
+
+Fixture.run("native-docked panels round trip in order without rebuilding hidden pages or repeating group presentation", function(f)
+    local scene = sidebar(f, true)
+    local builds = { 0, 0, 0 }
+    local function content(index)
+        return function(owner)
+            builds[index] = builds[index] + 1
+            owner:AddText("Page")
+        end
+    end
+    local a = f:panel({ id = "native-a", tabIcon = 830021, buildContent = content(1) })
+    local b = f:panel({ id = "native-b", tabIcon = 830022, buildContent = content(2) })
+    local c = f:panel({ id = "native-c", tabIcon = 830023, buildContent = content(3) })
+    assert(a:DockTo(scene.native.notes.frame) and b:DockTo(a) and c:DockTo(b))
+    b:SelectTab()
+    local panels = { a, b, c }
+    local group = b._nisNative.group
+    assert(group.members[1] == a and group.members[2] == b and group.members[3] == c and group.active == b)
+
+    f.classicMode.value = 1
+    f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
+    for index, panel in ipairs(panels) do
+        assert(panel._nisNative == nil and panel._nisClassicState.native, "Classic suspends native membership")
+        f.expect(panel._nisClassicState.native.index, index, "Classic snapshots original native tab order")
+        f.expect(panel._nisClassicState.native.selected, panel == b, "Classic snapshots middle selection")
+    end
+    local before = { table.unpack(builds) }
+    f.classicMode.value = 0
+    f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
+    for _ = 1, 9 do f:emit("Logic") end
+    assert(a._nisNativePending and b._nisNativePending and c._nisNativePending)
+    f.expect(builds[1], before[1], "unselected first page is not built as a transient standalone")
+    f.expect(builds[3], before[3], "unselected last page is not built as a transient standalone")
+    f.expect(builds[2], before[2], "selected page waits for the native host instead of building transiently")
+
+    local raises = 0
+    local moveToFront = b.root.MoveToFront
+    b.root.MoveToFront = function(root)
+        raises = raises + 1
+        return moveToFront(root)
+    end
+    f:emit("Logic")
+    group = b._nisNative and b._nisNative.group
+    assert(group and a._nisNative.group == group and c._nisNative.group == group, "all pages rejoin the host")
+    assert(group.members[1] == a and group.members[2] == b and group.members[3] == c, "native order survives")
+    assert(group.active == b and b.content ~= nil and a.content == nil and c.content == nil, "middle page remains selected")
+    assert(raises <= 2, "restoration presents the selected native group once, not once per member")
+    f.expect(builds[1], before[1], "hidden first page remains unbuilt after native restore")
+    f.expect(builds[3], before[3], "hidden last page remains unbuilt after native restore")
+    f.expect(builds[2], before[2] + 1, "selected page is built once on native restore")
+    for _ = 1, 3 do f:emit("Logic") end
+    f.expect(builds[1], before[1], "idle native ticks do not rebuild the first hidden page")
+    f.expect(builds[3], before[3], "idle native ticks do not rebuild the last hidden page")
+end)
+
+Fixture.run("missing native host keeps a usable page at the due tick and redocks when it returns", function(f)
+    local scene = sidebar(f, true)
+    local panel = f:panel({ id = "late-native", tabIcon = 830024 })
+    assert(panel:DockTo(scene.native.notes.frame))
+    f.classicMode.value = 1
+    f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
+    scene.native.notes.frame.nativeShown = false
+    f.classicMode.value = 0
+    f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
+    for _ = 1, 10 do f:emit("Logic") end
+    assert(panel._nisNative == nil and panel._nisNativePending, "missing native host remains queued")
+    assert(panel.content ~= nil and not panel.root.hidden, "failed redock retains usable standalone content")
+    scene.native.notes.frame.nativeShown = true
+    f:emit("Logic")
+    assert(panel._nisNative and panel._nisNative.group.active == panel and panel.content ~= nil,
+        "late native host restores membership and selected content")
+end)
+
+Fixture.run("incompatible native host falls back at the due tick and redocks after reflow", function(f)
+    local scene = sidebar(f, true)
+    local panel = f:panel({ id = "resized-native", tabIcon = 830025 })
+    assert(panel:DockTo(scene.native.notes.frame))
+    f.classicMode.value = 1
+    f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
+    scene.native.notes.body:SetSize(40, 309)
+    f.classicMode.value = 0
+    f:emit("VarTransmit", { var = { id = id.VarPlayer.TOPLEVEL_V2_GENERAL_VARP } })
+    for _ = 1, 10 do f:emit("Logic") end
+    assert(panel._nisNative == nil and panel._nisNativePending, "incompatible native host remains queued")
+    assert(panel.content ~= nil and not panel.root.hidden, "failed redock retains usable standalone content")
+    scene.native.notes.body:SetSize(371, 309)
+    f:emit("Logic")
+    assert(panel._nisNative and panel._nisNative.group.active == panel and panel.content ~= nil,
+        "native membership resumes after host reflow")
 end)

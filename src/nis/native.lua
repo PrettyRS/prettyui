@@ -10,7 +10,7 @@ local Native = {}
 local groups, byFrame = {}, {}
 local pending = {} -- Panel -> earliest native logic sequence for restoration.
 local restoring = false
-local restorePending, finishGroup, Runtime
+local restorePending, finishRestore, releaseDeferred, finishGroup, Runtime
 local nextHook = 0
 local art = Sprites.NIS_PANEL
 
@@ -36,7 +36,9 @@ local Preview = require("src/nis/native_preview").new(Host, View, {
 
 local saveGroup
 Runtime = require("src/nis/native_runtime").new(Host, View, Sort, Reconcile, Preview, groups, pending, {
-    restorePending = function(panel) restorePending(panel) end,
+    restorePending = function(panel, batch) restorePending(panel, batch) end,
+    finishRestore = function(group) finishRestore(group) end,
+    releaseDeferred = function(panel) releaseDeferred(panel) end,
     saveGroup = function(group) saveGroup(group) end,
     finishGroup = function(group) return finishGroup(group) end,
     remember = function(panel) return Native.remember(panel) end,
@@ -216,7 +218,7 @@ Native.clearPreview = Preview.clear
 Native.preview = Preview.show
 
 local function buildGroup(host, area)
-    local found = discover(area)
+    local found = host.grouped and discover(area) or { host }
     local hosts = {}
     for _, other in ipairs(found) do
         if related(host, other) then
@@ -287,10 +289,22 @@ local function abandonMember(group, panel)
     if not nativeOK then error(nativeError) end
 end
 
+-- A delayed mode-switch restore owns a hidden shell until its first attempt.
+-- Cancellation or an unavailable host gives the shell back to standalone mode.
+releaseDeferred = function(panel)
+    if not panel._nisNativeDeferred then return end
+    panel._nisNativeDeferred = nil
+    if panel._nisNative or panel._nisGroup or panel._nisHidden or panel._nisClassic
+        or panel._destroyed or panel._destroying or not panel.root then return end
+    local ok, problem = pcall(panel.Show, panel)
+    if not ok then warn(problem) end
+end
+
 function Native.detach(panel)
     if panel and not restoring then
         panel._nisNativePending, panel._nisNativeActivating, pending[panel] = nil, nil, nil
         Runtime.stop()
+        releaseDeferred(panel)
     end
     local binding = panel and panel._nisNative
     if not binding then return false end
@@ -344,29 +358,37 @@ local function attach(panel, group, free)
     return binding
 end
 
-local function dock(panel, target, savedFree, insertion)
+local function dock(panel, target, savedFree, insertion, batched)
     if NativeInterfaceSettings.isClassicUI() or panel and panel._nisClassic then return false end
     if not panel or panel._nisNative or panel.locked and not restoring or not panel.root
         or not ui.Interfaces:GetInterface(panel.interfaceID) then return false end
     local area = component(id.Component.TOPLEVEL_V2__GAME_AREA)
     if not area then return false end
     if not same(panel.parent, area) then return false end
-    indexSpecs()
-    local key = resolve(target)
-    local spec = specByID[key]
-    if not spec then return false end
-    local okCapture, host = pcall(capture, spec, area, true)
-    if not okCapture or not host or not host.frame.visibleGlobal then return false end
-    local group = frameGroup(host)
-    if group and (group.failure or group.nativeSort or not live(group)
-        or group.grouped ~= host.grouped) then return false end
-    if group then
-        local refreshed, settled = pcall(reconcile, group)
-        if not refreshed or settled == nil or group.failure or not byFrame[host.key] then return false end
+    local group = batched and byFrame[identity(target)]
+    local cached = group and group._restoreBatch
+    if cached and same(cached.target, target) and same(target.parent, area) then
+        if group.failure or group.nativeSort or not live(group) then return false end
+    else
+        indexSpecs()
+        local spec = specByID[resolve(target)]
+        if not spec then return false end
+        local okCapture, host = pcall(capture, spec, area, true)
+        if not okCapture or not host or not host.frame.visibleGlobal then return false end
+        group = frameGroup(host)
+        if group and group._restoreBatch and not batched then finishRestore(group) end
+        if group then
+            if group.failure or group.nativeSort or not live(group) or group.grouped ~= host.grouped then
+                return false
+            end
+            local refreshed, settled = pcall(reconcile, group)
+            if not refreshed or settled == nil or group.failure or not byFrame[host.key] then return false end
+        else
+            if host.content.hidden or host.scroll and host.scroll.hidden then return false end
+            group = buildGroup(host, area)
+            if not group then return false end
+        end
     end
-    if not group and (host.content.hidden or host.scroll and host.scroll.hidden) then return false end
-    if not group then group = buildGroup(host, area) end
-    if not group then return false end
     local members = panel._nisGroup and { table.unpack(panel._nisGroup.members) } or { panel }
     for _, member in ipairs(members) do
         if member._nisClassic or member._nisNative or member.locked and not restoring
@@ -419,6 +441,7 @@ local function dock(panel, target, savedFree, insertion)
             end
         end
         Runtime.start()
+        if batched then return end
         align(group)
         assert(Native.select(panel), "native page selection failed")
         group.attaching = nil
@@ -449,62 +472,94 @@ function Native.dock(panel, target, savedFree, insertion)
     return dock(panel, target, savedFree, insertion)
 end
 
+local function sortRestored(group)
+    local host = group.hosts[group.current]
+    table.sort(group.members, function(a, b)
+        local first, second = beforeNative(group, a, host), beforeNative(group, b, host)
+        if first ~= second then return first < second end
+        return (group.bindings[a].restoreIndex or math.huge) < (group.bindings[b].restoreIndex or math.huge)
+    end)
+end
+
+finishRestore = function(group)
+    local result = group._restoreBatch
+    if not result then return end
+    group._restoreBatch = nil
+    if group.dead or #group.members == 0 then return end
+    local previous = restoring
+    restoring = true
+    local ok, presented = pcall(function()
+        sortRestored(group)
+        local selected = result.selected
+        if selected and group.bindings[selected] and not selected._destroyed then
+            return Native.select(selected)
+        end
+        if not group.active then nativePage(group) end
+        return Native.sync(group.members[1])
+    end)
+    restoring = previous
+    if not ok or not presented then
+        group.failure = group.failure or (ok and "native restoration presentation failed" or presented)
+    end
+end
+
+local function restoreTarget(panel, snapshot, name, batched)
+    local target = component(id.Component[name])
+    if not target or not target.visibleGlobal then return false end
+    local previous = byFrame[identity(target)]
+    local active = previous and previous.active
+    if not dock(panel, target, snapshot.free, nil, batched) then return false end
+    local binding = panel._nisNative
+    local group = binding.group
+    binding.restoreIndex, binding.beforeNative = snapshot.index, snapshot.beforeNative
+    if batched then
+        local result = group._restoreBatch or {}
+        group._restoreBatch, result.target = result, target
+        if snapshot.selected then result.selected = panel end
+        return true
+    end
+    if panel._nisNativeActivating then
+        for index, member in ipairs(group.members) do
+            if member == panel then table.remove(group.members, index); break end
+        end
+        table.insert(group.members, math.min(snapshot.index, #group.members + 1), panel)
+    else
+        sortRestored(group)
+    end
+    if panel._nisNativeActivating or snapshot.selected then
+        Native.select(panel)
+    elseif active then
+        Native.select(active)
+    else
+        nativePage(group)
+        align(group)
+    end
+    return true
+end
+
 -- Rebind by named host identity once the native layout is available. Startup
 -- restoration is allowed while locked; explicit docking still is not.
-restorePending = function(panel)
+restorePending = function(panel, batch)
     if WorldMap.isSuspended() or NativeInterfaceSettings.isClassicUI()
         or panel._nisClassic then return end
     local snapshot = panel._nisNativePending
-    if not snapshot or panel._nisHidden or panel._nisGroup then return end
+    if not snapshot or panel._nisHidden or panel._nisGroup or panel._nisTopLevelHidden then return end
     restoring = true
     local ok, restored = pcall(function()
-        local targets = { snapshot.frame }
+        local batched = batch and not panel._nisNativeActivating
+        if restoreTarget(panel, snapshot, snapshot.frame, batched) then return true end
         for _, name in ipairs(snapshot.frames) do
-            if name ~= snapshot.frame then targets[#targets + 1] = name end
-        end
-        for _, name in ipairs(targets) do
-            local target = component(id.Component[name])
-            if target and target.visibleGlobal then
-                local previous = byFrame[identity(target)]
-                local active = previous and previous.active
-                if dock(panel, target, snapshot.free) then
-                    local binding = panel._nisNative
-                    local group = binding.group
-                    binding.restoreIndex = snapshot.index
-                    binding.beforeNative = snapshot.beforeNative
-                    if panel._nisNativeActivating then
-                        for index, member in ipairs(group.members) do
-                            if member == panel then table.remove(group.members, index); break end
-                        end
-                        table.insert(group.members, math.min(snapshot.index, #group.members + 1), panel)
-                    else
-                        table.sort(group.members, function(a, b)
-                            local first, second = beforeNative(group, a, group.hosts[group.current]),
-                                beforeNative(group, b, group.hosts[group.current])
-                            if first ~= second then return first < second end
-                            return (group.bindings[a].restoreIndex or math.huge)
-                                < (group.bindings[b].restoreIndex or math.huge)
-                        end)
-                    end
-                    if panel._nisNativeActivating or snapshot.selected then
-                        Native.select(panel)
-                    elseif active then
-                        Native.select(active)
-                    else
-                        nativePage(group)
-                        align(group)
-                    end
-                    return true
-                end
-            end
+            if name ~= snapshot.frame and restoreTarget(panel, snapshot, name, batched) then return true end
         end
         return false
     end)
     restoring = false
     if ok and restored then
         panel._nisNativePending, panel._nisNativeActivating, pending[panel] = nil, nil, nil
-    elseif not ok then
-        warn(restored)
+        panel._nisNativeDeferred = nil
+    else
+        if not ok then warn(restored) end
+        releaseDeferred(panel)
     end
 end
 
@@ -513,6 +568,7 @@ function Native.register(panel, activating, delayTicks)
         or not panel._nisNativePending then return end
     panel._nisNativeActivating = activating == true
     local delay = delayTicks or 0
+    panel._nisNativeDeferred = delay > 0 or nil
     pending[panel] = Runtime.logicSequence + delay
     Runtime.start()
     if delay == 0 then restorePending(panel) end
@@ -753,7 +809,7 @@ end
 function Native.shutdown()
     Native.clearPreview()
     for panel in pairs(pending) do
-        panel._nisNativePending = nil
+        panel._nisNativePending, panel._nisNativeDeferred = nil, nil
         pending[panel] = nil
     end
     local complete = true
